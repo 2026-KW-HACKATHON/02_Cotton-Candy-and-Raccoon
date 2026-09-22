@@ -2,19 +2,13 @@
 node_modules/
 
 # Python
-.venv/
 __pycache__/
 *.py[cod]
-.ruff_cache/
-.pytest_cache/
-
-# Supabase CLI
-supabase/.temp/
 
 # local env files
 .env
 .env*.local
 
-# editors / OS
+# OS
 .DS_Store
 Thumbs.db
