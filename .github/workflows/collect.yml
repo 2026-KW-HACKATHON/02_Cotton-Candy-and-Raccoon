@@ -1,0 +1,27 @@
+# cron은 UTC 기준이다. "0 * * * *"는 매시 정각(UTC)에 실행된다.
+# 공개 저장소에 60일간 활동이 없으면 GitHub가 예약 실행을 자동으로 비활성화한다.
+name: Collect notices
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/pipeline
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
+      - run: uv sync
+      - run: uv run python -m pipeline
+        env:
+          SEOUL_API_KEY: ${{ secrets.SEOUL_API_KEY }}
+          MOLEG_API_KEY: ${{ secrets.MOLEG_API_KEY }}
+          NIKL_API_KEY: ${{ secrets.NIKL_API_KEY }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

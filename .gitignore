@@ -1,0 +1,14 @@
+# dependencies
+node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# local env files
+.env
+.env*.local
+
+# OS
+.DS_Store
+Thumbs.db
