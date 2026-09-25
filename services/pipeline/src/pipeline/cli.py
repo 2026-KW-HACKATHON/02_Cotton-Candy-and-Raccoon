@@ -3,15 +3,19 @@ import json
 import sys
 from collections.abc import Sequence
 
+import psycopg
+
 from pipeline.attachments.nowon_html import (
     AttachmentError,
     extract_files,
     extract_page_files,
     merge_files,
 )
-from pipeline.config import ConfigError, NowonSettings, Settings
+from pipeline.config import ConfigError, DatabaseSettings, NowonSettings, Settings
 from pipeline.sources.nowon_api import NowonSourceError, collect_one
 from pipeline.sources.nowon_page import NowonPageError, fetch_notice_page
+from pipeline.storage.notice_bundle import save_notice_with_files
+from pipeline.transform.nowon import TransformError, transform_nowon_notice
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -19,7 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     check = subparsers.add_parser("check-config", help="validate required environment variables")
     check.add_argument("--source", choices=["nowon"], help="check only this source's settings")
-    collect = subparsers.add_parser("collect-one", help="read one notice without saving to DB")
+    collect = subparsers.add_parser("collect-one", help="collect and save one notice to DB")
     collect.add_argument("--source", choices=["nowon"], required=True)
     return parser
 
@@ -42,6 +46,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "collect-one":
         try:
             settings = NowonSettings.from_env()
+            database = DatabaseSettings.from_env()
         except ConfigError as error:
             print(f"설정 오류: {error}", file=sys.stderr)
             return 2
@@ -51,18 +56,29 @@ def main(argv: Sequence[str] | None = None) -> int:
             page_url, page_html = fetch_notice_page(notice, settings)
             page_files = extract_page_files(notice, page_html, page_url)
             files = merge_files(body_files, page_files)
-        except (NowonSourceError, NowonPageError, AttachmentError) as error:
+            record = transform_nowon_notice(notice)
+        except (NowonSourceError, NowonPageError, AttachmentError, TransformError) as error:
             hint = (
                 " 잠시 후 다시 실행할 수 있습니다."
                 if isinstance(error, (NowonSourceError, NowonPageError)) and error.retryable else ""
             )
             print(settings.redact(f"수집 실패: {error}{hint}"), file=sys.stderr)
             return 1
+        try:
+            with psycopg.connect(database.database_url, connect_timeout=5) as conn:
+                notice_id = save_notice_with_files(conn, record, files)
+        except psycopg.Error:
+            print("DB 저장 실패: 연결 또는 저장 작업을 확인하세요.", file=sys.stderr)
+            return 1
+        except ValueError as error:
+            print(settings.redact(f"DB 저장 실패: {error}"), file=sys.stderr)
+            return 1
         # Print a bounded summary; retain full original HTML in the returned model.
         summary = {
+            "notice_id": notice_id,
             "category": notice.category, "post_sn": notice.post_sn,
-            "title": notice.title, "registered_on": notice.registered_on,
-            "department": notice.department, "url": notice.url,
+            "title": record.title, "registered_on": record.registered_on.isoformat(),
+            "department": record.department, "url": record.url,
             "license_type": notice.license_type,
             "body_html_length": len(notice.body_html or ""),
             "attachment_count": sum(file.kind == "attachment" for file in files),

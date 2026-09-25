@@ -1,5 +1,7 @@
 import json
 import logging
+from dataclasses import replace
+from unittest.mock import MagicMock
 from urllib.parse import quote
 
 import httpx
@@ -159,12 +161,16 @@ def test_network_failure_is_safe(error_type: type[httpx.RequestError]) -> None:
 
 
 def test_cli_source_settings_and_summary(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], mock_collect_db: MagicMock,
 ) -> None:
     monkeypatch.setenv('NOWON_NOTICE_API_KEY', 'sample')
     assert main(['check-config', '--source', 'nowon']) == 0
     capsys.readouterr()
-    monkeypatch.setattr('pipeline.cli.collect_one', lambda config: parse_notice(XML))
+    source = replace(parse_notice(XML), url=(
+        "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do"
+        "?q_bbsCode=1001&q_bbscttSn=001234"
+    ))
+    monkeypatch.setattr('pipeline.cli.collect_one', lambda config: source)
     monkeypatch.setattr('pipeline.cli.fetch_notice_page', lambda notice, config: (
         notice.url, '<tr><th>첨부파일</th><td>첨부파일이 없습니다.</td></tr>',
     ))
@@ -189,7 +195,7 @@ def test_cli_missing_key_does_not_collect(
 
 
 def test_cli_safe_failure(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], mock_collect_db: MagicMock,
 ) -> None:
     monkeypatch.setenv('NOWON_NOTICE_API_KEY', 'test/key+private')
 

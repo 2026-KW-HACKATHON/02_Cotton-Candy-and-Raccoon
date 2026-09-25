@@ -16,8 +16,8 @@ class NowonPageError(ValueError):
         self.retryable = retryable
 
 
-def _page_url(notice: RawNotice) -> str:
-    """Only request the expected public Nowon board page for this notice."""
+def normalize_nowon_notice_url(notice: RawNotice) -> str:
+    """Validate and normalize the public Nowon board URL for this notice."""
     try:
         parsed = urlsplit(notice.url)
         query = parse_qs(parsed.query, keep_blank_values=True)
@@ -44,7 +44,7 @@ def fetch_notice_page(
     transport: httpx.BaseTransport | None = None,
 ) -> tuple[str, str]:
     """Return the validated HTTPS page URL and HTML, without following redirects."""
-    url = _page_url(notice)
+    url = normalize_nowon_notice_url(notice)
     timeout = httpx.Timeout(
         settings.http_read_timeout_seconds,
         connect=settings.http_connect_timeout_seconds,

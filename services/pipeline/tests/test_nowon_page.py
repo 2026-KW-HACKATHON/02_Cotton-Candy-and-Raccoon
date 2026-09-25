@@ -1,4 +1,5 @@
 import json
+from unittest.mock import MagicMock
 from urllib.parse import urlsplit
 
 import httpx
@@ -72,31 +73,62 @@ def test_incomplete_page_cannot_mean_no_attachments(html: str) -> None:
         extract_page_files(notice(), html, PAGE_URL)
 
 
-def test_duplicate_page_and_body_image_favors_page_attachment() -> None:
-    source = notice('<img src="/file?q_fileSn=01&amp;q_fileId=abc">')
+def test_page_attachment_and_body_image_keep_both_roles() -> None:
+    source = notice('<img src="/file?q_fileSn=99&amp;q_fileId=abc">')
+    merged = merge_files(
+        extract_files(source), extract_page_files(source, PAGE_HTML, PAGE_URL),
+    )
+    assert len(merged) == 2
+    assert {file.kind for file in merged} == {"attachment", "inline_image"}
+    assert {file.file_id for file in merged} == {"abc"}
+    assert {(file.kind, file.file_sn) for file in merged} == {
+        ("attachment", "01"), ("inline_image", "99"),
+    }
+    attachment = next(file for file in merged if file.kind == "attachment")
+    assert attachment.file_name == "보고서.pdf"
+
+
+def test_cross_source_same_file_sn_with_different_ids_is_allowed() -> None:
+    source = notice('<img src="/file?q_fileSn=01&amp;q_fileId=different">')
+    merged = merge_files(extract_files(source), extract_page_files(source, PAGE_HTML, PAGE_URL))
+    assert {(file.file_id, file.kind) for file in merged} == {
+        ("different", "inline_image"), ("abc", "attachment"),
+    }
+
+
+def test_page_files_with_same_sn_and_different_ids_are_kept() -> None:
+    html = '''<tr><th>첨부파일</th><td><ul class="file-list">
+    <li><a href="/file?q_fileSn=9&amp;q_fileId=first">one.pdf</a></li>
+    <li><a href="/file?q_fileSn=9&amp;q_fileId=second">two.hwp</a></li>
+    </ul></td></tr>'''
+    files = extract_page_files(notice(), html, PAGE_URL)
+    assert {(file.file_sn, file.file_id) for file in files} == {
+        ("9", "first"), ("9", "second"),
+    }
+
+
+def test_same_attachment_on_page_repeated_with_different_url_fails() -> None:
+    html = '''<tr><th>첨부파일</th><td><ul class="file-list">
+    <li><a href="/file?q_fileSn=9&amp;q_fileId=same">one.pdf</a></li>
+    <li><a href="/file?q_fileSn=10&amp;q_fileId=same">two.pdf</a></li>
+    </ul></td></tr>'''
+    with pytest.raises(AttachmentError, match="file_id") as caught:
+        extract_page_files(notice(), html, PAGE_URL)
+    assert "same" not in str(caught.value)
+
+
+def test_page_attachment_metadata_wins_for_same_file_and_kind() -> None:
+    source = notice('<a href="/file?q_fileSn=99&amp;q_fileId=abc">본문 링크</a>')
     merged = merge_files(
         extract_files(source), extract_page_files(source, PAGE_HTML, PAGE_URL),
     )
     assert len(merged) == 1
     assert merged[0].kind == "attachment"
+    assert merged[0].file_sn == "01"
     assert merged[0].file_name == "보고서.pdf"
-
-
-def test_cross_source_identifier_conflict_fails() -> None:
-    source = notice('<img src="/file?q_fileSn=01&amp;q_fileId=different">')
-    with pytest.raises(AttachmentError, match="file_sn"):
-        merge_files(extract_files(source), extract_page_files(source, PAGE_HTML, PAGE_URL))
-
-
-def test_page_files_with_same_sn_and_different_ids_fail() -> None:
-    html = '''<tr><th>첨부파일</th><td><ul class="file-list">
-    <li><a href="/file?q_fileSn=9&amp;q_fileId=first">one.pdf</a></li>
-    <li><a href="/file?q_fileSn=9&amp;q_fileId=second">two.hwp</a></li>
-    </ul></td></tr>'''
-    with pytest.raises(AttachmentError, match="file_sn") as caught:
-        extract_page_files(notice(), html, PAGE_URL)
-    assert "first" not in str(caught.value)
-    assert "second" not in str(caught.value)
+    assert merged[0].url == (
+        "https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=01&q_fileId=abc"
+    )
 
 
 def test_fetch_page_uses_validated_https_url_once() -> None:
@@ -172,7 +204,7 @@ def test_page_network_error_is_safe_and_retryable(error_type: type[httpx.Request
 
 
 def test_cli_includes_original_page_attachments(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], mock_collect_db: MagicMock,
 ) -> None:
     monkeypatch.setenv("NOWON_NOTICE_API_KEY", "sample")
     monkeypatch.setattr("pipeline.cli.collect_one", lambda config: notice())
@@ -181,12 +213,14 @@ def test_cli_includes_original_page_attachments(
     ))
     assert main(["collect-one", "--source", "nowon"]) == 0
     output = capsys.readouterr()
-    assert json.loads(output.out)["attachment_count"] == 1
+    summary = json.loads(output.out)
+    assert summary["attachment_count"] == 1
+    assert summary["url"] == PAGE_URL
     assert "보고서.pdf" not in output.out
 
 
 def test_cli_page_failure_has_no_partial_success(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], mock_collect_db: MagicMock,
 ) -> None:
     monkeypatch.setenv("NOWON_NOTICE_API_KEY", "sample")
     monkeypatch.setattr("pipeline.cli.collect_one", lambda config: notice())

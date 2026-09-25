@@ -26,18 +26,29 @@ def _file_identity(url: str) -> tuple[str, str] | None:
     return sn_values[0], id_values[0]
 
 
-def extract_files(notice: RawNotice) -> list[FileRecord]:
-    """Return unique files, favoring attachment links over identical inline images.
+def _unique_files(records: list[FileRecord]) -> dict[tuple[str, str], FileRecord]:
+    files: dict[tuple[str, str], FileRecord] = {}
+    for record in records:
+        key = (record.file_id, record.kind)
+        previous = files.get(key)
+        if previous is not None and previous.url != record.url:
+            raise AttachmentError("같은 file_id와 kind에 서로 다른 URL이 있습니다.")
+        files.setdefault(key, record)
+    return files
 
-    Identity is the notice's file_sn, matching notice_files_sn_uq. URLs without
-    both file identifiers are not file records. No network or DB access occurs.
+
+def extract_files(notice: RawNotice) -> list[FileRecord]:
+    """Return one file reference per file_id and kind in the API body.
+
+    URLs without both file identifiers are not file records. No network or DB
+    access occurs.
     """
     if notice.category != "nowon":
         raise ValueError("노원구 공지만 처리할 수 있습니다.")
     if notice.body_html is None:
         return []
 
-    files: dict[str, FileRecord] = {}
+    files: list[FileRecord] = []
     soup = BeautifulSoup(notice.body_html, "html.parser")
     for element in soup.select("a[href], img[src]"):
         is_attachment = element.name == "a"
@@ -62,7 +73,7 @@ def extract_files(notice: RawNotice) -> list[FileRecord]:
                 download_name.strip() if isinstance(download_name, str) and download_name.strip()
                 else element.get_text(" ", strip=True) or None
             )
-        record = FileRecord(
+        files.append(FileRecord(
             category=notice.category,
             post_sn=notice.post_sn,
             kind="attachment" if is_attachment else "inline_image",
@@ -70,15 +81,8 @@ def extract_files(notice: RawNotice) -> list[FileRecord]:
             file_id=file_id,
             file_name=file_name,
             url=url,
-        )
-        previous = files.get(file_sn)
-        if previous is not None:
-            if previous.file_id != file_id:
-                raise AttachmentError("같은 file_sn에 서로 다른 file_id가 있습니다.")
-            if previous.kind == "attachment" or not is_attachment:
-                continue
-        files[file_sn] = record
-    return list(files.values())
+        ))
+    return list(_unique_files(files).values())
 
 
 def extract_page_files(notice: RawNotice, page_html: str, page_url: str) -> list[FileRecord]:
@@ -122,17 +126,11 @@ def extract_page_files(notice: RawNotice, page_html: str, page_url: str) -> list
             file_name=link.get_text(" ", strip=True) or None,
             url=url,
         ))
-    return merge_files([], files)
+    return list(_unique_files(files).values())
 
 
 def merge_files(body_files: list[FileRecord], page_files: list[FileRecord]) -> list[FileRecord]:
-    """Deduplicate by file_sn, with the page's attachment metadata authoritative."""
-    merged: dict[str, FileRecord] = {}
-    for records, is_page in ((body_files, False), (page_files, True)):
-        for record in records:
-            previous = merged.get(record.file_sn)
-            if previous is not None and previous.file_id != record.file_id:
-                raise AttachmentError("같은 file_sn에 서로 다른 file_id가 있습니다.")
-            if previous is None or is_page:
-                merged[record.file_sn] = record
+    """Keep each file role once, favoring the page's attachment metadata."""
+    merged = _unique_files(body_files)
+    merged.update(_unique_files(page_files))
     return list(merged.values())

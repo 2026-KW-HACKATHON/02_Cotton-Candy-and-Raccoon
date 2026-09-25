@@ -3,7 +3,26 @@ from urllib.parse import quote
 
 import pytest
 
-from pipeline.config import ConfigError, Settings
+from pipeline.config import ConfigError, DatabaseSettings, Settings
+
+
+def test_database_settings_need_only_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", " postgresql://user:secret@localhost/db ")
+    monkeypatch.delenv("SEOUL_API_KEY", raising=False)
+    monkeypatch.delenv("NOWON_NOTICE_API_KEY", raising=False)
+    settings = DatabaseSettings.from_env()
+    assert settings.database_url == "postgresql://user:secret@localhost/db"
+    assert "secret" not in repr(settings)
+
+
+def test_database_settings_reject_missing_or_invalid_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    with pytest.raises(ConfigError, match="DATABASE_URL"):
+        DatabaseSettings.from_env()
+    monkeypatch.setenv("DATABASE_URL", "https://user:secret@localhost/db")
+    with pytest.raises(ConfigError, match="DATABASE_URL") as error:
+        DatabaseSettings.from_env()
+    assert "secret" not in str(error.value)
 
 
 def test_settings_load_required_values(monkeypatch: pytest.MonkeyPatch) -> None:

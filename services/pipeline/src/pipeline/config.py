@@ -54,6 +54,21 @@ def _validate_database_url(value: str) -> None:
 
 
 @dataclass(frozen=True, slots=True)
+class DatabaseSettings:
+    """Database-only settings, independent of source API credentials."""
+
+    database_url: str = field(repr=False)
+
+    @classmethod
+    def from_env(cls) -> Self:
+        database_url = os.getenv("DATABASE_URL", "").strip()
+        if not database_url:
+            raise ConfigError("필수 환경 변수가 없습니다: DATABASE_URL")
+        _validate_database_url(database_url)
+        return cls(database_url=database_url)
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     database_url: str = field(repr=False)
     seoul_api_key: str = field(repr=False)

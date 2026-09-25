@@ -1,4 +1,6 @@
 import json
+from dataclasses import replace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -35,15 +37,17 @@ def test_repeated_inline_image_is_one_file() -> None:
 
 
 @pytest.mark.parametrize("anchor_first", [True, False])
-def test_attachment_wins_over_same_inline_image(anchor_first: bool) -> None:
+def test_attachment_and_inline_image_keep_both_roles(anchor_first: bool) -> None:
     image = '<img src="/file?q_fileSn=01&amp;q_fileId=abc">'
     link = '<a href="/file?q_fileSn=01&amp;q_fileId=abc" download="report.pdf">보고서</a>'
     html = link + image if anchor_first else image + link
     files = extract_files(notice(html))
-    assert len(files) == 1
-    assert files[0].kind == "attachment"
-    assert files[0].file_name == "report.pdf"
-    assert files[0].url == "https://www.nowon.kr/file?q_fileSn=01&q_fileId=abc"
+    assert len(files) == 2
+    assert {file.kind for file in files} == {"attachment", "inline_image"}
+    assert {file.file_id for file in files} == {"abc"}
+    attachment = next(file for file in files if file.kind == "attachment")
+    assert attachment.file_name == "report.pdf"
+    assert attachment.url == "https://www.nowon.kr/file?q_fileSn=01&q_fileId=abc"
 
 
 def test_anchor_text_is_file_name_when_download_attribute_missing() -> None:
@@ -54,13 +58,21 @@ def test_anchor_text_is_file_name_when_download_attribute_missing() -> None:
     assert files[0].url == "https://www.nowon.kr/www/user/file?q_fileSn=2&q_fileId=xyz"
 
 
-def test_same_file_sn_with_different_file_id_is_error() -> None:
+def test_same_file_sn_with_different_file_ids_is_allowed() -> None:
     html = ('<img src="/file?q_fileSn=7&amp;q_fileId=first">'
             '<a href="/file?q_fileSn=7&amp;q_fileId=second">PDF</a>')
-    with pytest.raises(AttachmentError, match="file_sn") as caught:
+    files = extract_files(notice(html))
+    assert {(file.file_sn, file.file_id, file.kind) for file in files} == {
+        ("7", "first", "inline_image"), ("7", "second", "attachment"),
+    }
+
+
+def test_same_file_id_and_kind_with_different_urls_is_error() -> None:
+    html = ('<img src="/file?q_fileSn=7&amp;q_fileId=same">'
+            '<img src="/file?q_fileSn=8&amp;q_fileId=same">')
+    with pytest.raises(AttachmentError, match="file_id") as caught:
         extract_files(notice(html))
-    assert "first" not in str(caught.value)
-    assert "second" not in str(caught.value)
+    assert "same" not in str(caught.value)
 
 
 def test_decorative_images_and_unidentified_links_are_excluded() -> None:
@@ -95,13 +107,14 @@ def test_empty_body_and_wrong_source() -> None:
 
 
 def test_cli_reports_counts_without_exposing_file_metadata(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], mock_collect_db: MagicMock,
 ) -> None:
     monkeypatch.setenv("NOWON_NOTICE_API_KEY", "sample")
-    source = notice(
+    source = replace(notice(
         '<img src="/file?q_fileSn=1&amp;q_fileId=abc">'
         '<a href="/file?q_fileSn=2&amp;q_fileId=def">private.pdf</a>'
-    )
+    ), url=("https://www.nowon.kr/www/user/bbs/BD_selectBbs.do"
+            "?q_bbsCode=1001&q_bbscttSn=001234"))
     monkeypatch.setattr("pipeline.cli.collect_one", lambda settings: source)
     monkeypatch.setattr("pipeline.cli.fetch_notice_page", lambda notice, settings: (
         notice.url, '<tr><th>첨부파일</th><td>첨부파일이 없습니다.</td></tr>',
@@ -116,17 +129,16 @@ def test_cli_reports_counts_without_exposing_file_metadata(
 
 
 def test_cli_identifier_conflict_fails_without_partial_summary(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], mock_collect_db: MagicMock,
 ) -> None:
     monkeypatch.setenv("NOWON_NOTICE_API_KEY", "sample")
     source = notice(
         '<img src="/file?q_fileSn=1&amp;q_fileId=abc">'
-        '<img src="/file?q_fileSn=1&amp;q_fileId=def">'
+        '<img src="/file?q_fileSn=2&amp;q_fileId=abc">'
     )
     monkeypatch.setattr("pipeline.cli.collect_one", lambda settings: source)
     assert main(["collect-one", "--source", "nowon"]) == 1
     output = capsys.readouterr()
     assert output.out == ""
-    assert "file_sn" in output.err
+    assert "file_id" in output.err
     assert "abc" not in output.err
-    assert "def" not in output.err
