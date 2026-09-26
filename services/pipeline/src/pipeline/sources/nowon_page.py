@@ -16,6 +16,10 @@ class NowonPageError(ValueError):
         self.retryable = retryable
 
 
+class NowonPageMissing(NowonPageError):
+    """The board returned its explicit missing-data page with HTTP 200."""
+
+
 def normalize_nowon_notice_url(notice: RawNotice) -> str:
     """Validate and normalize the public Nowon board URL for this notice."""
     try:
@@ -65,4 +69,6 @@ def fetch_notice_page(
         )
     if not response.headers.get("content-type", "").lower().startswith("text/html"):
         raise NowonPageError("원문 페이지가 HTML을 반환하지 않았습니다.")
+    if 'alert("데이터가 존재하지 않습니다.")' in response.text:
+        raise NowonPageMissing("노원구 원문 페이지에 게시물이 없습니다.")
     return url, response.text

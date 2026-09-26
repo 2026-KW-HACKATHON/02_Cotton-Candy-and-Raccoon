@@ -13,7 +13,9 @@ def notice(html: str | None, *, category: str = "nowon") -> RawNotice:
     return RawNotice(
         category=category, dong_group=None, is_pinned=False, post_sn="001234",
         title="Sample", department=None, registered_on="2026-09-23",
-        url="https://www.nowon.kr/www/user/bbs/notice", body_html=html,
+        url=("https://www.nowon.kr/www/user/bbs/BD_selectBbs.do"
+             "?q_bbsCode=1001&q_estnColumn1=11&q_bbscttSn=001234"),
+        body_html=html,
         license_type="KOGL-4",
     )
 
@@ -34,6 +36,48 @@ def test_repeated_inline_image_is_one_file() -> None:
     assert files[0].url == (
         "https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=001&q_fileId=id-A"
     )
+
+
+@pytest.mark.parametrize("reference", [
+    "/component/file/ND_fileDownload.do?q_fileSn=1&amp;q_fileId=image-a",
+    "http://www.nowon.kr:80/component/file/ND_fileDownload.do"
+    "?q_fileSn=1&amp;q_fileId=image-a",
+    "//www.nowon.kr:80/component/file/ND_fileDownload.do"
+    "?q_fileSn=1&amp;q_fileId=image-a",
+])
+def test_api_http_link_produces_https_inline_image(reference: str) -> None:
+    raw = replace(
+        notice(f'<img src="{reference}">'),
+        url="http://www.nowon.kr:80/www/user/bbs/BD_selectBbs.do"
+        "?q_bbsCode=1001&q_estnColumn1=11&q_bbscttSn=001234",
+    )
+    files = extract_files(raw)
+    assert len(files) == 1
+    assert files[0].url == (
+        "https://www.nowon.kr/component/file/ND_fileDownload.do"
+        "?q_fileSn=1&q_fileId=image-a"
+    )
+
+
+def test_relative_and_absolute_nowon_image_references_deduplicate() -> None:
+    raw = replace(
+        notice(
+            '<img src="/file?q_fileSn=1&amp;q_fileId=image-a">'
+            '<img src="http://www.nowon.kr:80/file?q_fileSn=1&amp;q_fileId=image-a">'
+        ),
+        url="http://www.nowon.kr:80/www/user/bbs/BD_selectBbs.do"
+        "?q_bbsCode=1001&q_bbscttSn=001234",
+    )
+    files = extract_files(raw)
+    assert len(files) == 1
+    assert files[0].url == "https://www.nowon.kr/file?q_fileSn=1&q_fileId=image-a"
+
+
+def test_external_http_file_url_is_not_rewritten() -> None:
+    url = "http://files.example.org/file?q_fileSn=1&q_fileId=image-a"
+    files = extract_files(notice(f'<img src="{url}">'))
+    assert len(files) == 1
+    assert files[0].url == url
 
 
 @pytest.mark.parametrize("anchor_first", [True, False])

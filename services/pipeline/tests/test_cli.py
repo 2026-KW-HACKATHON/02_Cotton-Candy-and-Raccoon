@@ -8,6 +8,7 @@ import psycopg
 import pytest
 
 from pipeline.cli import main
+from pipeline.collect_nowon import CollectNowonResult, NoticeFailure
 from pipeline.models import NoticeRecord, RawNotice
 from pipeline.sources.nowon_page import NowonPageError
 from pipeline.transform.nowon import TransformError
@@ -53,6 +54,50 @@ def test_collect_one_saves_after_complete_collection(
     assert saved_files == []
     connect.assert_called_once()
     assert json.loads(capsys.readouterr().out)["notice_id"] == 42
+
+
+def test_collect_many_reports_partial_failure_without_secrets(
+    collect_env: None, capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = CollectNowonResult(
+        total_count=3, listed_count=3, attempted_count=3, saved_count=2,
+        listing_complete=True, limited=False, failed_pages=(),
+        failures=(NoticeFailure("002", "page", "page_unavailable"),),
+    )
+    with patch("pipeline.cli.collect_and_save_nowon", return_value=result) as collect:
+        assert main(["collect", "--source", "nowon"]) == 1
+    collect.assert_called_once()
+    output = capsys.readouterr()
+    summary = json.loads(output.out)
+    assert summary["complete"] is False
+    assert summary["saved_count"] == 2
+    assert summary["failures"] == [
+        {"post_sn": "002", "stage": "page", "reason_code": "page_unavailable"},
+    ]
+    assert "private-api-key" not in output.out
+    assert "private-password" not in output.out
+    assert output.err == ""
+
+
+def test_collect_many_complete_returns_success(
+    collect_env: None, capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = CollectNowonResult(
+        total_count=2, listed_count=2, attempted_count=2, saved_count=2,
+        listing_complete=True, limited=False, failed_pages=(), failures=(),
+    )
+    with patch("pipeline.cli.collect_and_save_nowon", return_value=result):
+        assert main(["collect", "--source", "nowon"]) == 0
+    assert json.loads(capsys.readouterr().out)["complete"] is True
+
+
+def test_collect_many_rejects_bad_limit_before_network(
+    collect_env: None, capsys: pytest.CaptureFixture[str],
+) -> None:
+    with patch("pipeline.cli.collect_and_save_nowon") as collect:
+        assert main(["collect", "--source", "nowon", "--limit", "0"]) == 2
+    collect.assert_not_called()
+    assert "--limit" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("failed_step,error", [

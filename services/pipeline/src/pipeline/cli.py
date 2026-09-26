@@ -11,6 +11,7 @@ from pipeline.attachments.nowon_html import (
     extract_page_files,
     merge_files,
 )
+from pipeline.collect_nowon import collect_and_save_nowon
 from pipeline.config import ConfigError, DatabaseSettings, NowonSettings, Settings
 from pipeline.sources.nowon_api import NowonSourceError, collect_one
 from pipeline.sources.nowon_page import NowonPageError, fetch_notice_page
@@ -25,6 +26,13 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("--source", choices=["nowon"], help="check only this source's settings")
     collect = subparsers.add_parser("collect-one", help="collect and save one notice to DB")
     collect.add_argument("--source", choices=["nowon"], required=True)
+    collect_many = subparsers.add_parser(
+        "collect", help="collect and save Nowon notices independently to DB",
+    )
+    collect_many.add_argument("--source", choices=["nowon"], required=True)
+    collect_many.add_argument(
+        "--limit", type=int, help="process only the first N notices; partial run",
+    )
     return parser
 
 
@@ -42,6 +50,42 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         print("환경 변수 형식을 확인했습니다. API 인증과 DB 연결은 확인하지 않았습니다.")
         return 0
+
+    if args.command == "collect":
+        try:
+            settings = NowonSettings.from_env()
+            database = DatabaseSettings.from_env()
+        except ConfigError as error:
+            print(f"설정 오류: {error}", file=sys.stderr)
+            return 2
+        if args.limit is not None and args.limit < 1:
+            print("설정 오류: --limit은 1 이상의 정수여야 합니다.", file=sys.stderr)
+            return 2
+        try:
+            result = collect_and_save_nowon(settings, database, limit=args.limit)
+        except psycopg.Error:
+            print("DB 연결 실패: 연결 설정을 확인하세요.", file=sys.stderr)
+            return 1
+        failures = [
+            {
+                "post_sn": settings.redact(failure.post_sn),
+                "stage": failure.stage,
+                "reason_code": failure.reason_code,
+            }
+            for failure in result.failures
+        ]
+        print(json.dumps({
+            "total_count": result.total_count,
+            "listed_count": result.listed_count,
+            "attempted_count": result.attempted_count,
+            "saved_count": result.saved_count,
+            "listing_complete": result.listing_complete,
+            "limited": result.limited,
+            "complete": result.complete,
+            "failed_pages": result.failed_pages,
+            "failures": failures,
+        }, ensure_ascii=True))
+        return 0 if result.complete else 1
 
     if args.command == "collect-one":
         try:

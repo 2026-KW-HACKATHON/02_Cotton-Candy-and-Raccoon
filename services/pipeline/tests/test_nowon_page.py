@@ -14,7 +14,7 @@ from pipeline.attachments.nowon_html import (
 from pipeline.cli import main
 from pipeline.config import NowonSettings
 from pipeline.models import RawNotice
-from pipeline.sources.nowon_page import NowonPageError, fetch_notice_page
+from pipeline.sources.nowon_page import NowonPageError, NowonPageMissing, fetch_notice_page
 
 PAGE_URL = (
     "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do"
@@ -57,8 +57,28 @@ def test_page_attachment_is_found_outside_description() -> None:
     )
 
 
+def test_absolute_http_page_attachment_is_normalized_to_https() -> None:
+    html = PAGE_HTML.replace(
+        "/component/file/", "http://www.nowon.kr:80/component/file/",
+    )
+    files = extract_page_files(notice(), html, PAGE_URL)
+    assert files[0].url == (
+        "https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=01&q_fileId=abc"
+    )
+
+
 def test_explicit_empty_attachment_row_is_valid() -> None:
     assert extract_page_files(notice(), EMPTY_PAGE_HTML, PAGE_URL) == []
+
+
+def test_http_200_missing_data_page_is_not_a_valid_notice() -> None:
+    transport = httpx.MockTransport(lambda _: httpx.Response(
+        200, headers={"content-type": "text/html; charset=utf-8"},
+        text='<script>alert("데이터가 존재하지 않습니다.")</script>',
+    ))
+    with pytest.raises(NowonPageMissing) as caught:
+        fetch_notice_page(notice(), settings(), transport=transport)
+    assert caught.value.retryable is False
 
 
 @pytest.mark.parametrize("html", [
