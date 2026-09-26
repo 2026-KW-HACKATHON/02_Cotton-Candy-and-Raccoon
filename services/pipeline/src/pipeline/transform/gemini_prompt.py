@@ -41,7 +41,9 @@ def load_gemini_api_key(dotenv_path: Path | None = None) -> str:
     try:
         lines = path.read_text(encoding="utf-8-sig").splitlines()
     except FileNotFoundError:
-        raise GeminiConfigurationError("Set GEMINI_API_KEY or create services/pipeline/.env.") from None
+        raise GeminiConfigurationError(
+            "Set GEMINI_API_KEY or create services/pipeline/.env."
+        ) from None
 
     for line in lines:
         if not line or line.lstrip().startswith("#") or "=" not in line:
