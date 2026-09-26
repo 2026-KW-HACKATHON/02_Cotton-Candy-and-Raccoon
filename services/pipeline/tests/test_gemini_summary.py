@@ -35,6 +35,397 @@ def test_prompt_example_matches_output_contract(example_summary: dict) -> None:
     assert summary.category == "application"
 
 
+def test_short_quotes_cannot_hide_negated_action_or_cost(example_summary: dict) -> None:
+    notice = NoticeInput.model_validate(
+        {
+            "title": "주민행사",
+            "body_text": "주민행사 개최\n신청 불가\n참가비 무료 아님",
+            "reference_datetime": "2026-09-26T12:00:00+09:00",
+        }
+    )
+    example_summary.update(
+        category="event",
+        summary="주민행사 개최",
+        action="신청",
+        action_requirement="optional",
+        notes=["무료"],
+        dates=[],
+        evidence=[
+            {"field": "summary", "excerpt": "주민행사 개최"},
+            {"field": "action", "excerpt": "신청"},
+            {"field": "notes", "excerpt": "무료"},
+        ],
+    )
+
+    result = ground_summary(NoticeSummary.model_validate(example_summary), notice)
+    assert result.action is None
+    assert result.action_requirement == "unknown"
+    assert result.notes == []
+    assert result.uncertainties == ["원문 확인 필요"]
+
+
+@pytest.mark.parametrize(
+    ("body", "expected_action"),
+    [
+        ("신청 안내\n신청할 수 없습니다", None),
+        ("신청 안내\n신청이 안 됩니다", None),
+        ("신청 안내\n신청하지 못합니다", None),
+        ("신청 안내\n신청할 수 있습니다", "신청"),
+    ],
+)
+def test_application_action_checks_full_source_negation(
+    example_summary: dict, body: str, expected_action: str | None
+) -> None:
+    notice = NoticeInput.model_validate(
+        {
+            "title": "신청 안내",
+            "body_text": body,
+            "reference_datetime": "2026-09-26T12:00:00+09:00",
+        }
+    )
+    example_summary.update(
+        summary="신청 안내",
+        action="신청",
+        action_requirement="optional",
+        dates=[],
+        evidence=[
+            {"field": "summary", "excerpt": "신청 안내"},
+            {"field": "action", "excerpt": "신청"},
+        ],
+    )
+
+    result = ground_summary(NoticeSummary.model_validate(example_summary), notice)
+    assert result.action == expected_action
+
+
+def test_cancellation_request_does_not_cancel_the_notice(example_summary: dict) -> None:
+    body = "예약 취소 신청 방법 안내"
+    notice = NoticeInput.model_validate(
+        {
+            "title": body,
+            "body_text": body,
+            "reference_datetime": "2026-09-26T12:00:00+09:00",
+        }
+    )
+    example_summary.update(
+        summary="취소 신청",
+        status="cancelled",
+        notice_update="cancelled",
+        changed_details="취소",
+        dates=[],
+        evidence=[
+            {"field": "summary", "excerpt": "취소 신청"},
+            {"field": "status", "excerpt": "취소"},
+            {"field": "notice_update", "excerpt": "취소"},
+            {"field": "changed_details", "excerpt": "취소"},
+        ],
+    )
+
+    result = ground_summary(NoticeSummary.model_validate(example_summary), notice)
+    assert result.status == "unknown"
+    assert result.notice_update == "unknown"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "행사 안내\n행사 취소는 아닙니다",
+        "행사 안내\n행사 취소 불가",
+        "행사 안내\n행사 취소 시 환불 규정 안내",
+        "행사 안내\n행사 취소되는 경우 환불 안내",
+        "행사 안내\n변경 전: 행사 취소\n변경 후: 행사 정상 진행",
+        "행사 안내\n행사 취소 공지를 정정합니다. 행사는 예정대로 진행됩니다.",
+    ],
+)
+def test_cancelled_status_rejects_negated_or_obsolete_cancellation(
+    example_summary: dict, body: str
+) -> None:
+    notice = NoticeInput.model_validate(
+        {
+            "title": "행사 안내",
+            "body_text": body,
+            "reference_datetime": "2026-09-26T12:00:00+09:00",
+        }
+    )
+    example_summary.update(
+        category="event",
+        summary="행사 안내",
+        status="cancelled",
+        dates=[],
+        evidence=[
+            {"field": "summary", "excerpt": "행사 안내"},
+            {"field": "status", "excerpt": "행사 취소"},
+        ],
+    )
+
+    result = ground_summary(NoticeSummary.model_validate(example_summary), notice)
+    assert result.status == "unknown"
+
+
+@pytest.mark.parametrize(
+    ("body", "expected_status"),
+    [
+        ("접수 안내\n상시 접수 불가", "unknown"),
+        ("접수 안내\n상시 접수 안 됩니다", "unknown"),
+        ("접수 안내\n변경 전: 상시 접수\n변경 후: 접수 중단", "unknown"),
+        ("접수 안내\n상시 접수였으나 현재 중단되었습니다", "unknown"),
+        ("접수 안내\n상시 접수합니다", "ongoing_intake"),
+    ],
+)
+def test_ongoing_intake_needs_nonnegated_source(
+    example_summary: dict, body: str, expected_status: str
+) -> None:
+    notice = NoticeInput.model_validate(
+        {
+            "title": "접수 안내",
+            "body_text": body,
+            "reference_datetime": "2026-09-26T12:00:00+09:00",
+        }
+    )
+    example_summary.update(
+        summary="접수 안내",
+        status="ongoing_intake",
+        dates=[],
+        evidence=[
+            {"field": "summary", "excerpt": "접수 안내"},
+            {"field": "status", "excerpt": "상시 접수"},
+        ],
+    )
+
+    result = ground_summary(NoticeSummary.model_validate(example_summary), notice)
+    assert result.status == expected_status
+
+
+def test_summary_cannot_reverse_impossibility(example_summary: dict) -> None:
+    notice = NoticeInput.model_validate(
+        {
+            "title": "신청 안내",
+            "body_text": "신청 불가능",
+            "reference_datetime": "2026-09-26T12:00:00+09:00",
+        }
+    )
+    example_summary.update(
+        summary="신청 가능",
+        dates=[],
+        evidence=[{"field": "summary", "excerpt": "신청 불가능"}],
+    )
+
+    result = ground_summary(NoticeSummary.model_validate(example_summary), notice)
+    assert result.summary == "원문 확인 필요"
+    assert result.category == "unknown"
+
+
+def test_negated_action_is_not_optional_work(example_summary: dict) -> None:
+    notice = NoticeInput.model_validate(
+        {
+            "title": "신청 안내",
+            "body_text": "신청 안내\n신청 불가",
+            "reference_datetime": "2026-09-26T12:00:00+09:00",
+        }
+    )
+    example_summary.update(
+        summary="신청 안내",
+        action="신청 불가",
+        action_requirement="optional",
+        dates=[],
+        evidence=[
+            {"field": "summary", "excerpt": "신청 안내"},
+            {"field": "action", "excerpt": "신청 불가"},
+        ],
+    )
+
+    result = ground_summary(NoticeSummary.model_validate(example_summary), notice)
+    assert result.action is None
+    assert result.action_requirement == "unknown"
+
+
+@pytest.mark.parametrize(
+    ("update", "detail", "body"),
+    [
+        ("modified", "변경", "신청 안내\n변경 사항 없음"),
+        ("extended", "연장", "신청 안내\n연장하지 않습니다"),
+    ],
+)
+def test_notice_update_rejects_negated_change(
+    example_summary: dict, update: str, detail: str, body: str
+) -> None:
+    notice = NoticeInput.model_validate(
+        {
+            "title": "신청 안내",
+            "body_text": body,
+            "reference_datetime": "2026-09-26T12:00:00+09:00",
+        }
+    )
+    example_summary.update(
+        summary="신청 안내",
+        notice_update=update,
+        changed_details=detail,
+        dates=[],
+        evidence=[
+            {"field": "summary", "excerpt": "신청 안내"},
+            {"field": "notice_update", "excerpt": detail},
+            {"field": "changed_details", "excerpt": detail},
+        ],
+    )
+
+    result = ground_summary(NoticeSummary.model_validate(example_summary), notice)
+    assert result.notice_update == "unknown"
+    assert result.changed_details is None
+
+
+def test_unknown_status_has_no_negated_status_detail(example_summary: dict) -> None:
+    notice = NoticeInput.model_validate(
+        {
+            "title": "접수 안내",
+            "body_text": "접수 안내\n접수 가능하지 않습니다",
+            "reference_datetime": "2026-09-26T12:00:00+09:00",
+        }
+    )
+    example_summary.update(
+        summary="접수 안내",
+        status="check_required",
+        status_detail="접수 가능",
+        dates=[],
+        evidence=[
+            {"field": "summary", "excerpt": "접수 안내"},
+            {"field": "status_detail", "excerpt": "접수 가능"},
+        ],
+    )
+
+    result = ground_summary(NoticeSummary.model_validate(example_summary), notice)
+    assert result.status == "unknown"
+    assert result.status_detail is None
+
+
+@pytest.mark.parametrize(
+    ("reference_datetime", "status"),
+    [
+        ("2026-09-26T12:00:00+09:00", "open"),
+        ("2026-09-30T12:00:00+09:00", "open"),
+        ("2026-10-01T12:00:00+09:00", "closed"),
+    ],
+)
+def test_application_status_includes_start_and_end_days(
+    example_summary: dict, reference_datetime: str, status: str
+) -> None:
+    body = "수강생 모집\n신청기간: 2026.9.26~2026.9.30"
+    notice = NoticeInput.model_validate(
+        {"title": "수강생 모집", "body_text": body, "reference_datetime": reference_datetime}
+    )
+    example_summary.update(
+        summary="수강생 모집",
+        status=status,
+        evidence=[
+            {"field": "summary", "excerpt": "수강생 모집"},
+            {"field": "dates", "excerpt": "신청기간: 2026.9.26~2026.9.30"},
+        ],
+    )
+    example_summary["dates"][0].update(
+        label="신청기간",
+        text=None,
+        start_date="2026-09-26",
+        end_date="2026-09-30",
+    )
+
+    result = ground_summary(NoticeSummary.model_validate(example_summary), notice)
+    assert result.dates
+    assert result.status == status
+
+
+@pytest.mark.parametrize(
+    ("body", "summary", "status"),
+    [
+        ("모집 취소", "모집 취소", "cancelled"),
+        ("행사 취소", "행사 취소", "cancelled"),
+        ("상시 접수", "상시 접수", "ongoing_intake"),
+    ],
+)
+def test_explicit_cancelled_or_ongoing_intake_survives_without_dates(
+    example_summary: dict, body: str, summary: str, status: str
+) -> None:
+    notice = NoticeInput.model_validate(
+        {
+            "title": summary,
+            "body_text": body,
+            "reference_datetime": "2026-09-26T12:00:00+09:00",
+        }
+    )
+    example_summary.update(
+        category="event" if body.startswith("행사") else "application",
+        summary=summary,
+        status=status,
+        dates=[],
+        evidence=[
+            {"field": "summary", "excerpt": body},
+            {"field": "status", "excerpt": body},
+        ],
+    )
+
+    result = ground_summary(NoticeSummary.model_validate(example_summary), notice)
+    assert result.status == status
+
+
+def test_mixed_topics_with_source_evidence_are_preserved(example_summary: dict) -> None:
+    body = "종합 안내\n청년 모집\n노인 행사 개최"
+    notice = NoticeInput.model_validate(
+        {
+            "title": "종합 안내",
+            "body_text": body,
+            "reference_datetime": "2026-09-26T12:00:00+09:00",
+        }
+    )
+    example_summary.update(
+        category="mixed",
+        summary="종합 안내",
+        dates=[],
+        topics=[
+            {"title": "청년", "category": "application", "summary": "청년 모집"},
+            {"title": "노인", "category": "event", "summary": "노인 행사 개최"},
+        ],
+        evidence=[
+            {"field": "summary", "excerpt": "종합 안내"},
+            {"field": "topics", "excerpt": "청년 모집"},
+            {"field": "topics", "excerpt": "노인 행사 개최"},
+        ],
+    )
+
+    result = ground_summary(NoticeSummary.model_validate(example_summary), notice)
+    assert len(result.topics) == 2
+    assert [topic.title for topic in result.topics] == ["청년", "노인"]
+
+
+def test_mixed_topics_do_not_borrow_another_topic_summary(example_summary: dict) -> None:
+    body = "종합 안내\n청년 모집, 노인 행사 개최"
+    notice = NoticeInput.model_validate(
+        {
+            "title": "종합 안내",
+            "body_text": body,
+            "reference_datetime": "2026-09-26T12:00:00+09:00",
+        }
+    )
+    example_summary.update(
+        category="mixed",
+        summary="종합 안내",
+        dates=[],
+        topics=[{"title": "청년", "category": "event", "summary": "노인 행사 개최"}],
+        evidence=[
+            {"field": "summary", "excerpt": "종합 안내"},
+            {"field": "topics", "excerpt": "청년 모집, 노인 행사 개최"},
+        ],
+    )
+
+    result = ground_summary(NoticeSummary.model_validate(example_summary), notice)
+    assert result.topics == []
+    assert result.uncertainties == ["원문 확인 필요"]
+
+    example_summary["topics"] = [
+        {"title": "청년", "category": "application", "summary": "청년 모집"},
+        {"title": "노인", "category": "event", "summary": "노인 행사 개최"},
+    ]
+    result = ground_summary(NoticeSummary.model_validate(example_summary), notice)
+    assert len(result.topics) == 2
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [

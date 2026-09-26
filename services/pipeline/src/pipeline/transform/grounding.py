@@ -1,7 +1,7 @@
 """Keep only notice claims that can be checked against the supplied source text."""
 
 import re
-from datetime import date
+from datetime import date, datetime, time
 
 from pipeline.transform.notice_input import KST, NoticeInput
 from pipeline.transform.summary_schema import (
@@ -27,6 +27,25 @@ DATE_KIND_WORDS = {
     "disruption": ("통제", "휴관", "중단"),
     "result": ("결과", "발표", "선정", "합격"),
 }
+CANCELLED_NOTICE = re.compile(
+    r"(?:행사|공연|축제|모집|접수|운영|강좌|교육|수업|사업|공고)"
+    r"(?:이|가|은|는|을|를)?\s*(?:전면\s*)?취소"
+)
+NEGATED_CANCELLATION = re.compile(
+    r"\s*(?:은|는|이|가)?\s*(?:신청|접수|방법|절차|가능|요청|문의|아님|아닌|아닙|아니|불가|없|되지\s*않|하지\s*않|시\b|될\s*경우|되는\s*경우|경우)"
+)
+ONGOING_INTAKE = re.compile(r"상시\s*(?:접수|모집|신청)")
+NEGATED_INTAKE = re.compile(
+    r"\s*(?:은|는|이|가)?\s*(?:불가|금지|중단|종료|마감|하지\s*않|하지\s*못|할\s*수\s*없|안\s*(?:되|됩)|아님|아닙|없)"
+)
+NEGATED_UPDATE = re.compile(
+    r"(?:변경|수정|정정|연장)\s*(?:사항\s*)?(?:없|하지\s*않|하지\s*못|안\s*(?:되|됩)|불가|아님|아니|아닙)"
+)
+OBSOLETE_CONTEXT = re.compile(r"변경\s*전\s*[:：]")
+RETRACTED_CANCELLATION = re.compile(
+    r"취소\s*(?:공고|공지|안내)?\s*(?:를|을)?\s*(?:정정|철회)|정상\s*진행|예정대로\s*진행"
+)
+ENDED_ONGOING_INTAKE = re.compile(r"상시\s*(?:접수|모집|신청)\s*(?:였으나|이었으나)")
 
 
 def unknown_summary(notice: NoticeInput) -> NoticeSummary:
@@ -61,8 +80,45 @@ def _excerpts(evidence: list[Evidence], field: str) -> list[str]:
     return [item.excerpt for item in evidence if item.field == field]
 
 
+def _source_line_evidence(evidence: list[Evidence], sources: list[str]) -> list[Evidence]:
+    """Restore the surrounding source line so a short quote cannot hide a negation."""
+    expanded = []
+    for item in evidence:
+        for source in sources:
+            start = 0
+            while (position := source.find(item.excerpt, start)) >= 0:
+                line_start = source.rfind("\n", 0, position) + 1
+                line_end = source.find("\n", position + len(item.excerpt))
+                expanded.append(
+                    Evidence(
+                        field=item.field,
+                        excerpt=source[line_start : line_end if line_end >= 0 else len(source)],
+                    )
+                )
+                start = position + len(item.excerpt)
+    return expanded
+
+
 def _literal_supported(value: str, evidence: list[Evidence], field: str) -> bool:
     return any(value in excerpt for excerpt in _excerpts(evidence, field))
+
+
+def _explicit_cancellation(excerpt: str) -> bool:
+    if OBSOLETE_CONTEXT.search(excerpt) or RETRACTED_CANCELLATION.search(excerpt):
+        return False
+    return any(
+        not NEGATED_CANCELLATION.match(excerpt[match.end() : match.end() + 20])
+        for match in CANCELLED_NOTICE.finditer(excerpt)
+    )
+
+
+def _explicit_ongoing_intake(excerpt: str) -> bool:
+    if OBSOLETE_CONTEXT.search(excerpt) or ENDED_ONGOING_INTAKE.search(excerpt):
+        return False
+    return any(
+        not NEGATED_INTAKE.match(excerpt[match.end() : match.end() + 20])
+        for match in ONGOING_INTAKE.finditer(excerpt)
+    )
 
 
 def _summary_supported(value: str, evidence: list[Evidence]) -> bool:
@@ -70,17 +126,26 @@ def _summary_supported(value: str, evidence: list[Evidence]) -> bool:
 
     def in_order(excerpt: str) -> bool:
         position = 0
+        first_position = None
         for token in tokens:
-            position = excerpt.find(token, position)
-            if position < 0:
+            found = excerpt.find(token, position)
+            if found < 0:
                 return False
-            position += len(token)
-        return True
+            if first_position is None:
+                first_position = found
+            position = found + len(token)
+        matched = excerpt[first_position:position]
+        if re.search(r"불가능|불가|금지|아니|아닙|않|없|취소|중단|못", matched) and not re.search(
+            r"불가능|불가|금지|아니|아닙|않|없|취소|중단|못", value
+        ):
+            return False
+        after = excerpt[position : position + 20]
+        return not re.match(
+            r"\s*(?:은|는|을|를|이|가)?\s*(?:하지\s*마|하지\s*않|하지\s*못|할\s*수\s*없|하실\s*수\s*없|안\s*(?:되|됩)|불가|금지|아님|아닙|아니|않|없|취소|중단|못)",
+            after,
+        )
 
-    return bool(tokens) and any(
-        in_order(excerpt) and not re.search(r"아니|아닙|않|불가|금지|없|취소|중단|못\s*함", excerpt)
-        for excerpt in _excerpts(evidence, "summary")
-    )
+    return bool(tokens) and any(in_order(excerpt) for excerpt in _excerpts(evidence, "summary"))
 
 
 def _category_supported(category: str, summary: str, evidence: list[Evidence]) -> bool:
@@ -148,9 +213,23 @@ def _area_supported(value: str, evidence: list[Evidence]) -> bool:
     return False
 
 
-def _status_supported(summary: NoticeSummary, dates: list[DateEntry], notice: NoticeInput) -> bool:
+def _status_supported(
+    summary: NoticeSummary,
+    dates: list[DateEntry],
+    notice: NoticeInput,
+    evidence: list[Evidence],
+) -> bool:
     if summary.status in ("unknown", "check_required", "not_applicable"):
         return True
+    status_context = [
+        item.excerpt
+        for item in evidence
+        if item.field in ("status", "notice_update", "summary", "action", "dates")
+    ]
+    if summary.status == "cancelled":
+        return any(_explicit_cancellation(excerpt) for excerpt in status_context)
+    if summary.status == "ongoing_intake":
+        return any(_explicit_ongoing_intake(excerpt) for excerpt in status_context)
     kind = "application" if summary.category == "application" else "event"
     if summary.category not in ("application", "event"):
         return True
@@ -164,16 +243,42 @@ def _status_supported(summary: NoticeSummary, dates: list[DateEntry], notice: No
     relevant = [entry for entry in dates if entry.kind == kind]
     if not relevant:
         return False
-    today = notice.reference_datetime.astimezone(KST).date()
-    starts = [date.fromisoformat(entry.start_date) for entry in relevant if entry.start_date]
-    ends = [date.fromisoformat(entry.end_date) for entry in relevant if entry.end_date]
+    now = notice.reference_datetime.astimezone(KST)
+    starts = [
+        datetime.combine(
+            date.fromisoformat(entry.start_date),
+            time.fromisoformat(entry.start_time) if entry.start_time else time.min,
+            tzinfo=KST,
+        )
+        for entry in relevant
+        if entry.start_date
+    ]
+    ends = [
+        datetime.combine(
+            date.fromisoformat(entry.end_date),
+            time.fromisoformat(entry.end_time) if entry.end_time else time.max,
+            tzinfo=KST,
+        )
+        for entry in relevant
+        if entry.end_date
+    ]
     if summary.status == "upcoming":
-        return bool(starts) and today < min(starts)
+        return bool(starts) and now < min(starts)
     if summary.status in ("closed", "ended"):
-        return bool(ends) and today > max(ends)
+        return bool(ends) and now > max(ends)
     if summary.status in ("open", "ongoing"):
         return any(
-            date.fromisoformat(entry.start_date) < today < date.fromisoformat(entry.end_date)
+            datetime.combine(
+                date.fromisoformat(entry.start_date),
+                time.fromisoformat(entry.start_time) if entry.start_time else time.min,
+                tzinfo=KST,
+            )
+            <= now
+            <= datetime.combine(
+                date.fromisoformat(entry.end_date),
+                time.fromisoformat(entry.end_time) if entry.end_time else time.max,
+                tzinfo=KST,
+            )
             for entry in relevant
             if entry.start_date and entry.end_date
         )
@@ -308,6 +413,7 @@ def ground_summary(summary: NoticeSummary, notice: NoticeInput) -> NoticeSummary
     evidence = [
         item for item in summary.evidence if any(item.excerpt in source for source in sources)
     ]
+    context_evidence = _source_line_evidence(evidence, sources)
     data = summary.model_dump()
     changed = len(evidence) != len(summary.evidence)
 
@@ -318,8 +424,8 @@ def ground_summary(summary: NoticeSummary, notice: NoticeInput) -> NoticeSummary
         data["publisher"] = None
         changed = True
 
-    if not _summary_supported(data["summary"], evidence) or not _category_supported(
-        data["category"], data["summary"], evidence
+    if not _summary_supported(data["summary"], context_evidence) or not _category_supported(
+        data["category"], data["summary"], context_evidence
     ):
         data["summary"] = REVIEW_NOTE
         data["category"] = "unknown"
@@ -336,14 +442,20 @@ def ground_summary(summary: NoticeSummary, notice: NoticeInput) -> NoticeSummary
             supported = supported and _audience_supported(value, evidence, sources)
         if field == "location":
             supported = supported and _location_supported(value, evidence)
-        if field == "action" and any(
-            re.search(
-                r"(?:신청|접수|예약)(?:은|는|을|를)?\s*(?:받지\s*않|하지\s*마|하지\s*않|아님|아니|아닙|불가|금지|중단|종료|마감|안\s*됨)",
-                excerpt,
-            )
-            for excerpt in _excerpts(evidence, "action")
-        ):
-            supported = False
+        if field == "action":
+            if re.search(
+                r"(?:불가|금지|할\s*수\s*없|하지\s*못|하지\s*않|안\s*(?:되|됩))\s*$",
+                value,
+            ):
+                supported = False
+            for excerpt in _excerpts(context_evidence, "action"):
+                for match in re.finditer(re.escape(value), excerpt):
+                    after = excerpt[match.end() : match.end() + 20]
+                    if re.match(
+                        r"\s*(?:은|는|을|를|이|가)?\s*(?:받지\s*않|하지\s*마|하지\s*않|하지\s*못|할\s*수\s*없|하실\s*수\s*없|가능하지\s*않|아님|아니|아닙|불가|금지|중단|종료|마감|안\s*(?:되|됩))",
+                        after,
+                    ):
+                        supported = False
         if not supported:
             data[field] = None
             changed = True
@@ -386,9 +498,14 @@ def ground_summary(summary: NoticeSummary, notice: NoticeInput) -> NoticeSummary
             "cancelled": ("취소",),
         }[data["notice_update"]]
         if not any(
-            any(word in excerpt for word in update_words)
-            and not re.search(r"변경\s*없|취소\s*아님|연장\s*없", excerpt)
-            for excerpt in _excerpts(evidence, "notice_update")
+            (
+                _explicit_cancellation(excerpt)
+                if data["notice_update"] == "cancelled"
+                else any(word in excerpt for word in update_words)
+                and not NEGATED_UPDATE.search(excerpt)
+                and not OBSOLETE_CONTEXT.search(excerpt)
+            )
+            for excerpt in _excerpts(context_evidence, "notice_update")
         ):
             data["notice_update"] = "unknown"
             data["changed_details"] = None
@@ -407,7 +524,7 @@ def ground_summary(summary: NoticeSummary, notice: NoticeInput) -> NoticeSummary
     grounded_notes = []
     for note in data["notes"]:
         supported = False
-        for excerpt in _excerpts(evidence, "notes"):
+        for excerpt in _excerpts(context_evidence, "notes"):
             position = excerpt.find(note)
             if position < 0:
                 continue
@@ -434,30 +551,65 @@ def ground_summary(summary: NoticeSummary, notice: NoticeInput) -> NoticeSummary
             changed = True
     data["dates"] = [entry.model_dump() for entry in grounded_dates]
 
-    if not _status_supported(summary, grounded_dates, notice):
+    if not _status_supported(summary, grounded_dates, notice, context_evidence):
         data["status"] = "unknown"
         changed = True
 
-    if data["topics"]:
-        data["topics"] = []
+    grounded_topics = []
+    if data["category"] == "mixed":
+        topic_titles = {topic.title for topic in summary.topics}
+        for topic in summary.topics:
+            if any(
+                topic.title in clause
+                and not any(
+                    other_title in clause
+                    for other_title in topic_titles
+                    if other_title != topic.title
+                )
+                and _summary_supported(topic.summary, [Evidence(field="summary", excerpt=clause)])
+                and _category_supported(
+                    topic.category,
+                    topic.summary,
+                    [Evidence(field="summary", excerpt=clause)],
+                )
+                for excerpt in _excerpts(context_evidence, "topics")
+                for clause in re.split(r"[,，;；|]", excerpt)
+            ):
+                grounded_topics.append(topic)
+    if len(grounded_topics) != len(summary.topics):
         changed = True
-    if data["status_detail"] and not _literal_supported(
-        data["status_detail"], evidence, "status_detail"
+    data["topics"] = [topic.model_dump() for topic in grounded_topics]
+    if data["status_detail"] and not _summary_supported(
+        data["status_detail"],
+        [
+            Evidence(field="summary", excerpt=item.excerpt)
+            for item in context_evidence
+            if item.field == "status_detail"
+        ],
     ):
         data["status_detail"] = None
         changed = True
     if data["status"] == "unknown" and data["status_detail"] is not None:
         data["status_detail"] = None
         changed = True
-    if not data["dates"] and data["category"] in (
-        "application",
-        "event",
-        "living",
-        "obligation",
+    if (
+        not data["dates"]
+        and data["status"] not in ("cancelled", "ongoing_intake")
+        and data["category"]
+        in (
+            "application",
+            "event",
+            "living",
+            "obligation",
+        )
     ):
         if data["status"] != "unknown":
             changed = True
         data["status"] = "unknown"
+
+    if data["status"] == "unknown" and data["status_detail"] is not None:
+        data["status_detail"] = None
+        changed = True
 
     if data["category"] == "unknown":
         for field, empty in (
@@ -488,8 +640,11 @@ def ground_summary(summary: NoticeSummary, notice: NoticeInput) -> NoticeSummary
             "notes",
             "changed_details",
             "status_detail",
+            "status",
+            "notice_update",
+            "topics",
         )
-        if data[field] not in (None, [], REVIEW_NOTE)
+        if data[field] not in (None, [], REVIEW_NOTE, "unknown")
     }
     data["evidence"] = [
         item.model_dump()

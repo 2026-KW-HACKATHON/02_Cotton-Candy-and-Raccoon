@@ -166,7 +166,7 @@ def validate_evidence(
             raise SummaryValidationError("Unknown notice cannot claim actions or dates")
 
     required = set() if summary.category == "unknown" else {"summary"}
-    for field in ("applicable_area", "audience", "action", "location", "dates", "notes"):
+    for field in ("applicable_area", "audience", "action", "location", "dates", "notes", "topics"):
         if getattr(summary, field) not in (None, []):
             required.add(field)
     missing = required - {item.field for item in summary.evidence}

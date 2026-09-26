@@ -228,6 +228,7 @@ evidence의 각 항목은 다음 규칙을 따른다.
 - 근거를 확인할 수 없는 출력 값은 추측하지 않는다. 자료가 없으면 evidence는 []로 둔다.
 - 읽을 수 있는 원문이 있고 category가 unknown이 아니면 summary의 근거를 반드시 넣는다.
 - applicable_area, audience, action, location, dates, notes에 값이 있으면 해당 필드의 근거를 각각 넣는다.
+- topics에 사업별 항목이 있으면 해당 사업명과 핵심 내용이 함께 보이는 원문 구절을 field가 topics인 근거로 넣는다.
 - action에 온라인·방문·전화 등의 접수 방법을 적었다면 같은 근거 발췌에서 그 방법으로 신청·접수한다는 문구가 직접 확인되어야 한다.
 
 [9. 항목별 글자 수 제한]
