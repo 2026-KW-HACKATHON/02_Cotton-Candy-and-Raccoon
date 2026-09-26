@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "notice-pipeline"
+version = "0.1.0"
+description = "Wolgye notice summarization pipeline"
+requires-python = ">=3.12,<3.15"
+
+# Merge note for feature/be/4-collect-notices:
+# Keep the collector dependencies, `readme = "README.md"`, and the `pipeline`
+# console script alongside the Gemini dependencies and `summarize-notice` script
+# when resolving pyproject.toml. Then run `uv lock` to regenerate uv.lock;
+# do not concatenate the two lockfiles.
+dependencies = [
+    "google-genai>=2.25.0,<3",
+    "pydantic>=2.11.0,<3",
+]
+
+[project.scripts]
+summarize-notice = "pipeline.transform.summary_cli:main"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1,<1",
+    "pytest>=8.4.1,<10",
+    "ruff>=0.12.0,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pipeline"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "UP"]

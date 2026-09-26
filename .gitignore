@@ -4,6 +4,7 @@ node_modules/
 # Python
 __pycache__/
 *.py[cod]
+.venv/
 
 # local env files
 .env
