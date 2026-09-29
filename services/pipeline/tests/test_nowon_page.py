@@ -199,6 +199,7 @@ def test_page_http_failure_does_not_redirect_or_retry(status: int, retryable: bo
     with pytest.raises(NowonPageError) as caught:
         fetch_notice_page(notice(), settings(), transport=httpx.MockTransport(handler))
     assert caught.value.retryable is retryable
+    assert caught.value.rate_limited is (status == 429)
     assert len(calls) == 1
 
 

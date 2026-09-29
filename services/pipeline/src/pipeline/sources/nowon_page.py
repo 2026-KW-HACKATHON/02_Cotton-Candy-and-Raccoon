@@ -11,9 +11,12 @@ from pipeline.models import RawNotice
 class NowonPageError(ValueError):
     """A safe, user-facing failure while retrieving an original notice page."""
 
-    def __init__(self, message: str, *, retryable: bool = False) -> None:
+    def __init__(
+        self, message: str, *, retryable: bool = False, rate_limited: bool = False,
+    ) -> None:
         super().__init__(message)
         self.retryable = retryable
+        self.rate_limited = rate_limited
 
 
 class NowonPageMissing(NowonPageError):
@@ -66,6 +69,7 @@ def fetch_notice_page(
         raise NowonPageError(
             f"노원구 원문 페이지 HTTP 오류: {response.status_code}",
             retryable=response.status_code in (429, 500, 502, 503, 504),
+            rate_limited=response.status_code == 429,
         )
     if not response.headers.get("content-type", "").lower().startswith("text/html"):
         raise NowonPageError("원문 페이지가 HTML을 반환하지 않았습니다.")

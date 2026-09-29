@@ -1,6 +1,6 @@
 # Notice pipeline
 
-Python·uv 기반 공지 수집 파이프라인입니다. 노원구 `NowonNewsNoticeList` API의 공지와 공개 원문 페이지의 파일 정보를 수집·변환해 PostgreSQL에 함께 저장합니다. 월계1동 수집과 Actions 예약 수집은 후속 작업입니다.
+Python·uv 기반 공지 수집 파이프라인입니다. 노원구 `NowonNewsNoticeList` API와 월계1동 공식 게시판의 공지·파일 정보를 수집·변환해 PostgreSQL에 함께 저장합니다. GitHub Actions 예약 실행은 별도 활성화 전까지 DB에 쓰지 않습니다.
 
 ## 준비
 
@@ -43,6 +43,7 @@ API 인증이나 DB 연결을 시도하지 않으므로 성공해도 인증키 �
   비밀번호의 특수문자는 URI에 맞게 인코딩해야 합니다.
 - `SEOUL_API_KEY`: 기존 설정에서 비어 있지 않은 값을 요구합니다. `sample`도 설정 검사에서는 허용합니다. 노원구 조회 시 자동 대체 키로 사용하지 않습니다.
 - `NOWON_NOTICE_API_KEY`: `check-config --source nowon`, `collect-one --source nowon`, `collect --source nowon`에서 사용합니다. 설정 검사에는 DB 정보가 필요 없지만 **DB에 쓰는** 두 수집 명령에는 `DATABASE_URL`도 필요합니다. `SEOUL_API_KEY`는 이 명령들에 쓰지 않습니다. `sample`로 설정 형식 검사는 가능하지만 사용자 발급 키의 유효성은 실제 조회에서 별도 확인해야 합니다.
+- 월계1동 공식 게시판은 공개 HTML 페이지를 읽으므로 API 키가 필요 없습니다. `check-config --source wolgye1`은 타임아웃 형식만 확인하며, 저장 명령에는 `DATABASE_URL`이 필요합니다.
 - 타임아웃: 생략하면 5초/20초이며 유한한 양수만 허용합니다. `0`, 음수, `nan`, `inf`, 빈 값은 거부합니다.
   노원구 API 요청에서 연결·읽기 제한 시간으로 사용합니다.
 - 필수 변수의 앞뒤 공백은 제거합니다. 선택 타임아웃의 빈 값은 기본값으로 처리하지 않습니다.
@@ -65,6 +66,53 @@ python -m uv run pipeline collect-one --source nowon
 
 `check-config --source nowon`은 키의 존재와 타임아웃 형식만 검사합니다. 서버 인증과 DB 연결은 `collect-one`에서 실제로 확인합니다. **`collect-one`은 DB를 변경하므로 처음에는 전용 테스트 DB에서 실행하세요.** 명령은 `/xml/NowonNewsNoticeList/1/1/`의 첫 공지와 공개 원문 페이지를 요청하고, 수집·변환이 모두 성공한 뒤 공지와 파일 목록을 한 트랜잭션으로 저장합니다. 반환된 `notice_id`, 게시물 번호, 제목, 날짜, 파일 종류별 개수 등을 JSON으로 출력합니다. 본문 HTML과 파일명·파일 URL은 콘솔에 출력하지 않습니다. 원문 페이지 요청 또는 첨부 목록 파싱이 실패하면 파일 0건으로 간주하지 않고 DB 저장 전에 종료합니다.
 
+## 월계1동 공지 한 건 수집·저장
+
+RSS나 별도 API 키를 사용하지 않고 [월계1동 공식 게시판](https://www.nowon.kr/dong/user/bbs/BD_selectBbsList.do?q_bbsCode=1042&q_deptCode=1047)의 목록과 원문 상세 HTML을 직접 읽습니다. 목록의 요약 문구를 본문으로 사용하지 않으므로 RSS의 본문 길이 제한을 받지 않습니다. 실행하면 **DB에 저장**하므로 전용 테스트 DB에서 먼저 확인하세요.
+
+```powershell
+$env:DATABASE_URL = "postgresql://사용자:비밀번호@127.0.0.1:54322/postgres"
+python -m uv run pipeline check-config --source wolgye1
+python -m uv run pipeline collect-one --source wolgye1
+python -m uv run pipeline collect-one --source wolgye1 --post-sn 20260825100337962
+python -m uv run pipeline collect-one --source wolgye1 --post-sn 게시물번호 --page 게시판페이지
+```
+
+기본값은 목록 **첫 페이지**입니다. `--post-sn`이 없으면 첫 번째 월계1동 일반 공지를 선택합니다. 실패한 오래된 글은 게시판에서 현재 페이지를 찾은 뒤 `--post-sn`과 `--page`를 함께 지정해 한 건씩 수동 재시도할 수 있습니다. 지정한 페이지에 해당 번호가 없으면 실패하며 임의로 상세 URL을 만들지 않습니다. 목록에 다른 동의 고정 공지가 함께 표시되면 `dong_group=other`, `is_pinned=true`로 구분합니다. 같은 게시물이 고정·일반 행에 중복되면 하나로 합칩니다.
+
+`sources/wolgye1_board.py`는 상세 페이지의 게시물 번호·제목·부서·등록일·공공누리 유형과 전체 `.article-body` HTML을 읽습니다. `attachments/dong_html.py`는 본문 이미지·다운로드 링크와 별도 ‘첨부파일’ 목록의 URL, `q_fileSn`, `q_fileId`, 파일명을 추출하며 파일 본문은 다운로드하지 않습니다. `transform/dong.py`는 `category=dong`, 동 분류·고정 여부와 날짜·URL을 DB 형식으로 검증합니다. 상세 페이지가 없거나 게시물 번호 또는 첨부 영역을 확인할 수 없으면 저장하지 않습니다. 완전히 읽힌 한 건만 기존 `save_notice_with_files`로 공지·파일을 한 트랜잭션에 저장합니다.
+
+`collect-one`은 월계1동 전체 수집이 아니라 첫 페이지 한 건 확인용입니다. 원문 HTML의 외부 이미지·링크가 모두 다운로드 가능한지도 보장하지 않습니다.
+
+## 월계1동 공지 여러 건 수집·저장
+
+`collect --source wolgye1`은 목록에 표시된 총 페이지 수까지 순회한 뒤, 각 공지의 상세 본문과 첨부 정보를 확인하여 **공지 한 건씩 독립된 트랜잭션**으로 저장합니다. 월계1동 게시판의 고정 공지에는 다른 동 글도 섞이므로 `dong_group=other`, `is_pinned=true`로 구분합니다. 같은 `post_sn`이 여러 페이지나 고정·일반 행에 나타나면 한 건으로 합칩니다. 완전 수집에는 많은 HTTP 요청이 필요하므로 먼저 전용 DB에서 `--limit`으로 시험하세요.
+
+```powershell
+python -m uv run pipeline collect --source wolgye1 --limit 26
+python -m uv run pipeline collect --source wolgye1
+```
+
+`--limit`은 **고정 공지를 포함한 고유 게시물**의 처리 건수입니다. 제한에 걸리면 필요한 페이지까지만 읽고 `limited=true`, `complete=false`, 종료 코드 1을 반환합니다. `total_count`는 게시판에 표시된 일반 공지 총건수이고, `listed_count`에는 고정 공지가 추가될 수 있어 두 숫자가 같지 않아도 됩니다. `attempted_count`는 상세 처리 대상으로 선택한 수, `saved_count`는 실제 저장 성공 수입니다. `failed_pages`는 읽지 못한 목록 페이지 번호, `duplicate_count`는 페이지 사이 반복된 게시물 번호 수입니다.
+
+## 월계1동 하루 3회 운영 모드
+
+```powershell
+# 한국 시간 09:00·13:00
+python -m uv run pipeline collect --source wolgye1 --mode new
+
+# 한국 시간 17:00
+python -m uv run pipeline collect --source wolgye1 --mode refresh
+```
+
+`new`는 고정 공지를 제외한 최신 일반 공지 5건을 DB의 `(category, post_sn)`과 비교합니다. 기존 글은 상세 페이지를 요청하지 않고 새 글만 저장합니다. 5건이 모두 새 글이면 기존 저장 글을 만날 때까지 목록을 더 읽어 새 글을 저장합니다. 처음 실행해 저장된 월계1동 일반 공지가 하나도 없다면 전체 과거 목록을 긁지 않고 최신 5건만 초기 기준으로 저장합니다. `refresh`는 최신 일반 공지 5건과 목록 첫 페이지에 표시되는 **고정 공지 전체**의 상세 페이지를 다시 확인해 본문·파일 변경을 반영합니다. 고정 공지는 일반 공지 5건에 포함되지 않습니다. 연속 목록 페이지와 연속 상세 페이지 사이에는 1초를 기다리고, HTTP 429가 오면 곧바로 재시도하지 않고 남은 상세 요청도 멈춥니다. DB 스키마나 기존 공지의 공개 상태는 일괄 변경하지 않습니다.
+
+이 모드의 `complete=true`는 **해당 실행의 선택 범위**가 성공했다는 뜻이지 게시판의 모든 과거 공지를 저장했다는 뜻이 아닙니다. 실패 건은 결과 JSON에 `post_sn`과 이유 코드로 남지만, DB에 실패 대기열을 추가하지 않았으므로 다음 실행 전에 최신 5건 밖으로 밀린 글은 자동 재시도할 수 없습니다. 실행 로그를 보고 게시판에서 페이지를 확인한 다음 `collect-one --post-sn ... --page ...`로 수동 재시도해야 합니다. Actions 연결 및 활성화 방법은 아래를 참고하세요.
+
+각 목록 페이지의 표시 번호·총건수·행 수를 검사하고, 전체 순회 끝에 첫 페이지를 다시 읽어 목록 변동을 확인합니다. 일시적인 타임아웃·429·서버 오류는 최대 3회 시도합니다. 중간 페이지나 공지 한 건이 실패해도 다른 공지는 계속 처리하지만, 실패·누락·제한이 있으면 `complete=false`, 종료 코드 1입니다. 상세·첨부 확인이 실패한 공지는 새로 저장하거나 기존 파일을 빈 목록으로 교체하지 않습니다. **이번 명령은 기존 공지를 일괄 숨기지 않습니다.** 목록이 움직이며 생기는 모든 누락을 완전히 증명할 수 없으므로 결과의 `complete=true`도 원본 게시판의 절대적 전체성을 뜻하지 않습니다. 공개 상태 일괄 동기화·실패 목록의 영구 보관은 후속 작업입니다.
+
+## 노원구 첨부파일 처리
+
 `src/pipeline/attachments/nowon_html.py`의 `extract_files(notice)`는 API `DESCRIPTION`에서 본문 파일을, `extract_page_files(...)`는 원문 페이지의 ‘첨부파일’ 영역에서 별도 첨부를 읽습니다. `sources/nowon_page.py`가 원문 페이지 요청을 맡으며, 노원구 공지 URL·게시물 번호를 검증하고 HTTPS로 요청합니다. `q_fileSn`·`q_fileId`가 모두 있는 `<img src>`는 `inline_image`, 다운로드 `<a href>`는 `attachment`입니다. HTML 파서가 `&amp;`를 처리하고 상대 URL은 절대 URL로 바꿉니다. 같은 `(file_id, kind)`가 본문과 첨부 목록 양쪽에 있으면 원문 페이지의 첨부 정보를 우선하고, 같은 파일이 첨부와 본문 이미지 두 역할로 등장하면 각각 보존합니다. 파일 자체를 다운로드하거나 PDF·HWP 내용을 분석하지는 않습니다.
 
 API `LINK`가 `http://www.nowon.kr:80/...`이어도 본문 파일의 상대 URL은 검증된 HTTPS 공지 주소를 기준으로 결합합니다. 본문과 원문 페이지의 파일 링크가 절대 HTTP 주소 또는 `//www.nowon.kr:80` 주소여도 **노원구 공식 호스트**의 파일 URL만 `https://www.nowon.kr/...`로 정규화합니다. 다른 호스트의 HTTP 주소는 임의로 HTTPS로 바꾸지 않습니다. `notices.body_html`은 원본 HTML 그대로 보존하므로, 앱이 그 HTML을 직접 렌더링할 때의 URL 처리·실기기 이미지 표시 검증은 별도 작업입니다. 이미 저장된 파일 URL이 이번 정규화로 달라지는 기존 공지는 재수집 시 `is_modified=true`가 될 수 있으므로 초기 적재 전에 이 버전을 적용하는 편이 안전합니다.
@@ -80,9 +128,23 @@ python -m uv run pipeline collect --source nowon --limit 3
 python -m uv run pipeline collect --source nowon
 ```
 
+### 노원구 하루 3회 운영 모드
+
+```powershell
+# 한국 시간 09:00·13:00: 새 글만
+python -m uv run pipeline collect --source nowon --mode new
+
+# 한국 시간 17:00: 최근 글 수정도 확인
+python -m uv run pipeline collect --source nowon --mode refresh
+```
+
+DB에 노원구 공지가 하나도 없으면 **어느 모드든** API 최신 50건의 원문·파일 확인을 시도하고, 과거 전체를 자동 수집하지 않습니다. 이후 `new`는 API 최신 10건을 DB의 `(category, post_sn)`과 비교해 새 글만 원문 페이지로 들어갑니다. 10건이 모두 새 글이면 이미 저장된 글을 만날 때까지 API 목록을 확장합니다. `refresh`는 API 최신 10건의 원문·파일을 다시 확인해 실제 내용 변경을 반영합니다. 연속 API 페이지·상세 요청 사이에는 1초를 기다립니다. API 또는 원문 페이지에서 HTTP 429가 오면 즉시 재시도하지 않고 남은 상세 요청을 중단합니다.
+
+`complete=true`는 **그 실행에서 선택한 범위**가 모두 성공했다는 뜻이지 API 전체를 수집했다는 뜻이 아닙니다. 최초 50건 중 원문 페이지가 열리지 않는 글은 현재 정책에 따라 저장하지 않고 `page_missing/source_page_missing`으로 보고하므로 `saved_count`가 50보다 작을 수 있습니다. 실패 번호는 실행 JSON에만 남으며, DB에 영구 재시도 목록을 추가하지 않았습니다. 실패 글이 이후 최신 10건 밖으로 밀리면 자동 복구를 보장하지 못합니다. 이 모드에는 발급받은 `NOWON_NOTICE_API_KEY`와 `DATABASE_URL`이 필요하고 `sample` 키는 사용할 수 없습니다.
+
 결과 JSON의 `listing_complete`는 API 페이지 순회에서 발견 가능한 불일치가 없는지, `complete`는 처리 대상 공지가 모두 원문·첨부까지 확인되어 저장됐는지 나타냅니다. `saved_count`는 실제 저장된 공지 수입니다. `failures`에는 저장하지 못한 게시물 번호, 단계, 비밀값이 없는 `reason_code`가 들어갑니다. 건너뛴 공지가 한 건이라도 있으면 `complete=false`, 종료 코드 1입니다. 같은 명령을 다시 실행하면 `(category, post_sn)` 기준으로 중복 없이 갱신합니다.
 
-원문 페이지의 일시적 타임아웃·429·일부 서버 오류는 최대 3회 시도합니다. HTTP 200이어도 페이지가 `데이터가 존재하지 않습니다.`를 반환하면 `page_missing`으로 구분합니다. 다른 첨부 오류는 `attachment_section_missing`, `file_reference_conflict` 등의 이유 코드로 구분합니다. 실패한 공지는 신규 저장하지 않으며, 기존 공지의 본문·메타데이터·파일·공개 상태도 변경하지 않습니다. 재수집 시 원문을 확인할 수 있으면 정상 저장하고 `is_visible=true`로 복원합니다. 확인 실패를 파일 0건으로 해석하지 않습니다. `is_pinned`는 공개 여부와 무관합니다.
+원문 페이지의 일시적 타임아웃·일부 서버 오류는 최대 3회 시도합니다. 429는 즉시 반복 요청하지 않습니다. HTTP 200이어도 페이지가 `데이터가 존재하지 않습니다.`를 반환하면 `page_missing`으로 구분합니다. 다른 첨부 오류는 `attachment_section_missing`, `file_reference_conflict` 등의 이유 코드로 구분합니다. 실패한 공지는 신규 저장하지 않으며, 기존 공지의 본문·메타데이터·파일·공개 상태도 변경하지 않습니다. 재수집 시 원문을 확인할 수 있으면 정상 저장하고 `is_visible=true`로 복원합니다. 확인 실패를 파일 0건으로 해석하지 않습니다. `is_pinned`는 공개 여부와 무관합니다.
 
 기존 공지가 일시적으로 원문 확인에 실패해도 자동으로 숨기지 않으며, 원출처의 실제 삭제 여부를 판단하는 일괄 숨김 기능은 아직 없습니다. API 목록에서 같은 `post_sn`에 충돌이 있거나 변환·DB 저장 자체가 실패한 공지는 저장하지 않고 실행 JSON에만 보고합니다. 이 실패 목록의 영구 보관·알림·재처리는 후속 작업입니다. `complete=true`도 원본 게시판의 모든 글이 API에 있다는 절대적 보장은 아닙니다.
 
@@ -104,11 +166,29 @@ python -m uv run pipeline collect --source nowon
 
 실제 PostgreSQL 통합 테스트는 현재 **모든** 마이그레이션이 적용된 테스트용 DB에 `PIPELINE_TEST_DATABASE_URL`을 설정한 뒤 실행할 수 있습니다. 테스트는 고유한 게시물 번호를 사용합니다. 저장 계층 테스트는 종료 시 트랜잭션을 롤백하고 CLI·다건 통합 테스트는 확정된 해당 테스트 행만 삭제합니다. 이 변수를 설정하지 않으면 DB 통합 테스트가 건너뛰어지므로, 건너뛴 상태를 저장 검증 완료로 해석하면 안 됩니다. 원문 확인 공지만 저장하는 현재 정책은 임시 PostgreSQL 17.11에서 `370 passed, 0 skipped`로 검증했습니다. 실제 API 전체 수집 결과도 위와 같이 전용 DB에서 확인했습니다. 이전 부분 저장 실험 수치는 과거 정책 기록입니다.
 
-XML은 인증키를 사용하는 공공 API의 응답 형식이며 RSS가 아닙니다. 실제 JSON 응답은 긴 `ID`를 부동소수점 지수형으로 내보내 끝자리가 달라진 사례가 있어, 문자 그대로 보존되는 XML의 `ID`를 사용합니다. `post_sn`은 문자열로 유지합니다. 월계1동 및 다른 출처도 API와 인증 방식을 확인한 뒤 추가할 계획입니다. 현재 RSS 수집 코드는 없습니다. 월계1동에 적합한 API가 없다면 그 출처의 수집 방식은 따로 결정해야 합니다.
+XML은 인증키를 사용하는 노원구 공공 API의 응답 형식이며 RSS가 아닙니다. 실제 JSON 응답은 긴 `ID`를 부동소수점 지수형으로 내보내 끝자리가 달라진 사례가 있어, 문자 그대로 보존되는 XML의 `ID`를 사용합니다. `post_sn`은 문자열로 유지합니다. 월계1동은 위와 같이 공식 HTML 게시판의 한 건 수집을 지원하며 RSS 수집 코드는 없습니다.
 
 `collect-one`은 한 번만 요청하고 자동 재시도하지 않습니다. `collect`은 API 목록 페이지와 원문 페이지의 일시적 오류를 제한적으로 재시도합니다. 리다이렉트는 따라가지 않습니다. 전체 성공은 종료 코드 0, 설정 오류는 2, 부분 실패를 포함한 수집·변환·DB 오류는 1입니다. 공식 API 주소는 `http://openapi.seoul.go.kr:8088`이며 HTTP 연결이라 전송 구간이 암호화되지 않습니다. 현재 환경에서 해당 서버의 HTTPS 연결 성공은 확인되지 않았습니다. 요청 로그의 키 마스킹은 네트워크 구간 암호화를 대신하지 못합니다.
 
-변수의 정의·사용 위치는 `.env.example`, `src/pipeline/config.py`, `src/pipeline/sources/nowon_api.py`, `src/pipeline/cli.py`입니다. `.github/workflows/collect.yml`에는 아직 새 키·DB 연결 문자열·수집 명령이 연결되지 않았습니다. 예약 실행을 구현할 때 Repository Secret `NOWON_NOTICE_API_KEY`와 DB 연결 정보를 워크플로의 실행 단계 환경 변수로 전달해야 합니다. 실제 Secret 등록 여부는 확인하지 않았습니다.
+변수의 정의·사용 위치는 `.env.example`, `src/pipeline/config.py`, `src/pipeline/sources/nowon_api.py`, `src/pipeline/cli.py`입니다. GitHub Actions 연결은 아래와 같습니다. 실제 Secret 등록 여부는 확인하지 않았습니다.
+
+## GitHub Actions에서 공식 DB에 저장
+
+`.github/workflows/collect.yml`은 **GitHub Actions에서 실행될 때만** 수집 명령에 DB 접속 정보를 주입합니다. 이 파일을 편집하거나 로컬 테스트를 실행하는 것만으로 공식 DB에 접속하지 않습니다. 워크플로 파일이 기본 브랜치에 반영되어도 Repository Variable `PIPELINE_PRODUCTION_ENABLED`가 정확히 `true`가 아니면 수집 job 전체가 건너뛰어집니다. 준비와 팀 검토가 끝나기 전에는 이 변수를 만들지 않거나 `false`로 두세요.
+
+GitHub 저장소의 Settings → Secrets and variables → Actions에서 아래를 설정합니다.
+
+| 종류·이름 | 역할 |
+| --- | --- |
+| Secret `PIPELINE_DATABASE_URL` | **공식 Supabase DB의 직접 PostgreSQL 또는 pooler URI**. 워크플로에서만 `DATABASE_URL`로 전달합니다. Supabase의 HTTPS 프로젝트 URL이나 앱용 공개 키는 사용할 수 없습니다. |
+| Secret `NOWON_NOTICE_API_KEY` | 노원구 `NowonNewsNoticeList` API의 발급 키. 워크플로에서 같은 이름의 환경 변수로 전달합니다. |
+| Variable `PIPELINE_PRODUCTION_ENABLED` | `true`일 때만 수집 job 실행. 미설정·다른 값은 실행하지 않습니다. |
+
+기존 `SUPABASE_URL`·`SUPABASE_SECRET_KEY`는 이 Python 코드의 `psycopg` 연결에 사용되지 않습니다. DB 접속용 계정은 현재 `notices`·`notice_files` 쓰기 권한이 필요하며, 연결 문자열과 비밀번호를 코드·PR·채팅·로그에 붙여 넣지 마세요. 공식 DB 스키마에 필요한 마이그레이션이 이미 적용되었는지도 활성화 전에 확인해야 합니다.
+
+예약 시각은 한국 시간 **09:00·13:00 `new`, 17:00 `refresh`**입니다. GitHub 예약 워크플로는 기본 브랜치의 파일을 기준으로 실행됩니다. `workflow_dispatch`로 `new`/`refresh`를 수동 선택할 수도 있지만, 활성화 변수가 `true`이면 **수동 실행도 공식 DB에 실제 저장**합니다. 실행 전에 Secret 대상 DB를 다시 확인하세요. 두 출처는 각각 실행되며, 한 출처가 부분 실패해도 다른 출처를 시도합니다. 둘 중 하나라도 실패하거나 `complete=false`면 최종 Action은 실패로 표시되고, 각 출처의 결과 JSON에서 이유 코드를 확인할 수 있습니다. 이미 성공한 다른 공지의 DB 저장은 되돌리지 않습니다.
+
+현재 워크플로와 Secret은 **코드 연결만 준비한 상태**입니다. 이 작업에서는 `PIPELINE_PRODUCTION_ENABLED`를 켜거나 공식 DB에 접속·저장하지 않았습니다.
 
 ## 실행과 검증
 
@@ -117,6 +197,10 @@ python -m uv run python -m pipeline --help
 python -m uv run pipeline check-config
 python -m uv run pipeline check-config --source nowon
 python -m uv run pipeline collect-one --source nowon
+python -m uv run pipeline check-config --source wolgye1
+python -m uv run pipeline collect-one --source wolgye1
+python -m uv run pipeline collect --source wolgye1 --limit 26
+python -m uv run pipeline collect --source wolgye1
 python -m uv run pipeline collect --source nowon --limit 3
 python -m uv run ruff check
 python -m uv run pytest

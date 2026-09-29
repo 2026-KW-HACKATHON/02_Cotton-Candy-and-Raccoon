@@ -24,9 +24,12 @@ SAMPLE_LIMIT = 5
 class NowonSourceError(ValueError):
     """Safe user-facing error, with no raw response or request URL attached."""
 
-    def __init__(self, message: str, *, retryable: bool = False) -> None:
+    def __init__(
+        self, message: str, *, retryable: bool = False, rate_limited: bool = False,
+    ) -> None:
         super().__init__(message)
         self.retryable = retryable
+        self.rate_limited = rate_limited
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,6 +201,7 @@ def _fetch_xml(
         raise NowonSourceError(
             f"노원구 API HTTP 오류: {response.status_code}",
             retryable=response.status_code in (429, 500, 502, 503, 504),
+            rate_limited=response.status_code == 429,
         )
     return response.content
 
@@ -259,7 +263,7 @@ def collect_all(
                     settings, start_index=start, end_index=end, transport=transport,
                 )
             except NowonSourceError as exc:
-                if exc.retryable and attempt < 3:
+                if exc.retryable and not exc.rate_limited and attempt < 3:
                     sleep(0.2 * 2 ** (attempt - 1))
                     continue
                 pages.append(PageStatus(start, end, attempt, False))

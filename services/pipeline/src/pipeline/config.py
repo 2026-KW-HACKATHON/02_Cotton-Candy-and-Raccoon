@@ -127,3 +127,18 @@ class NowonSettings:
 
     def redact(self, message: str) -> str:
         return _redact(message, {self.nowon_notice_api_key})
+
+
+@dataclass(frozen=True, slots=True)
+class WolgyeSettings:
+    """Timeouts for the public Wolgye 1-dong HTML board; no API key is used."""
+
+    http_connect_timeout_seconds: float
+    http_read_timeout_seconds: float
+
+    @classmethod
+    def from_env(cls) -> Self:
+        return cls(
+            http_connect_timeout_seconds=_positive_float("HTTP_CONNECT_TIMEOUT_SECONDS", 5.0),
+            http_read_timeout_seconds=_positive_float("HTTP_READ_TIMEOUT_SECONDS", 20.0),
+        )

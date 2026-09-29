@@ -141,6 +141,7 @@ def test_http_failures_do_not_retry_or_redirect(status: int, retryable: bool) ->
     with pytest.raises(NowonSourceError) as caught:
         collect_one(settings(), transport=httpx.MockTransport(handler))
     assert caught.value.retryable is retryable
+    assert caught.value.rate_limited is (status == 429)
     assert str(status) in str(caught.value)
     assert 'private' not in str(caught.value)
     assert len(requests) == 1
