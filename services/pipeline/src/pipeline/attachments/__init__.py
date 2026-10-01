@@ -1,1 +1,1 @@
-"""Download and inspect notice attachments before extracting their text."""
+"""Extract notice file metadata and prepare downloaded attachments and images."""
