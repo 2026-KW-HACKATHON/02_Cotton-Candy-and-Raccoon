@@ -1,14 +1,32 @@
-# cron은 UTC 기준이다. "0 * * * *"는 매시 정각(UTC)에 실행된다.
-# 공개 저장소에 60일간 활동이 없으면 GitHub가 예약 실행을 자동으로 비활성화한다.
 name: Collect notices
 
 on:
+  # GitHub cron uses UTC. These correspond to 09:00, 13:00, 17:00 KST.
   schedule:
-    - cron: "0 * * * *"
+    - cron: "0 0 * * *"
+    - cron: "0 4 * * *"
+    - cron: "0 8 * * *"
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "Collection mode (new at 09/13, refresh at 17 KST)"
+        required: true
+        type: choice
+        options:
+          - new
+          - refresh
+
+permissions:
+  contents: read
+
+concurrency:
+  group: collect-notices-production
+  cancel-in-progress: false
 
 jobs:
   collect:
+    # This opt-in gate prevents writes when the workflow is first merged.
+    if: vars.PIPELINE_PRODUCTION_ENABLED == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -16,12 +34,51 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.1.0
-      - run: uv sync
-      - run: uv run python -m pipeline
+      - name: Validate required secrets
         env:
-          SEOUL_API_KEY: ${{ secrets.SEOUL_API_KEY }}
-          MOLEG_API_KEY: ${{ secrets.MOLEG_API_KEY }}
-          NIKL_API_KEY: ${{ secrets.NIKL_API_KEY }}
-          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+          NOWON_NOTICE_API_KEY: ${{ secrets.NOWON_NOTICE_API_KEY }}
+        run: |
+          if [ -z "$DATABASE_URL" ] || [ -z "$NOWON_NOTICE_API_KEY" ]; then
+            echo "Required pipeline secrets are missing." >&2
+            exit 1
+          fi
+      - run: uv sync --no-dev --frozen
+      - name: Select collection mode
+        id: mode
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          REQUESTED_MODE: ${{ inputs.mode }}
+        run: |
+          if [ "$EVENT_NAME" = "schedule" ] && [ "$SCHEDULE" = "0 8 * * *" ]; then
+            mode=refresh
+          elif [ "$EVENT_NAME" = "schedule" ]; then
+            mode=new
+          else
+            mode="$REQUESTED_MODE"
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+      - name: Collect Nowon notices
+        id: nowon
+        continue-on-error: true
+        env:
+          DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+          NOWON_NOTICE_API_KEY: ${{ secrets.NOWON_NOTICE_API_KEY }}
+        run: uv run --no-dev --frozen pipeline collect --source nowon --mode "${{ steps.mode.outputs.mode }}"
+      - name: Collect Wolgye 1-dong notices
+        id: wolgye1
+        continue-on-error: true
+        env:
+          DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+        run: uv run --no-dev --frozen pipeline collect --source wolgye1 --mode "${{ steps.mode.outputs.mode }}"
+      - name: Report collection failures
+        if: always()
+        env:
+          NOWON_OUTCOME: ${{ steps.nowon.outcome }}
+          WOLGYE1_OUTCOME: ${{ steps.wolgye1.outcome }}
+        run: |
+          if [ "$NOWON_OUTCOME" != "success" ] || [ "$WOLGYE1_OUTCOME" != "success" ]; then
+            echo "At least one source was incomplete. Review the per-source JSON above." >&2
+            exit 1
+          fi
