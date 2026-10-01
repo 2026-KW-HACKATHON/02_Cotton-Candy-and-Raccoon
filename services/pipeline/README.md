@@ -190,6 +190,88 @@ GitHub 저장소의 Settings → Secrets and variables → Actions에서 아래�
 
 현재 워크플로와 Secret은 **코드 연결만 준비한 상태**입니다. 이 작업에서는 `PIPELINE_PRODUCTION_ENABLED`를 켜거나 공식 DB에 접속·저장하지 않았습니다.
 
+## HWP 첨부 본문 텍스트 추출
+
+`attachments/hwp_text.py`의 `extract_hwp_text(file)`은 다운로드 계층의
+`DownloadedAttachment`를 받아 `HwpTextResult`를 반환합니다. `result.attachment`는
+기존 요약기의 `AttachmentText(name, text)` 계약에 맞으며 `NoticeInput.attachments`에
+전달할 수 있습니다. 이 함수 자체는 다운로드·DB 저장·Gemini 호출을 하지 않습니다.
+
+```python
+from pipeline.attachments.download import download_attachment
+from pipeline.attachments.hwp_text import extract_hwp_text
+
+downloaded = download_attachment(file_url, file_name)
+result = extract_hwp_text(downloaded)
+attachment_text = result.attachment
+extraction_warnings = result.warnings
+```
+
+일반 HWP 5.0/5.1의 압축·비압축 본문과 모든 구역의 문단·표 셀 텍스트를 읽습니다.
+미리보기 `PrvText`로 대체하거나 임의로 본문을 자르지 않습니다. 입력 파일은 최대
+50 MiB, DocInfo와 모든 본문 구역을 합친 압축 해제 결과는 기본 20 MiB로 제한합니다.
+제한을 넘거나 파일이 손상되면 `HwpExtractionError.reason_code`로 실패를 구분합니다.
+HWPX·구형 HWP·암호/배포용/변경 추적 문서는 현재 지원하지 않습니다.
+
+표의 행·열 배치는 보존하지 않으며 `table_layout_not_preserved` 경고를 반환합니다.
+문서 안 그림·수식 등의 비텍스트 객체는 추출하지 않고 발견 시
+`nontext_content_not_extracted`로 표시합니다. 특수 사설 영역 문자는 원문 그대로
+남기고 `private_use_characters`로 표시합니다. 따라서 텍스트 추출 성공을 문서 전체의
+시각 정보 확보로 해석하면 안 됩니다. 경고의 최종 요약 정책과 자동 처리 연동은 후속 작업입니다.
+
+실제 노원구 HWP 샘플에서 2,102자를 추출했습니다. 샘플은 표를 포함하므로 배치 손실
+경고가 있었습니다. 자동 검증은 원본 파일을 저장소에 넣지 않고 합성 OLE/HWP 파일로
+정상·손상·압축·구역 누락·용량 제한과 기존 입력 계약 연결을 확인합니다.
+
+본 제품은 한글과컴퓨터의 한글 문서 파일(.hwp) 공개 문서를 참고하여 개발하였습니다.
+
+## DB 원본에서 요약 입력 준비
+
+`storage/summary_source.py`의 `load_summary_source(conn, notice_id)`는 공개 공지 한 건과
+연결된 파일 목록을 한 SELECT로 읽습니다. 없는 공지·숨긴 공지는 `None`을 반환합니다.
+조회 함수는 저장·commit·연결 종료를 하지 않습니다. 읽기 트랜잭션은 다운로드 전에
+호출자가 종료하고, Gemini 준비에는 연결 없이 반환된 데이터를 사용하세요.
+
+```python
+from datetime import datetime, timezone
+
+import psycopg
+
+from pipeline.attachments.summary_bundle import prepare_summary_source
+from pipeline.storage.summary_source import load_summary_source
+
+# database_url과 notice_id는 호출자가 지정합니다. 공식 DB 쓰기는 없습니다.
+with psycopg.connect(database_url) as conn:
+    source = load_summary_source(conn, notice_id)
+if source is None:
+    raise ValueError("공개 공지를 찾을 수 없습니다.")
+prepared = prepare_summary_source(source, reference_datetime=datetime.now(timezone.utc))
+if prepared.failures:
+    # stage/item_id/reason_code를 기록하고 재처리. 원문·URL·비밀값은 로그에 넣지 않습니다.
+    raise ValueError("일부 자료 준비 실패")
+# 경고가 있으면 표 배치/내부 그림 등의 정보 손실 정책을 먼저 확인합니다.
+warnings = prepared.warnings
+input_blocks = prepared.to_gemini_input()  # 입력 생성만 함. 실제 API 호출 아님.
+```
+
+`attachments/summary_bundle.py`는 본문 HTML을 텍스트로 바꾸고 HTML의 이미지를
+다운로드하며, DB 파일 목록의 PDF는 원본 바이트, HWP는 `AttachmentText`, PNG/JPEG/WebP는
+이미지 바이트로 준비합니다. 식별자 없이 HTML에만 있는 월계1동 이미지도 기존 허용
+주소 규칙 안에서 처리합니다. 첨부와 본문에 같은 이미지가 있으면 바이트 해시로 한 번만
+입력합니다. 같은 파일 목록 URL은 한 번만 다운로드하지만 HTML 이미지와 파일 목록
+사이에 같은 URL이 있으면 두 번 요청할 수 있습니다. 최종 입력 중복은 제거합니다.
+
+지원하지 않는 파일·파일명 없는 일반 첨부·다운로드/추출 실패는 조용히 버리지 않고
+`failures`에 남깁니다. 실패가 있으면 `to_gemini_input()`은 거부합니다. HWP 제한은
+`warnings`로 별도 유지하며 `complete=True`는 경고 없음이나 모든 시각 정보 확보를
+뜻하지 않습니다. 자료가 전혀 없는 공지도 실패합니다.
+
+`max_input_bytes`는 기본 50 MiB의 로컬 안전 한도로, 다운로드 보관량과 최종 JSON 입력의
+텍스트·Base64 크기를 제한합니다. Gemini 모델별 실제 한도와 호출 비용을 보장하는 값은
+아닙니다. 반환 블록은 기존 `media_input.py` 계약을 사용하며, 현재 텍스트 전용 Gemini
+호출 함수·시각 자료 근거 검증 연결은 후속 작업입니다. 추출 텍스트·파일을 DB에 다시
+저장하거나 새 테이블·환경 변수·예약 실행을 추가하지 않았습니다.
+
 ## 실행과 검증
 
 ```powershell
