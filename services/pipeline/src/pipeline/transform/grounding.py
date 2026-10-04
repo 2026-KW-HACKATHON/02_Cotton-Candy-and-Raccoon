@@ -335,7 +335,9 @@ def _location_context_supported(value: str, context: tuple[str, int, int]) -> bo
     excerpt, start, end = context
     before, after = excerpt[:start], excerpt[end:]
     if re.match(
-        r"\s*(?:의\s*)?(?:공식\s*)?(?:홈페이지|누리집|웹사이트|인터넷|온라인)", after
+        r"\s*(?:(?:의|에서|에)\s*)?(?:공식\s*)?"
+        r"(?:홈페이지|누리집|웹사이트|인터넷|온라인)",
+        after,
     ) or re.match(
         r"\s*(?:[은는이가]\s*)?(?:(?:행사\s*)?장소(?:가)?\s*)?"
         r"(?:아님|아니|아닙|불가)"
@@ -347,11 +349,17 @@ def _location_context_supported(value: str, context: tuple[str, int, int]) -> bo
     is_named_place = value.endswith(
         ("공원", "센터", "회관", "도서관", "구청", "동주민센터", "역", "홀", "학교")
     )
+    local_after = re.split(r"[,，]", after, maxsplit=1)[0]
+    physical_event = re.match(
+        r"에서\s*(?:(?:행사|캠프|축제|공연)(?:가|를|는|이)?\s*)?"
+        r"(?:개최|진행|열림|열립니다)(?=하|함|되|된|[\s,，.]|$)",
+        after,
+    )
     return bool(
         (
             is_named_place
             and after.startswith(("에서", "에 위치", " 소재"))
-            and not re.search(r"온라인|인터넷|접수|신청|문의", excerpt)
+            and (physical_event or not re.search(r"온라인|인터넷|접수|신청|문의", local_after))
         )
         or re.search(r"(?:장소|위치|개최지|행사장)\s*[:：]?\s*$", _normalize_table_labels(before))
     )
@@ -378,8 +386,12 @@ _ACTION_ROLE_PATTERNS = tuple(
     for words in _ACTION_ROLE_WORDS
 )
 _ACTION_ACTOR = re.compile(
-    r"(?:참여자|참가자|신청자|접수자|선정자|당첨자|방문자|대상자|주민|학생|이용자)"
+    r"(?P<actor>참여자|참가자|신청자|접수자|선정자|당첨자|방문자|대상자|주민|학생|이용자|희망자)"
     r"(?:는|은|만|의)"
+)
+_ACTION_ROUTES = tuple(
+    re.compile(pattern)
+    for pattern in (r"온라인|인터넷|홈페이지|누리집", r"현장|방문", r"전화", r"우편", r"팩스")
 )
 _SHARED_ACTION_REQUIREMENT = re.compile(
     r"(?:모두|각각|둘\s*다|전부)\s*(?:[은는이가]\s*)?(?:의무|필수|반드시|해야)"
@@ -406,7 +418,14 @@ def _action_requirement_context(value: str, origin: tuple[str, int, int]) -> tup
         ),
         len(context),
     )
-    explicitly_optional = re.search(r"가능|선택|희망", context[own_left:own_right]) is not None
+    own_clause = context[own_left:own_right]
+    explicit_requirement = (
+        re.search(r"가능|선택|희망|의무|필수|반드시|해야", own_clause) is not None
+    )
+    own_actor = _ACTION_ACTOR.search(own_clause)
+    own_routes = {
+        index for index, pattern in enumerate(_ACTION_ROUTES) if pattern.search(own_clause)
+    }
     left, right = 0, len(context)
     edges = [0, *(match.end() for match in boundaries), len(context)]
     for index, match in enumerate(boundaries):
@@ -420,12 +439,21 @@ def _action_requirement_context(value: str, origin: tuple[str, int, int]) -> tup
         clause_roles = {
             role for role, pattern in enumerate(_ACTION_ROLE_PATTERNS) if pattern.search(clause)
         }
-        if clause_roles and roles.isdisjoint(clause_roles):
-            separate_actor = _ACTION_ACTOR.search(clause) is not None
+        other_actor = _ACTION_ACTOR.search(clause)
+        other_routes = {
+            index for index, pattern in enumerate(_ACTION_ROUTES) if pattern.search(clause)
+        }
+        different_actor = bool(
+            own_actor and other_actor and own_actor.group("actor") != other_actor.group("actor")
+        )
+        different_route = bool(own_routes and other_routes and own_routes.isdisjoint(other_routes))
+        different_scope = different_actor or different_route
+        if clause_roles and (roles.isdisjoint(clause_roles) or different_scope):
+            separate_actor = bool(other_actor and (own_actor is None or different_actor))
             # A shared instruction can govern a list of different actions. Only
-            # detach a clause with a distinct actor or an explicit choice here;
-            # '모두 필수' without another actor still governs the whole list.
-            if not (explicitly_optional or separate_actor) or (
+            # detach a clause with a distinct actor or its own requirement here.
+            # Repeating the same actor does not break '모두 필수' for a list.
+            if not (different_scope or explicit_requirement or separate_actor) or (
                 _SHARED_ACTION_REQUIREMENT.search(clause) and not separate_actor
             ):
                 continue
@@ -451,21 +479,26 @@ def _action_requirement_supported(
     def supported(origin: tuple[str, int, int]) -> bool:
         context, start, end = _action_requirement_context(value, origin)
         nearby = context[max(0, start - 8) : end + 8]
-        mandatory = any(
+        negated_obligation = re.search(
+            r"(?:의무|필수)(?:\s*(?:사항|조건|절차|요건))?\s*"
+            r"(?:[은는이가]\s*)?(?:아님|아니|아닙|없)"
+            r"|(?:해야|하여야)\s*(?:하는|할)?\s*(?:것)?\s*"
+            r"(?:[은는이가]\s*)?(?:아님|아니|아닙)"
+            r"|하지\s*않(?:아도|으셔도)|안\s*해도|할\s*필요(?:가|는)?\s*없",
+            context,
+        )
+        mandatory = not negated_obligation and any(
             not re.match(r"\s*(?:[은는이가]\s*)?(?:아님|아니|아닙|없)", context[match.end() :])
             for match in re.finditer(r"의무|반드시|필수|해야", context)
         )
         if requirement == "optional" and mandatory:
             return False
         if requirement == "required" and (
-            re.search(r"선택|희망|가능", nearby)
-            or re.search(
-                r"(?:의무|필수)\s*(?:[은는이가]\s*)?(?:아님|아니|아닙|없)"
-                r"|하지\s*않아도|안\s*해도",
-                context,
-            )
+            re.search(r"선택|희망|가능", nearby) or negated_obligation
         ):
             return False
+        if requirement == "optional" and negated_obligation:
+            return True
         return any(word in nearby for word in words)
 
     return any(

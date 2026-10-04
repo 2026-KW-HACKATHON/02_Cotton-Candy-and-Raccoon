@@ -754,6 +754,16 @@ def test_short_action_quote_retains_local_requirement_without_borrowing_or_negat
             "required",
             "required",
         ),
+        (
+            "온라인 접수는 필수, 신분증 지참은 필수 사항이 아닙니다",
+            "required",
+            "required",
+        ),
+        (
+            "온라인 접수는 필수, 신분증 지참은 필수 사항이 아닙니다",
+            "optional",
+            "unknown",
+        ),
     ],
 )
 def test_other_actions_obligations_do_not_change_this_action_requirement(
@@ -938,3 +948,139 @@ def test_a_short_quote_does_not_borrow_a_disconnected_previous_line_label(field:
     else:
         assert result.action == value
         assert result.action_requirement == "unknown"
+
+
+@pytest.mark.parametrize("quote_style", ["text_short", "text_full", "document_full"])
+@pytest.mark.parametrize(
+    ("source", "action", "requirement", "expected"),
+    [
+        ("희망자는 신청 가능, 당첨자는 반드시 등록", "신청", "optional", "optional"),
+        ("희망자는 신청 가능, 당첨자는 반드시 등록", "등록", "required", "required"),
+        (
+            "온라인 접수 가능, 현장 참여자는 반드시 방문 접수",
+            "온라인 접수",
+            "optional",
+            "optional",
+        ),
+        (
+            "신청자는 반드시 온라인 접수, 신청자는 반드시 등록",
+            "온라인 접수",
+            "required",
+            "required",
+        ),
+        (
+            "온라인 접수 필수, 현장 참여자는 방문 접수를 반드시 하지 않아도 됩니다",
+            "온라인 접수",
+            "required",
+            "required",
+        ),
+        (
+            "신청자는 온라인 신청, 신청자는 현장 등록을 모두 해야 합니다",
+            "온라인 신청",
+            "optional",
+            "unknown",
+        ),
+        (
+            "신청자는 현장 등록, 신청자는 온라인 신청을 모두 해야 합니다",
+            "현장 등록",
+            "optional",
+            "unknown",
+        ),
+    ],
+)
+def test_same_action_role_does_not_borrow_another_actor_or_route_requirement(
+    source: str, action: str, requirement: str, expected: str, quote_style: str
+) -> None:
+    notice = _notice(f"캠프 안내\n{source}" if quote_style != "document_full" else "캠프 안내")
+    quote: dict[str, Any] = {
+        "field": "action",
+        "excerpt": action if quote_style == "text_short" else source,
+    }
+    if quote_style == "document_full":
+        quote.update(source_type="document", source_id="media_1", page=1)
+    result = ground_summary(
+        _summary(
+            notice,
+            action=action,
+            action_requirement=requirement,
+            evidence=[{"field": "summary", "excerpt": "캠프 안내"}, quote],
+        ),
+        notice,
+        media_sources=(MediaSource("media_1", "document"),)
+        if quote_style == "document_full"
+        else (),
+    )
+    assert result.action == action
+    assert result.action_requirement == expected
+
+
+@pytest.mark.parametrize("quote_style", ["text_short", "text_full", "document_full"])
+@pytest.mark.parametrize(
+    "source",
+    [
+        "온라인 신청은 필수 사항이 아닙니다",
+        "온라인 신청을 반드시 해야 하는 것은 아닙니다",
+        "온라인 신청을 반드시 하지 않아도 됩니다",
+    ],
+)
+@pytest.mark.parametrize("requirement", ["optional", "required"])
+def test_negated_obligation_is_not_a_positive_requirement(
+    source: str, requirement: str, quote_style: str
+) -> None:
+    action = "온라인 신청"
+    notice = _notice(f"캠프 안내\n{source}" if quote_style != "document_full" else "캠프 안내")
+    quote: dict[str, Any] = {
+        "field": "action",
+        "excerpt": action if quote_style == "text_short" else source,
+    }
+    if quote_style == "document_full":
+        quote.update(source_type="document", source_id="media_1", page=1)
+    result = ground_summary(
+        _summary(
+            notice,
+            action=action,
+            action_requirement=requirement,
+            evidence=[{"field": "summary", "excerpt": "캠프 안내"}, quote],
+        ),
+        notice,
+        media_sources=(MediaSource("media_1", "document"),)
+        if quote_style == "document_full"
+        else (),
+    )
+    assert result.action == action
+    assert result.action_requirement == ("optional" if requirement == "optional" else "unknown")
+
+
+@pytest.mark.parametrize("quote_style", ["text_short", "text_full", "document_full"])
+@pytest.mark.parametrize(
+    ("source", "place", "keep"),
+    [
+        ("월계공원에서 개최하며 신청은 온라인 접수", "월계공원", True),
+        ("월계공원에서 행사 진행, 온라인 신청 가능", "월계공원", True),
+        ("온라인 신청 가능, 월계공원에서 행사 진행", "월계공원", True),
+        ("노원구청에서 온라인 신청", "노원구청", False),
+        ("장소: 노원구청에서 온라인 신청", "노원구청", False),
+    ],
+)
+def test_physical_venue_is_separate_from_an_online_application_route(
+    source: str, place: str, keep: bool, quote_style: str
+) -> None:
+    notice = _notice(f"캠프 안내\n{source}" if quote_style != "document_full" else "캠프 안내")
+    quote: dict[str, Any] = {
+        "field": "location",
+        "excerpt": place if quote_style == "text_short" else source,
+    }
+    if quote_style == "document_full":
+        quote.update(source_type="document", source_id="media_1", page=1)
+    result = ground_summary(
+        _summary(
+            notice,
+            location=place,
+            evidence=[{"field": "summary", "excerpt": "캠프 안내"}, quote],
+        ),
+        notice,
+        media_sources=(MediaSource("media_1", "document"),)
+        if quote_style == "document_full"
+        else (),
+    )
+    assert result.location == (place if keep else None)
