@@ -2,7 +2,106 @@
 
 Python·uv 기반 공지 수집 파이프라인입니다. 노원구 `NowonNewsNoticeList` API와 월계1동 공식 게시판의 공지·파일 정보를 수집·변환해 PostgreSQL에 함께 저장합니다. GitHub Actions 예약 실행은 별도 활성화 전까지 DB에 쓰지 않습니다.
 
-## 준비
+## #18 현재 구현 범위와 새 저장 계약
+
+노원구·월계1동 수집 모델·변환·저장은 새 마이그레이션까지 적용된 DB를 사용합니다. 공지 식별은 `(category, source_board, post_sn)`이고 source_board는 노원구 `1001`, 월계1동 게시판 `1042`입니다. 같은 게시판에 표시되는 다른 동 고정 공지도 source_board는 `1042`입니다.
+
+파일 식별은 `(notice_id, file_key, kind)`입니다. `FileRecord.file_key`는 읽기 전용 계산 속성으로, 실제 ID가 있으면 `id:<file_id>`, 없으면 `url:<저장할 정규화 URL의 UTF-8 SHA256>`을 반환합니다. `file_sn`·`file_id`는 출처에 없을 때 None/SQL NULL이며, 빈 값이나 가짜 UUID를 넣지 않습니다. URL 해시는 파일 내용 해시가 아닙니다.
+
+식별자가 없는 본문 이미지는 확인된 공식 `/webcontent/crosseditor/images/`의 PNG/JPEG/WebP 경로를 처리합니다. 장식 이미지·일반 링크는 제외합니다. 원문 첨부 목록의 PDF/HWP 등 직접 파일 경로는 식별자가 없어도 처리하지만, 불명확한 다운로드 endpoint나 식별자가 일부만 있는 URL은 여전히 오류입니다. 본문 HTML은 원본을 보존하고 파일 메타데이터 URL만 HTTPS·절대 URL로 정리합니다.
+
+서울시는 `SeoulNewsList` API 한 건 읽기와 **원문 확인·파일 메타데이터 추출·DB 형식 변환·공지/파일 원자적 저장**, 분야별 최초·정기 수집 CLI까지 구현했습니다. GitHub Actions 예약 실행은 아직 연결하지 않았습니다.
+
+### 서울시 분야별 최초·정기 수집 — 지정 DB에 실제 쓰기
+
+```powershell
+# services/pipeline에서 실행. 발급받은 SEOUL_NEWS_API_KEY와 DATABASE_URL 필요
+# 09시·13시용: 최신 목록에서 새 글만 원문 확인·저장
+.\.venv\Scripts\python.exe -m pipeline collect --source seoul --mode new
+# 17시용: 최신 글의 본문·파일 변경도 확인
+.\.venv\Scripts\python.exe -m pipeline collect --source seoul --mode refresh
+# 한 분야만 시험할 때: 환경 분야(25)
+.\.venv\Scripts\python.exe -m pipeline collect --source seoul --mode new --source-board 25
+```
+
+8개 분야를 각각 처리합니다. **해당 분야의 저장 이력이 없으면 두 모드 모두 최신 25건**, 이력이 있으면 기본 최신 10건이 대상입니다. 최초 8개 분야 합계는 최대 200건의 저장 시도이며, 성공 200건을 보장하는 것은 아닙니다. 평소 `new`는 최신 10건 중 아직 공개 상태로 저장되지 않은 글만 처리하고, `refresh`는 최신 10건을 모두 다시 확인합니다. 최신 10건이 모두 새 글이면 두 모드 모두 기존 공개 글을 만날 때까지 목록을 확장하여 추가 새 글도 처리합니다. 따라서 실제 처리 건수는 10건을 넘을 수 있습니다.
+
+페이지 경계는 2건 겹쳐 읽고 중복·내용 충돌·총건수 변동·무진행을 검사합니다. 여러 페이지를 읽으면 첫 글과 총건수를 재확인합니다. API가 고정 스냅샷을 제공하지 않아 같은 총건수의 내부 재정렬 누락까지 보장할 수는 없습니다. 원문 확인 실패는 저장하지 않으며 기존 본문·파일·공개 상태를 바꾸지 않습니다. 재확인에 성공한 숨김 글은 공개 상태로 복원하고, 목록에 없다고 일괄 숨기지는 않습니다.
+
+요청 전 1초 간격을 두고 일시적 오류는 최대 3회 시도합니다(재시도 대기 2·4초). HTTP 429는 반복하지 않고 남은 분야 요청도 중단합니다. 다른 공지·분야의 실패는 분리하여 가능한 공지를 계속 저장합니다. 공지·파일 저장은 공지별 트랜잭션입니다.
+
+JSON의 `boards`에는 분야별 `total_count`, `selected_count`, `saved_count`, `pages_read`, `initial_baseline`, `listing_complete`, `complete`, `failures`가 들어갑니다. `complete`는 DB 컬럼이 아니라 **이번 선택 범위의 성공 여부**입니다. 전체 과거 공지 적재 완료를 뜻하지 않습니다. 성공은 종료 코드 0, 부분 수집/저장 실패는 1, 설정·옵션 오류는 2입니다. 이 명령에는 `--mode`가 필수이고 `--limit`은 지원하지 않습니다. sample 키는 5건 제한 때문에 이 수집 모드에 사용할 수 없습니다.
+
+최초 25건 중 일부만 저장되면 다음 실행은 저장 이력이 있는 분야로 판단합니다. 실패 글이 최신 10건 밖에 있으면 자동 재시도를 보장하지 못합니다. 실패 JSON 보관·영구 재처리 대기열은 후속 작업입니다. 최신 10건보다 오래된 글의 수정도 자동 확인 대상이 아닙니다. CLI는 현재 시간을 판단하거나 스스로 예약 실행하지 않습니다. **Actions·공식 DB 실행은 별도 승인 및 연결 전까지 하지 않습니다.**
+
+검증(2026-10-04): 원문 구조 변형 보완 후 임시 PostgreSQL에서 전체 pytest **699 passed, 0 skipped**, Ruff 통과. 실제 sample API는 8개 분야에서 각 5건(총40건)을 읽어 분야 식별을 확인했습니다. 발급 키로 분야별 최초25건을 시도하여200건 중194건을 저장했고, 반복new에서 미저장1건을 복구하여공지195·파일430행이 됐습니다. refresh는 분야별10건, 총80건 중78건 성공했습니다. DB 비교에서 ID·created_at·행 수 유지, updated_at78건 갱신, 동일 내용에 대한 수정표시0·중복0·고아0을 확인했습니다. 리다이렉트 실패5건은 아직 최초 범위에서 미저장이며 그중 최신10건 안2건이 refresh에서도 실패했습니다. 전체성공·전체역사 데이터 적재로 해석하지 않습니다.
+
+### 서울시 공지 한 건 저장 — 지정 DB에 실제 쓰기
+
+```powershell
+# SEOUL_NEWS_API_KEY와 새 마이그레이션이 적용된 DATABASE_URL이 필요합니다.
+# 저장 대상이 테스트 DB인지 먼저 확인하세요. 공식 DB에 임의 실행하지 마세요.
+.\.venv\Scripts\python.exe -m pipeline collect-one --source seoul --source-board 24 --index 2
+```
+
+`--source-board`는 분야별 BLOG_ID입니다(21 교통, 22 안전, 23 주택, 24 경제, 25 환경, 26 문화, 27 복지, 30 행정). 생략하면 전체 분야 목록을 조회합니다. `--index`는 선택한 목록 안에서 1부터 시작하는 **목록 순번**이고 POST_ID가 아닙니다. 기본 1, sample 키는 1~5만 허용합니다. 목록은 변동될 수 있어 같은 순번이 항상 같은 글을 뜻하지 않습니다. 실제 응답의 post_sn으로 중복 저장 여부를 판단합니다. 임의 POST_ID 조회 지원을 가정하지 않습니다.
+
+API·원문·파일 추출·변환이 성공한 뒤에만 DB 연결을 열고 기존 `save_notice_with_files()` 트랜잭션을 사용합니다. 성공은 stored=true·notice_id와 종료 코드 0, 수집/저장 오류는 1, 설정/CLI 옵션 오류는 2입니다. 원문 확인 실패를 빈 파일 목록으로 저장하지 않습니다. DB 오류 메시지에는 접속 URI나 원문 SQL 오류를 출력하지 않습니다. SQL 스키마·Actions·Gemini 코드는 이번 연결에서 바꾸지 않았습니다.
+
+실제 sample 검증(2026-10-04): 경제 board24/POST_ID574744, 본문5625자/PDF1건을 두 번 저장하여 공지1행·파일1행·is_modified=false·고아0건을 확인했습니다. PDF·HWP·HWPX의 HEAD 응답도 200과 파일 Content-Type을 확인했습니다. HEAD는 파일 본문 판독/다운로드 검증이 아닙니다. 임시 DB 데이터는 검증 후 삭제했습니다.
+
+### 서울시 저장 전 결과 확인 — 읽기 전용
+
+```powershell
+.\.venv\Scripts\python.exe -m pipeline inspect-prepared --source seoul
+.\.venv\Scripts\python.exe -m pipeline inspect-prepared --source seoul --source-board 24 --index 2
+```
+
+`SEOUL_NEWS_API_KEY`만 필요합니다. API 한 건 → HTTPS 원문 확인 → 파일 참조 추출 → NoticeRecord·FileRecord 변환 결과를 출력합니다. DB 연결·파일 다운로드·Gemini 호출은 하지 않으며 `stored=false`입니다. 성공은 종료 코드 0, 설정 오류 2, 수집·변환 오류 1입니다.
+
+원문 URL은 확인한 BLOG_ID별 공식 주소와 POST_ID로 구성하고 canonical 주소와 대조합니다. 만족도 평가 폼 `#frmRating`이 있으면 blog_id/post_id가 모두 일치해야 합니다. 공식 페이지 중 평가 폼이 없는 변형은 **canonical과 `og:url`이 모두 요청한 글의 HTTPS 주소와 정확히 일치**할 때만 허용합니다. 기존 폼의 잘못된 번호를 대체 정보로 덮어 허용하지 않습니다. `wp본문시작`·`wp본문끝` 사이의 HTML을 사용하여 공유 버튼·만족도 조사·페이지 장식을 제외합니다. 본문 영역과 경계 검증은 그대로 유지합니다. 서울시 변환에는 API POST_CONTENT나 짧은 POST_EXCERPT 대신 이 **확인된 원문 글 영역**을 사용합니다. API 원본 모델은 변경하지 않습니다. UI 렌더링용 HTML 안전화는 별도 작업입니다.
+
+서울시 정기 수집의 원문 실패 `reason_code`는 `page_timeout`, `page_connection_failed`, `page_redirect`, `page_not_found`(404/410), `page_http_<상태코드>`, `rate_limited`, `page_content_type_invalid`, `page_identity_mismatch`, `page_body_invalid`, `page_license_invalid`로 구분합니다. 리다이렉트를 임의로 따라가거나 HTTP로 내려가지 않습니다. 실패 원문을 확인된 공지로 저장하지 않으며 파일 목록·공개 상태도 변경하지 않습니다. 모든 원문 실패를 삭제된 글로 해석하면 안 됩니다.
+
+공공누리는 원문 담당 정보 영역의 공식 KOGL 링크에서 글별로 읽습니다. 표시가 없으면 None이며 제4유형으로 추정하지 않습니다. 충돌·미지원 유형·원문 식별/본문 경계 확인 실패는 오류입니다. 등록일은 API PUBLISH_DATE의 시각을 검증한 뒤 date로 변환하며, category=seoul, dong_group=None, is_pinned=False입니다.
+
+본문의 img[src]와 PDF/HWP/HWPX 등 직접 파일 링크를 구분합니다. 상대·프로토콜 상대 주소를 절대 주소로 바꾸고 서울시 공식 파일 호스트만 HTTPS로 정규화합니다. 외부 HTTP 파일은 HTTPS 지원을 추정하지 않습니다. 동일 URL+kind는 중복 제거하며 같은 URL의 첨부·본문 이미지 역할은 둘 다 유지합니다. 서울시 UUID를 만들어 넣지 않고 file_sn/file_id=None, file_key=url:SHA256을 사용합니다. 파일명은 URL 경로의 마지막 부분을 디코딩해 사용합니다. 일반 신청 링크·썸네일·srcset 대체 이미지·본문 밖 장식과 본문 안에 섞인 공식 WordPress theme 아이콘은 파일 목록에 넣지 않습니다.
+
+현재는 본문에 확인되는 직접 파일 참조만 지원합니다. 별도 첨부 영역·확장자 없는 다운로드 endpoint·JavaScript 링크의 전수 지원을 보장하지 않습니다. download 속성이 있는데 파일 유형을 판별하지 못하면 오류로 보고합니다. 파일 URL 해시는 다운로드 성공이나 내용 동일성을 증명하지 않습니다.
+
+### API 한 건 확인 — DB에 저장하지 않음
+
+새 환경 변수 `SEOUL_NEWS_API_KEY`는 서울시 `SeoulNewsList` 전용입니다. `config.py`의 `SeoulNewsSettings.from_env()`에서 읽고 `sources/seoul_api.py`가 사용합니다. 기존 `SEOUL_API_KEY`와 `NOWON_NOTICE_API_KEY`는 유지하며 서로 자동 대체하지 않습니다. API 확인에는 DATABASE_URL이 필요하지 않습니다.
+
+services/pipeline 폴더에서 다음 명령을 실행합니다.
+
+```powershell
+.\.venv\Scripts\python.exe -m pipeline check-config --source seoul
+.\.venv\Scripts\python.exe -m pipeline inspect-one --source seoul
+.\.venv\Scripts\python.exe -m pipeline inspect-one --source nowon
+```
+
+`inspect-one`은 각 API의 1/1 XML 응답을 읽고 식별 정보·제목·등록일·본문 길이와 `stored=false`를 출력합니다. DB 연결·원문 페이지 요청·파일 다운로드·Gemini 호출은 하지 않습니다. 성공은 종료 코드 0, 설정 오류 2, 수집 오류 1입니다. `check-config`는 형식만 검사하며 실제 인증을 확인하지 않습니다.
+
+서울시 원본 `RawSeoulNotice`는 BLOG_ID→source_board, POST_ID→post_sn, POST_TITLE→title, PUBLISH_DATE→registered_on, MODIFY_DATE→modified_on, MANAGER_DEPT→department를 보존합니다. POST_CONTENT를 body_html로 쓰고 POST_EXCERPT는 별도로 보존하며 빈 본문을 미리보기로 대체하지 않습니다. 날짜는 이 단계에서 원본 문자열입니다. API에 없는 원문 URL·공공누리 값은 만들지 않고 이름·전화번호는 모델에 포함하지 않습니다.
+
+발급 키를 로컬 파일에 쓰지 않고 PowerShell에서 입력할 수 있습니다. 키를 출력하거나 채팅에 보내지 마세요.
+
+```powershell
+$seoulSecret = Read-Host '서울시 새소식 API 키' -AsSecureString
+$env:SEOUL_NEWS_API_KEY = [System.Net.NetworkCredential]::new('', $seoulSecret).Password
+.\.venv\Scripts\python.exe -m pipeline inspect-one --source seoul
+
+$nowonSecret = Read-Host '노원구 공지 API 키' -AsSecureString
+$env:NOWON_NOTICE_API_KEY = [System.Net.NetworkCredential]::new('', $nowonSecret).Password
+.\.venv\Scripts\python.exe -m pipeline inspect-one --source nowon
+```
+
+종료 후 필요하면 `Remove-Item Env:SEOUL_NEWS_API_KEY, Env:NOWON_NOTICE_API_KEY -ErrorAction SilentlyContinue`와 `Remove-Variable seoulSecret, nowonSecret -ErrorAction SilentlyContinue`로 현재 셸에서 해제합니다. 환경 변수는 현재 PowerShell과 자식 프로세스의 메모리에 전달되며 이 명령은 파일에 저장하지 않습니다. 이는 메모리에서의 완전한 비밀 삭제를 보장하는 기능은 아닙니다.
+
+공식 API endpoint는 HTTP이며 키가 URL 경로로 전달됩니다. 로그는 키를 마스킹하지만 전송 구간은 암호화되지 않습니다. sample 검증 성공을 개인 키의 인증·승인 검증으로 해석하지 않습니다. 데이터 출처: [서울시 8개 분야의 새소식 정보](https://data.seoul.go.kr/dataList/OA-12605/A/1/datasetView.do).
+
+## 환경 준비
 
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - 마이그레이션이 적용된 PostgreSQL DB (`collect-one`·`collect` 저장 시 필요)
@@ -105,7 +204,7 @@ python -m uv run pipeline collect --source wolgye1 --mode new
 python -m uv run pipeline collect --source wolgye1 --mode refresh
 ```
 
-`new`는 고정 공지를 제외한 최신 일반 공지 5건을 DB의 `(category, post_sn)`과 비교합니다. 기존 글은 상세 페이지를 요청하지 않고 새 글만 저장합니다. 5건이 모두 새 글이면 기존 저장 글을 만날 때까지 목록을 더 읽어 새 글을 저장합니다. 처음 실행해 저장된 월계1동 일반 공지가 하나도 없다면 전체 과거 목록을 긁지 않고 최신 5건만 초기 기준으로 저장합니다. `refresh`는 최신 일반 공지 5건과 목록 첫 페이지에 표시되는 **고정 공지 전체**의 상세 페이지를 다시 확인해 본문·파일 변경을 반영합니다. 고정 공지는 일반 공지 5건에 포함되지 않습니다. 연속 목록 페이지와 연속 상세 페이지 사이에는 1초를 기다리고, HTTP 429가 오면 곧바로 재시도하지 않고 남은 상세 요청도 멈춥니다. DB 스키마나 기존 공지의 공개 상태는 일괄 변경하지 않습니다.
+`new`는 고정 공지를 제외한 최신 일반 공지 5건을 DB의 `(category, source_board, post_sn)`과 비교합니다. 기존 글은 상세 페이지를 요청하지 않고 새 글만 저장합니다. 5건이 모두 새 글이면 기존 저장 글을 만날 때까지 목록을 더 읽어 새 글을 저장합니다. 처음 실행해 저장된 월계1동 일반 공지가 하나도 없다면 전체 과거 목록을 긁지 않고 최신 5건만 초기 기준으로 저장합니다. `refresh`는 최신 일반 공지 5건과 목록 첫 페이지에 표시되는 **고정 공지 전체**의 상세 페이지를 다시 확인해 본문·파일 변경을 반영합니다. 고정 공지는 일반 공지 5건에 포함되지 않습니다. 연속 목록 페이지와 연속 상세 페이지 사이에는 1초를 기다리고, HTTP 429가 오면 곧바로 재시도하지 않고 남은 상세 요청도 멈춥니다. DB 스키마나 기존 공지의 공개 상태는 일괄 변경하지 않습니다.
 
 이 모드의 `complete=true`는 **해당 실행의 선택 범위**가 성공했다는 뜻이지 게시판의 모든 과거 공지를 저장했다는 뜻이 아닙니다. 실패 건은 결과 JSON에 `post_sn`과 이유 코드로 남지만, DB에 실패 대기열을 추가하지 않았으므로 다음 실행 전에 최신 5건 밖으로 밀린 글은 자동 재시도할 수 없습니다. 실행 로그를 보고 게시판에서 페이지를 확인한 다음 `collect-one --post-sn ... --page ...`로 수동 재시도해야 합니다. Actions 연결 및 활성화 방법은 아래를 참고하세요.
 
@@ -113,11 +212,11 @@ python -m uv run pipeline collect --source wolgye1 --mode refresh
 
 ## 노원구 첨부파일 처리
 
-`src/pipeline/attachments/nowon_html.py`의 `extract_files(notice)`는 API `DESCRIPTION`에서 본문 파일을, `extract_page_files(...)`는 원문 페이지의 ‘첨부파일’ 영역에서 별도 첨부를 읽습니다. `sources/nowon_page.py`가 원문 페이지 요청을 맡으며, 노원구 공지 URL·게시물 번호를 검증하고 HTTPS로 요청합니다. `q_fileSn`·`q_fileId`가 모두 있는 `<img src>`는 `inline_image`, 다운로드 `<a href>`는 `attachment`입니다. HTML 파서가 `&amp;`를 처리하고 상대 URL은 절대 URL로 바꿉니다. 같은 `(file_id, kind)`가 본문과 첨부 목록 양쪽에 있으면 원문 페이지의 첨부 정보를 우선하고, 같은 파일이 첨부와 본문 이미지 두 역할로 등장하면 각각 보존합니다. 파일 자체를 다운로드하거나 PDF·HWP 내용을 분석하지는 않습니다.
+`src/pipeline/attachments/nowon_html.py`의 `extract_files(notice)`는 API `DESCRIPTION`에서 본문 파일을, `extract_page_files(...)`는 원문 페이지의 ‘첨부파일’ 영역에서 별도 첨부를 읽습니다. `sources/nowon_page.py`가 원문 페이지 요청을 맡으며, 노원구 공지 URL·게시물 번호를 검증하고 HTTPS로 요청합니다. `q_fileSn`·`q_fileId`가 모두 있는 `<img src>`는 `inline_image`, 다운로드 `<a href>`는 `attachment`입니다. HTML 파서가 `&amp;`를 처리하고 상대 URL은 절대 URL로 바꿉니다. 같은 `(file_key, kind)`가 본문과 첨부 목록 양쪽에 있으면 원문 페이지의 첨부 정보를 우선하고, 같은 파일이 첨부와 본문 이미지 두 역할로 등장하면 각각 보존합니다. 파일 자체를 다운로드하거나 PDF·HWP 내용을 분석하지는 않습니다.
 
 API `LINK`가 `http://www.nowon.kr:80/...`이어도 본문 파일의 상대 URL은 검증된 HTTPS 공지 주소를 기준으로 결합합니다. 본문과 원문 페이지의 파일 링크가 절대 HTTP 주소 또는 `//www.nowon.kr:80` 주소여도 **노원구 공식 호스트**의 파일 URL만 `https://www.nowon.kr/...`로 정규화합니다. 다른 호스트의 HTTP 주소는 임의로 HTTPS로 바꾸지 않습니다. `notices.body_html`은 원본 HTML 그대로 보존하므로, 앱이 그 HTML을 직접 렌더링할 때의 URL 처리·실기기 이미지 표시 검증은 별도 작업입니다. 이미 저장된 파일 URL이 이번 정규화로 달라지는 기존 공지는 재수집 시 `is_modified=true`가 될 수 있으므로 초기 적재 전에 이 버전을 적용하는 편이 안전합니다.
 
-DB 마이그레이션의 파일 고유 제약은 `(notice_id, file_id, kind)`입니다. `file_sn`은 원본 메타데이터로 보존하며 같은 번호의 서로 다른 파일을 허용합니다. 한 입력에서 같은 `(file_id, kind)`가 서로 다른 URL로 반복되면 임의로 하나를 고르지 않고 수집 실패로 처리합니다. 전체 수집이 성공했을 때만 파일 목록을 DB에 전달합니다.
+DB 마이그레이션의 파일 고유 제약은 `(notice_id, file_key, kind)`입니다. `file_sn`은 원본 메타데이터로 보존하며 같은 번호의 서로 다른 파일을 허용합니다. 한 입력에서 같은 `(file_key, kind)`가 서로 다른 URL로 반복되면 임의로 하나를 고르지 않고 수집 실패로 처리합니다. 전체 수집이 성공했을 때만 파일 목록을 DB에 전달합니다.
 
 ## 노원구 공지 여러 건 수집·저장
 
@@ -138,11 +237,11 @@ python -m uv run pipeline collect --source nowon --mode new
 python -m uv run pipeline collect --source nowon --mode refresh
 ```
 
-DB에 노원구 공지가 하나도 없으면 **어느 모드든** API 최신 50건의 원문·파일 확인을 시도하고, 과거 전체를 자동 수집하지 않습니다. 이후 `new`는 API 최신 10건을 DB의 `(category, post_sn)`과 비교해 새 글만 원문 페이지로 들어갑니다. 10건이 모두 새 글이면 이미 저장된 글을 만날 때까지 API 목록을 확장합니다. `refresh`는 API 최신 10건의 원문·파일을 다시 확인해 실제 내용 변경을 반영합니다. 연속 API 페이지·상세 요청 사이에는 1초를 기다립니다. API 또는 원문 페이지에서 HTTP 429가 오면 즉시 재시도하지 않고 남은 상세 요청을 중단합니다.
+DB에 노원구 공지가 하나도 없으면 **어느 모드든** API 최신 50건의 원문·파일 확인을 시도하고, 과거 전체를 자동 수집하지 않습니다. 이후 `new`는 API 최신 10건을 DB의 `(category, source_board, post_sn)`과 비교해 새 글만 원문 페이지로 들어갑니다. 10건이 모두 새 글이면 이미 저장된 글을 만날 때까지 API 목록을 확장합니다. `refresh`는 API 최신 10건의 원문·파일을 다시 확인해 실제 내용 변경을 반영합니다. 연속 API 페이지·상세 요청 사이에는 1초를 기다립니다. API 또는 원문 페이지에서 HTTP 429가 오면 즉시 재시도하지 않고 남은 상세 요청을 중단합니다.
 
 `complete=true`는 **그 실행에서 선택한 범위**가 모두 성공했다는 뜻이지 API 전체를 수집했다는 뜻이 아닙니다. 최초 50건 중 원문 페이지가 열리지 않는 글은 현재 정책에 따라 저장하지 않고 `page_missing/source_page_missing`으로 보고하므로 `saved_count`가 50보다 작을 수 있습니다. 실패 번호는 실행 JSON에만 남으며, DB에 영구 재시도 목록을 추가하지 않았습니다. 실패 글이 이후 최신 10건 밖으로 밀리면 자동 복구를 보장하지 못합니다. 이 모드에는 발급받은 `NOWON_NOTICE_API_KEY`와 `DATABASE_URL`이 필요하고 `sample` 키는 사용할 수 없습니다.
 
-결과 JSON의 `listing_complete`는 API 페이지 순회에서 발견 가능한 불일치가 없는지, `complete`는 처리 대상 공지가 모두 원문·첨부까지 확인되어 저장됐는지 나타냅니다. `saved_count`는 실제 저장된 공지 수입니다. `failures`에는 저장하지 못한 게시물 번호, 단계, 비밀값이 없는 `reason_code`가 들어갑니다. 건너뛴 공지가 한 건이라도 있으면 `complete=false`, 종료 코드 1입니다. 같은 명령을 다시 실행하면 `(category, post_sn)` 기준으로 중복 없이 갱신합니다.
+결과 JSON의 `listing_complete`는 API 페이지 순회에서 발견 가능한 불일치가 없는지, `complete`는 처리 대상 공지가 모두 원문·첨부까지 확인되어 저장됐는지 나타냅니다. `saved_count`는 실제 저장된 공지 수입니다. `failures`에는 저장하지 못한 게시물 번호, 단계, 비밀값이 없는 `reason_code`가 들어갑니다. 건너뛴 공지가 한 건이라도 있으면 `complete=false`, 종료 코드 1입니다. 같은 명령을 다시 실행하면 `(category, source_board, post_sn)` 기준으로 중복 없이 갱신합니다.
 
 원문 페이지의 일시적 타임아웃·일부 서버 오류는 최대 3회 시도합니다. 429는 즉시 반복 요청하지 않습니다. HTTP 200이어도 페이지가 `데이터가 존재하지 않습니다.`를 반환하면 `page_missing`으로 구분합니다. 다른 첨부 오류는 `attachment_section_missing`, `file_reference_conflict` 등의 이유 코드로 구분합니다. 실패한 공지는 신규 저장하지 않으며, 기존 공지의 본문·메타데이터·파일·공개 상태도 변경하지 않습니다. 재수집 시 원문을 확인할 수 있으면 정상 저장하고 `is_visible=true`로 복원합니다. 확인 실패를 파일 0건으로 해석하지 않습니다. `is_pinned`는 공개 여부와 무관합니다.
 
@@ -154,13 +253,13 @@ DB에 노원구 공지가 하나도 없으면 **어느 모드든** API 최신 50
 
 ## 공지 단독 저장 함수
 
-`storage/notices.py`의 `save_notice(conn, record)`는 변환된 `NoticeRecord`를 `notices`에 `(category, post_sn)` 기준으로 한 SQL 문에서 저장·갱신하고 DB `id`를 반환합니다. 새 공지는 공개 상태로 저장하고 다시 확인된 공지를 `is_visible=True`로 복원합니다. 기존 공지는 제목·본문 HTML·등록일·원문 URL·공공누리 유형 중 하나라도 이전 값과 다르면 `is_modified=True`가 되고, 이후 원래 값으로 돌아와도 `True`를 유지합니다. 부서만 변경되면 수정됨으로 표시하지 않습니다. `updated_at`은 갱신하며 `created_at`은 유지합니다. 동일값 비교에는 SQL의 `IS DISTINCT FROM`을 사용해 `NULL` 변경도 감지합니다.
+`storage/notices.py`의 `save_notice(conn, record)`는 변환된 `NoticeRecord`를 `notices`에 `(category, source_board, post_sn)` 기준으로 한 SQL 문에서 저장·갱신하고 DB `id`를 반환합니다. 새 공지는 공개 상태로 저장하고 다시 확인된 공지를 `is_visible=True`로 복원합니다. 기존 공지는 제목·본문 HTML·등록일·원문 URL·공공누리 유형 중 하나라도 이전 값과 다르면 `is_modified=True`가 되고, 이후 원래 값으로 돌아와도 `True`를 유지합니다. 부서만 변경되면 수정됨으로 표시하지 않습니다. `updated_at`은 갱신하며 `created_at`은 유지합니다. 동일값 비교에는 SQL의 `IS DISTINCT FROM`을 사용해 `NULL` 변경도 감지합니다.
 
 함수는 `commit`, `rollback`, 연결 종료를 하지 않습니다. `DatabaseSettings.from_env()`는 DB 연결에 필요한 `DATABASE_URL`만 읽어 검증하므로 API 키 없이도 사용할 수 있습니다. `psycopg.connect(settings.database_url)`로 연결한 뒤 변환된 레코드를 함수에 전달합니다. `collect-one`은 아래의 공지·파일 묶음 저장 함수를 사용합니다.
 
 ## 공지와 파일 함께 저장
 
-`storage/notice_bundle.py`의 `save_notice_with_files(conn, notice, files)`는 완전히 수집·변환된 공지와 파일 목록을 **공지 한 건 단위의 트랜잭션**으로 저장하고 `notices.id`를 반환합니다. 새 공지는 고유 키 `(category, post_sn)`의 `INSERT ... ON CONFLICT DO NOTHING RETURNING id` 결과로 구별하며 첫 파일 저장을 수정으로 표시하지 않습니다. 기존 공지는 7단계 upsert로 갱신합니다. 파일은 `(file_id, kind)`별로 `file_sn`, `file_name`, `url`을 비교하므로 입력 순서만 바뀌면 DB 파일 행과 `is_modified`를 그대로 둡니다. 파일 정보가 실제로 달라졌을 때만 기존 목록을 삭제·재삽입하고 기존 공지의 `is_modified=True`로 유지합니다. 파일 입력의 `(category, post_sn)`이 공지와 다르거나 같은 파일 키의 정보가 충돌하면 저장 전에 거부합니다.
+`storage/notice_bundle.py`의 `save_notice_with_files(conn, notice, files)`는 완전히 수집·변환된 공지와 파일 목록을 **공지 한 건 단위의 트랜잭션**으로 저장하고 `notices.id`를 반환합니다. 새 공지는 고유 키 `(category, source_board, post_sn)`의 `INSERT ... ON CONFLICT DO NOTHING RETURNING id` 결과로 구별하며 첫 파일 저장을 수정으로 표시하지 않습니다. 기존 공지는 7단계 upsert로 갱신합니다. 파일은 `(file_key, kind)`별로 `file_sn`, `file_id`, `file_name`, `url`을 비교하므로 입력 순서만 바뀌면 DB 파일 행과 `is_modified`를 그대로 둡니다. 파일 정보가 실제로 달라졌을 때만 기존 목록을 삭제·재삽입하고 기존 공지의 `is_modified=True`로 유지합니다. 파일 입력의 `(category, source_board, post_sn)`이 공지와 다르거나 같은 파일 키의 정보가 충돌하면 저장 전에 거부합니다.
 
 `files=[]`는 **본문과 원문 페이지를 정상적으로 수집했는데 파일이 없는 경우**에만 전달해야 합니다. 페이지 요청·파싱이 실패하면 저장 함수를 호출하지 않습니다. 파일 저장 오류가 나면 공지 변경까지 롤백합니다. 함수가 독립 트랜잭션으로 실행되면 정상 종료 시 확정되며, 호출자가 이미 트랜잭션을 열었다면 내부 작업은 savepoint로 묶여 바깥 트랜잭션에 남습니다. `collect-one`도 완전 수집에 성공한 뒤에만 저장합니다.
 

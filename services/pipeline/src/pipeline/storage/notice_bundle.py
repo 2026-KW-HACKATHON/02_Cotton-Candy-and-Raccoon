@@ -7,7 +7,7 @@ from psycopg import Connection
 from pipeline.models import FileRecord, NoticeRecord
 from pipeline.storage.notices import insert_notice_if_absent, save_notice
 
-StoredFile = tuple[str, str | None, str]
+StoredFile = tuple[str | None, str | None, str | None, str]
 
 
 def _new_files(
@@ -15,12 +15,14 @@ def _new_files(
 ) -> dict[tuple[str, str], FileRecord]:
     result: dict[tuple[str, str], FileRecord] = {}
     for file in files:
-        if (file.category, file.post_sn) != (notice.category, notice.post_sn):
+        if (file.category, file.source_board, file.post_sn) != (
+            notice.category, notice.source_board, notice.post_sn,
+        ):
             raise ValueError("파일의 출처·게시물 번호가 공지와 일치하지 않습니다.")
-        key = (file.file_id, file.kind)
+        key = (file.file_key, file.kind)
         previous = result.get(key)
         if previous is not None and previous != file:
-            raise ValueError("같은 file_id와 kind의 파일 정보가 충돌합니다.")
+            raise ValueError("같은 file_key와 kind의 파일 정보가 충돌합니다.")
         result[key] = file
     return result
 
@@ -28,21 +30,23 @@ def _new_files(
 def _stored_files(conn: Connection, notice_id: int) -> dict[tuple[str, str], StoredFile]:
     with conn.cursor() as cursor:
         cursor.execute(
-            "select file_id, kind, file_sn, file_name, url "
+            "select file_key, kind, file_sn, file_id, file_name, url "
             "from notice_files where notice_id = %s", (notice_id,),
         )
         return {
-            (file_id, kind): (file_sn, file_name, url)
-            for file_id, kind, file_sn, file_name, url in cursor.fetchall()
+            (file_key, kind): (file_sn, file_id, file_name, url)
+            for file_key, kind, file_sn, file_id, file_name, url in cursor.fetchall()
         }
 
 
 def _insert_file(conn: Connection, notice_id: int, file: FileRecord) -> None:
     with conn.cursor() as cursor:
         cursor.execute(
-            "insert into notice_files (notice_id, kind, file_sn, file_id, file_name, url) "
-            "values (%s, %s, %s, %s, %s, %s)",
-            (notice_id, file.kind, file.file_sn, file.file_id, file.file_name, file.url),
+            "insert into notice_files "
+            "(notice_id, kind, file_sn, file_id, file_key, file_name, url) "
+            "values (%s, %s, %s, %s, %s, %s, %s)",
+            (notice_id, file.kind, file.file_sn, file.file_id,
+             file.file_key, file.file_name, file.url),
         )
 
 
@@ -58,7 +62,7 @@ def save_notice_with_files(
         raise ValueError("파일 목록 수집이 완료되지 않았습니다.")
     incoming = _new_files(notice, files)
     incoming_values = {
-        key: (file.file_sn, file.file_name, file.url)
+        key: (file.file_sn, file.file_id, file.file_name, file.url)
         for key, file in incoming.items()
     }
 

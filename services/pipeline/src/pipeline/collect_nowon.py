@@ -241,7 +241,8 @@ def _known_nowon_ids(
     if not notices:
         return set()
     rows = conn.execute(
-        "SELECT post_sn FROM notices WHERE category = 'nowon' AND post_sn = ANY(%s)",
+        "SELECT post_sn FROM notices WHERE category = 'nowon' "
+        "AND source_board = '1001' AND post_sn = ANY(%s)",
         ([notice.post_sn for notice in notices],),
     ).fetchall()
     return {row[0] for row in rows}
@@ -259,7 +260,8 @@ def collect_and_save_nowon_scheduled(
     conn = psycopg.connect(database.database_url, connect_timeout=5, autocommit=True)
     try:
         initial_baseline = not conn.execute(
-            "SELECT EXISTS (SELECT 1 FROM notices WHERE category = 'nowon')",
+            "SELECT EXISTS (SELECT 1 FROM notices WHERE category = 'nowon' "
+            "AND source_board = '1001')",
         ).fetchone()[0]
         first = _fetch_api_page_with_retry(settings, 1, 50)
         target = min(50 if initial_baseline else 10, first.total_count)

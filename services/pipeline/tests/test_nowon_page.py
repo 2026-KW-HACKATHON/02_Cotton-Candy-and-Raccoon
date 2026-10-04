@@ -29,6 +29,7 @@ EMPTY_PAGE_HTML = "<table><tr><th>첨부파일</th><td>첨부파일이 없습니
 
 def notice(body_html: str | None = None, *, url: str | None = None) -> RawNotice:
     return RawNotice(
+        source_board="1001",
         category="nowon", dong_group=None, is_pinned=False,
         post_sn="001234", title="Notice", department=None,
         registered_on="2026-09-23", url=url or PAGE_URL.replace(

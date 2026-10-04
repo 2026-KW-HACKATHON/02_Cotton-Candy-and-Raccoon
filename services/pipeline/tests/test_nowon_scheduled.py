@@ -27,6 +27,7 @@ EMPTY_ATTACHMENTS = "<table><tr><th>첨부파일</th><td>첨부파일이 없습�
 
 def _notice(post_sn: str, *, title: str = "제목") -> RawNotice:
     return RawNotice(
+        source_board="1001",
         category="nowon", dong_group=None, is_pinned=False,
         post_sn=post_sn, title=title, department="행정팀",
         registered_on="2026-09-28",

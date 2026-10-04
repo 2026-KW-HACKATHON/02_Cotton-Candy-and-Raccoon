@@ -46,6 +46,7 @@ def transform_nowon_notice(notice: RawNotice) -> NoticeRecord:
     except NowonPageError:
         raise TransformError("노원구 공지 원문 URL이 유효하지 않습니다.") from None
     return NoticeRecord(
+        source_board=notice.source_board,
         category=notice.category,
         dong_group=notice.dong_group,
         is_pinned=notice.is_pinned,

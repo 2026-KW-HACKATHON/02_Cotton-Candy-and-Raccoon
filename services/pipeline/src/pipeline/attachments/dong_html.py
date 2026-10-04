@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 from pipeline.attachments.nowon_html import (
     AttachmentError,
     _file_identity,
+    _is_editor_image,
     _normalize_nowon_file_url,
     extract_page_files,
     merge_files,
@@ -40,11 +41,11 @@ def extract_dong_files(notice: RawNotice, page_html: str) -> list[FileRecord]:
             if parsed.scheme not in ("http", "https") or not parsed.netloc:
                 continue
             identity = _file_identity(url)
-            if identity is None:
+            if identity is None and (is_attachment or not _is_editor_image(url)):
                 continue
-            file_sn, file_id = identity
+            file_sn, file_id = identity if identity is not None else (None, None)
             body_files.append(FileRecord(
-                category="dong", post_sn=notice.post_sn,
+                category="dong", source_board=notice.source_board, post_sn=notice.post_sn,
                 kind="attachment" if is_attachment else "inline_image",
                 file_sn=file_sn, file_id=file_id,
                 file_name=(element.get_text(" ", strip=True) or None) if is_attachment else None,

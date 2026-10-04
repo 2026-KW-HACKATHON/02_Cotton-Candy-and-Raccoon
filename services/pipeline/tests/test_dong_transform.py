@@ -10,6 +10,7 @@ from pipeline.transform.dong import DongTransformError, transform_dong_notice
 @pytest.fixture
 def notice() -> RawNotice:
     return RawNotice(
+        source_board="1042",
         category="dong", dong_group="wolgye1", is_pinned=False,
         post_sn="001234", title="공지", department="월계1동 행정민원팀",
         registered_on="2026-09-28",

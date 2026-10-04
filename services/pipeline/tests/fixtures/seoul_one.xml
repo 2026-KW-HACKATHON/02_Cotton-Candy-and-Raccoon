@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic values; structure observed in the official sample response. -->
+<SeoulNewsList>
+  <list_total_count>1113</list_total_count>
+  <RESULT><CODE>INFO-000</CODE><MESSAGE>정상 처리되었습니다</MESSAGE></RESULT>
+  <row>
+    <BLOG_ID>25</BLOG_ID>
+    <BLOG_NAME>환경</BLOG_NAME>
+    <POST_ID>000123</POST_ID>
+    <POST_TITLE>테스트 서울시 공지</POST_TITLE>
+    <THUMB_URI>https://news.seoul.go.kr/env/files/test.jpg</THUMB_URI>
+    <POST_EXCERPT><![CDATA[<p>짧은 미리보기</p>]]></POST_EXCERPT>
+    <PUBLISH_DATE>2026-10-02 17:36:54</PUBLISH_DATE>
+    <MODIFY_DATE>2026-10-02 18:08:41</MODIFY_DATE>
+    <POST_STATUS>publish</POST_STATUS>
+    <POST_CONTENT><![CDATA[<p>전체 본문 &amp; 안내</p><img src="/env/files/test.jpg"><a href="/env/files/test.pdf?a=1&amp;b=2">안내.pdf</a>]]></POST_CONTENT>
+    <MANAGER_NAME></MANAGER_NAME>
+    <MANAGER_PHONE></MANAGER_PHONE>
+    <MANAGER_DEPT>테스트 부서</MANAGER_DEPT>
+  </row>
+</SeoulNewsList>
