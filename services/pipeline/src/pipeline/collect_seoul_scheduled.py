@@ -9,9 +9,8 @@ import psycopg
 from pipeline.attachments.seoul_html import SeoulAttachmentError
 from pipeline.collect_seoul import SeoulStorageError, prepare_notice
 from pipeline.config import DatabaseSettings, SeoulNewsSettings
-from pipeline.models import FileRecord, NoticeRecord, RawSeoulNotice
-from pipeline.sources.seoul_api import SeoulApiPage, SeoulSourceError, collect_page
-from pipeline.sources.seoul_page import BOARD_SLUGS, SeoulPageError
+from pipeline.models import RawSeoulNotice
+from pipeline.sources.seoul_api import BOARD_SLUGS, SeoulApiPage, SeoulSourceError, collect_page
 from pipeline.storage.notice_bundle import save_notice_with_files
 from pipeline.transform.seoul import SeoulTransformError
 
@@ -61,20 +60,6 @@ def _api_page(settings: SeoulNewsSettings, board: str, start: int, end: int) -> 
         try:
             return collect_page(settings, source_board=board, start_index=start, end_index=end)
         except SeoulSourceError as error:
-            if error.rate_limited or not error.retryable or attempt == 2:
-                raise
-    raise AssertionError("retry loop must return or raise")
-
-
-def _prepare(
-    notice: RawSeoulNotice,
-    settings: SeoulNewsSettings,
-) -> tuple[NoticeRecord, tuple[FileRecord, ...]]:
-    for attempt in range(3):
-        sleep(1 if attempt == 0 else 2**attempt)
-        try:
-            return prepare_notice(notice, settings)
-        except SeoulPageError as error:
             if error.rate_limited or not error.retryable or attempt == 2:
                 raise
     raise AssertionError("retry loop must return or raise")
@@ -186,22 +171,12 @@ def _board(
             listing_complete = False
             failures.append(SeoulFailure(None, "listing", "head_check_failed"))
     saved = 0
-    for index, row in enumerate(selected.values()):
+    for row in selected.values():
         if row.post_sn in conflicts:
             failures.append(SeoulFailure(row.post_sn, "listing", "listing_conflict"))
             continue
         try:
-            record, files = _prepare(row, settings)
-        except SeoulPageError as error:
-            reason = error.reason_code
-            failures.append(SeoulFailure(row.post_sn, "page", reason))
-            if error.rate_limited:
-                failures.extend(
-                    SeoulFailure(n.post_sn, "page", "rate_limited_not_attempted")
-                    for n in tuple(selected.values())[index + 1 :]
-                )
-                break
-            continue
+            record, files = prepare_notice(row)
         except SeoulAttachmentError:
             failures.append(SeoulFailure(row.post_sn, "attachments", "invalid_file_reference"))
             continue

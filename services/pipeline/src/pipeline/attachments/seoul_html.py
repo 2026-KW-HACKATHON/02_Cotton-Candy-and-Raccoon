@@ -5,8 +5,7 @@ from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup
 
-from pipeline.models import FileRecord
-from pipeline.sources.seoul_page import SeoulPage
+from pipeline.models import FileRecord, NoticeRecord
 
 FILE_EXTENSIONS = {
     ".pdf",
@@ -26,6 +25,16 @@ FILE_EXTENSIONS = {
     ".webp",
     ".svg",
 }
+
+# Exact paths observed in API HTML; never exclude the whole image directory.
+CULTURE_DECORATIVE_IMAGE_PATHS = frozenset(
+    {
+        "/_ui/images/main/cnl-common/nLc-logo-culture.png",
+        "/_ui/images/main/cnl-common/nLc-top-facebook.png",
+        "/_ui/images/main/cnl-common/nLc-top-instargram.png",
+        "/_ui/images/main/cnl-common/nLc-top-blog.png",
+    }
+)
 
 
 class SeoulAttachmentError(ValueError):
@@ -51,8 +60,10 @@ def normalize_file_url(base: str, reference: str) -> str:
         raise SeoulAttachmentError("서울시 파일 URL이 올바르지 않습니다.") from None
 
 
-def extract_files(page: SeoulPage) -> tuple[FileRecord, ...]:
-    soup = BeautifulSoup(page.body_html, "html.parser")
+def extract_files(notice: NoticeRecord) -> tuple[FileRecord, ...]:
+    if notice.category != "seoul":
+        raise SeoulAttachmentError("서울시 공지만 처리할 수 있습니다.")
+    soup = BeautifulSoup(notice.body_html or "", "html.parser")
     files: dict[tuple[str, str], FileRecord] = {}
     for element in soup.select("a[href], img[src]"):
         is_image = element.name == "img"
@@ -68,18 +79,28 @@ def extract_files(page: SeoulPage) -> tuple[FileRecord, ...]:
                 if element.has_attr("download"):
                     raise SeoulAttachmentError("확장자가 없는 다운로드 링크는 확인이 필요합니다.")
                 continue  # Forms, ordinary pages and contact links are not files.
-        url = normalize_file_url(page.url, reference)
+        url = normalize_file_url(notice.url, reference)
         parsed_url = urlsplit(url)
-        if is_image and parsed_url.hostname == "news.seoul.go.kr" and (
-            parsed_url.path.startswith("/wp-content/themes/")
-            or "/wp-content/themes/" in parsed_url.path
+        if (
+            is_image
+            and parsed_url.hostname == "news.seoul.go.kr"
+            and (
+                parsed_url.path.startswith("/wp-content/themes/")
+                or "/wp-content/themes/" in parsed_url.path
+            )
         ):
             continue  # Observed tag icons/theme furniture are not article images.
+        if (
+            is_image
+            and parsed_url.hostname == "culture.seoul.go.kr"
+            and parsed_url.path in CULTURE_DECORATIVE_IMAGE_PATHS
+        ):
+            continue  # Known logo/SNS furniture only; preserve unknown banners/posters.
         filename = PurePosixPath(unquote(urlsplit(url).path)).name or None
         item = FileRecord(
             category="seoul",
-            source_board=page.source_board,
-            post_sn=page.post_sn,
+            source_board=notice.source_board,
+            post_sn=notice.post_sn,
             kind="inline_image" if is_image else "attachment",
             file_sn=None,
             file_id=None,

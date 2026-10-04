@@ -12,6 +12,21 @@ from pipeline.models import RawSeoulNotice
 
 API_BASE_URL = "http://openapi.seoul.go.kr:8088"
 SERVICE_NAME = "SeoulNewsList"
+BOARD_SLUGS = {
+    "21": "traffic",
+    "22": "safe",
+    "23": "citybuild",
+    "24": "economy",
+    "25": "env",
+    "26": "culture",
+    "27": "welfare",
+    "30": "gov",
+}
+
+
+def notice_url(notice: RawSeoulNotice) -> str:
+    """Construct a reference URL; do not request or verify the original page."""
+    return f"https://news.seoul.go.kr/{BOARD_SLUGS[notice.source_board]}/archives/{notice.post_sn}"
 
 
 class SeoulSourceError(ValueError):

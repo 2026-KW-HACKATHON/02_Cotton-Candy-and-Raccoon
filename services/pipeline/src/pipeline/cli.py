@@ -32,7 +32,6 @@ from pipeline.sources.nowon_api import NowonSourceError, collect_one
 from pipeline.sources.nowon_page import NowonPageError, fetch_notice_page
 from pipeline.sources.seoul_api import SeoulSourceError
 from pipeline.sources.seoul_api import collect_one as collect_one_seoul
-from pipeline.sources.seoul_page import SeoulPageError
 from pipeline.sources.wolgye1_board import WolgyeSourceError
 from pipeline.storage.notice_bundle import save_notice_with_files
 from pipeline.transform.dong import DongTransformError
@@ -112,7 +111,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"설정 오류: {error}", file=sys.stderr)
             return 2
         except (
-            SeoulSourceError, SeoulPageError, SeoulAttachmentError, SeoulTransformError,
+            SeoulSourceError, SeoulAttachmentError, SeoulTransformError,
         ) as error:
             print(settings.redact(f"서울시 수집·변환 실패: {error}"), file=sys.stderr)
             return 1
@@ -285,7 +284,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     settings, database, source_board=args.source_board, index=args.index,
                 )
             except (
-                SeoulSourceError, SeoulPageError, SeoulAttachmentError,
+                SeoulSourceError, SeoulAttachmentError,
                 SeoulTransformError, SeoulStorageError,
             ) as error:
                 print(settings.redact(f"수집·저장 실패: {error}"), file=sys.stderr)

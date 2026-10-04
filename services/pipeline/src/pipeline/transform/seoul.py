@@ -1,10 +1,10 @@
-"""Convert a verified Seoul original article to the current notice DB contract."""
+"""Convert Seoul API POST_CONTENT to the current notice DB contract."""
 
 import re
 from datetime import datetime
 
 from pipeline.models import NoticeRecord, RawSeoulNotice
-from pipeline.sources.seoul_page import SeoulPage, notice_url
+from pipeline.sources.seoul_api import notice_url
 from pipeline.transform.nowon import _body_or_none
 
 
@@ -12,13 +12,7 @@ class SeoulTransformError(ValueError):
     pass
 
 
-def transform_seoul_notice(notice: RawSeoulNotice, page: SeoulPage) -> NoticeRecord:
-    if (page.source_board, page.post_sn, page.url) != (
-        notice.source_board,
-        notice.post_sn,
-        notice_url(notice),
-    ):
-        raise SeoulTransformError("서울시 공지와 원문 식별 정보가 다릅니다.")
+def transform_seoul_notice(notice: RawSeoulNotice) -> NoticeRecord:
     if not re.fullmatch(
         r"[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}", notice.registered_on
     ):
@@ -36,7 +30,7 @@ def transform_seoul_notice(notice: RawSeoulNotice, page: SeoulPage) -> NoticeRec
         title=notice.title.strip(),
         department=notice.department.strip() if notice.department else None,
         registered_on=registered_on,
-        url=page.url,
-        body_html=_body_or_none(page.body_html),
-        license_type=page.license_type,
+        url=notice_url(notice),
+        body_html=_body_or_none(notice.body_html),
+        license_type=None,  # The API has no per-notice license field.
     )

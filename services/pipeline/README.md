@@ -18,13 +18,13 @@ Python·uv 기반 공지 수집 파이프라인입니다. 노원구 `NowonNewsNo
 
 식별자가 없는 본문 이미지는 확인된 공식 `/webcontent/crosseditor/images/`의 PNG/JPEG/WebP 경로를 처리합니다. 장식 이미지·일반 링크는 제외합니다. 원문 첨부 목록의 PDF/HWP 등 직접 파일 경로는 식별자가 없어도 처리하지만, 불명확한 다운로드 endpoint나 식별자가 일부만 있는 URL은 여전히 오류입니다. 본문 HTML은 원본을 보존하고 파일 메타데이터 URL만 HTTPS·절대 URL로 정리합니다.
 
-서울시는 `SeoulNewsList` API 한 건 읽기와 **원문 확인·파일 메타데이터 추출·DB 형식 변환·공지/파일 원자적 저장**, 분야별 최초·정기 수집 CLI까지 구현했습니다. GitHub Actions 예약 실행은 아직 연결하지 않았습니다.
+서울시는 `SeoulNewsList` API 한 건 읽기와 **API 본문 내 파일 메타데이터 추출·DB 형식 변환·공지/파일 원자적 저장**, 분야별 최초·정기 수집 CLI까지 구현했습니다. GitHub Actions 예약 실행은 아직 연결하지 않았습니다.
 
 ### 서울시 분야별 최초·정기 수집 — 지정 DB에 실제 쓰기
 
 ```powershell
 # services/pipeline에서 실행. 발급받은 SEOUL_NEWS_API_KEY와 DATABASE_URL 필요
-# 09시·13시용: 최신 목록에서 새 글만 원문 확인·저장
+# 09시·13시용: 최신 API 목록에서 새 글만 변환·저장
 .\.venv\Scripts\python.exe -m pipeline collect --source seoul --mode new
 # 17시용: 최신 글의 본문·파일 변경도 확인
 .\.venv\Scripts\python.exe -m pipeline collect --source seoul --mode refresh
@@ -34,15 +34,19 @@ Python·uv 기반 공지 수집 파이프라인입니다. 노원구 `NowonNewsNo
 
 8개 분야를 각각 처리합니다. **해당 분야의 저장 이력이 없으면 두 모드 모두 최신 25건**, 이력이 있으면 기본 최신 10건이 대상입니다. 최초 8개 분야 합계는 최대 200건의 저장 시도이며, 성공 200건을 보장하는 것은 아닙니다. 평소 `new`는 최신 10건 중 아직 공개 상태로 저장되지 않은 글만 처리하고, `refresh`는 최신 10건을 모두 다시 확인합니다. 최신 10건이 모두 새 글이면 두 모드 모두 기존 공개 글을 만날 때까지 목록을 확장하여 추가 새 글도 처리합니다. 따라서 실제 처리 건수는 10건을 넘을 수 있습니다.
 
-페이지 경계는 2건 겹쳐 읽고 중복·내용 충돌·총건수 변동·무진행을 검사합니다. 여러 페이지를 읽으면 첫 글과 총건수를 재확인합니다. API가 고정 스냅샷을 제공하지 않아 같은 총건수의 내부 재정렬 누락까지 보장할 수는 없습니다. 원문 확인 실패는 저장하지 않으며 기존 본문·파일·공개 상태를 바꾸지 않습니다. 재확인에 성공한 숨김 글은 공개 상태로 복원하고, 목록에 없다고 일괄 숨기지는 않습니다.
+페이지 경계는 2건 겹쳐 읽고 중복·내용 충돌·총건수 변동·무진행을 검사합니다. 여러 페이지를 읽으면 첫 글과 총건수를 재확인합니다. API가 고정 스냅샷을 제공하지 않아 같은 총건수의 내부 재정렬 누락까지 보장할 수는 없습니다. API 수집·변환·파일 추출 실패는 저장하지 않으며 기존 본문·파일·공개 상태를 바꾸지 않습니다. 재확인에 성공한 숨김 글은 공개 상태로 복원하고, 목록에 없다고 일괄 숨기지는 않습니다.
 
-요청 전 1초 간격을 두고 일시적 오류는 최대 3회 시도합니다(재시도 대기 2·4초). HTTP 429는 반복하지 않고 남은 분야 요청도 중단합니다. 다른 공지·분야의 실패는 분리하여 가능한 공지를 계속 저장합니다. 공지·파일 저장은 공지별 트랜잭션입니다.
+API 요청 전 1초 간격을 두고 일시적 오류는 최대 3회 시도합니다(재시도 대기 2·4초). HTTP 429는 반복하지 않고 남은 분야 요청도 중단합니다. 다른 공지·분야의 실패는 분리하여 가능한 공지를 계속 저장합니다. 공지·파일 저장은 공지별 트랜잭션입니다.
 
 JSON의 `boards`에는 분야별 `total_count`, `selected_count`, `saved_count`, `pages_read`, `initial_baseline`, `listing_complete`, `complete`, `failures`가 들어갑니다. `complete`는 DB 컬럼이 아니라 **이번 선택 범위의 성공 여부**입니다. 전체 과거 공지 적재 완료를 뜻하지 않습니다. 성공은 종료 코드 0, 부분 수집/저장 실패는 1, 설정·옵션 오류는 2입니다. 이 명령에는 `--mode`가 필수이고 `--limit`은 지원하지 않습니다. sample 키는 5건 제한 때문에 이 수집 모드에 사용할 수 없습니다.
 
 최초 25건 중 일부만 저장되면 다음 실행은 저장 이력이 있는 분야로 판단합니다. 실패 글이 최신 10건 밖에 있으면 자동 재시도를 보장하지 못합니다. 실패 JSON 보관·영구 재처리 대기열은 후속 작업입니다. 최신 10건보다 오래된 글의 수정도 자동 확인 대상이 아닙니다. CLI는 현재 시간을 판단하거나 스스로 예약 실행하지 않습니다. **Actions·공식 DB 실행은 별도 승인 및 연결 전까지 하지 않습니다.**
 
-검증(2026-10-04): 원문 구조 변형 보완 후 임시 PostgreSQL에서 전체 pytest **699 passed, 0 skipped**, Ruff 통과. 실제 sample API는 8개 분야에서 각 5건(총40건)을 읽어 분야 식별을 확인했습니다. 발급 키로 분야별 최초25건을 시도하여200건 중194건을 저장했고, 반복new에서 미저장1건을 복구하여공지195·파일430행이 됐습니다. refresh는 분야별10건, 총80건 중78건 성공했습니다. DB 비교에서 ID·created_at·행 수 유지, updated_at78건 갱신, 동일 내용에 대한 수정표시0·중복0·고아0을 확인했습니다. 리다이렉트 실패5건은 아직 최초 범위에서 미저장이며 그중 최신10건 안2건이 refresh에서도 실패했습니다. 전체성공·전체역사 데이터 적재로 해석하지 않습니다.
+이전 원문 크롤링 방식의 발급 키 검증(195건 저장·refresh 78건 성공)은 과거 이력입니다. 현재 서울시 API 전용 정책의 검증 결과와 한계를 혼동하지 마세요. API 전용 검증은 아래 정책과 작업 기록 step34를 기준으로 확인합니다.
+
+API 전용 검증(2026-10-04): 통합3개 SQL을 적용한 임시 PostgreSQL에서 전체 pipeline **666 passed, 0 skipped**, DB 구조·권한 **39 passed, 0 skipped**, Ruff 통과. 실제 sample API8회로 8개 분야 총40건 변환 성공, 원문 요청·파일 다운로드0회. 교통21/517999의 API 본문652자·첨부1행을 두 번 저장해 본문 동일성·동일 notice_id·파일1행·is_modified=false를 확인했습니다. 개인 발급 키 검증 결과는 다음 문단과 같습니다.
+
+추가 발급 키 검증 완료: 최초new200건 성공, 반복new0건 처리, refresh80건 성공. 모두 complete=true·종료0이었습니다. 실제 DB 공지200·본문200·파일611행(첨부296/이미지315) 유지, ID·본문·생성 시각·파일 행 유지, refresh의 updated_at만 분야별10건씩80건 갱신, 중복·고아·수정표시0을 확인했습니다. 외부 글의 실제 내용 변경은 발생하지 않았으며 변경 감지·롤백은 자동 테스트 결과와 구분합니다. 문화사이트 로고·SNS 아이콘 등 장식 이미지 후보24행의 필터 기준은 추가 검토가 필요합니다. 이번 임시 서버·DB·로그는 종료/삭제했으며 공식 DB에 쓰지 않았습니다.
 
 ### 서울시 공지 한 건 저장 — 지정 DB에 실제 쓰기
 
@@ -54,9 +58,9 @@ JSON의 `boards`에는 분야별 `total_count`, `selected_count`, `saved_count`,
 
 `--source-board`는 분야별 BLOG_ID입니다(21 교통, 22 안전, 23 주택, 24 경제, 25 환경, 26 문화, 27 복지, 30 행정). 생략하면 전체 분야 목록을 조회합니다. `--index`는 선택한 목록 안에서 1부터 시작하는 **목록 순번**이고 POST_ID가 아닙니다. 기본 1, sample 키는 1~5만 허용합니다. 목록은 변동될 수 있어 같은 순번이 항상 같은 글을 뜻하지 않습니다. 실제 응답의 post_sn으로 중복 저장 여부를 판단합니다. 임의 POST_ID 조회 지원을 가정하지 않습니다.
 
-API·원문·파일 추출·변환이 성공한 뒤에만 DB 연결을 열고 기존 `save_notice_with_files()` 트랜잭션을 사용합니다. 성공은 stored=true·notice_id와 종료 코드 0, 수집/저장 오류는 1, 설정/CLI 옵션 오류는 2입니다. 원문 확인 실패를 빈 파일 목록으로 저장하지 않습니다. DB 오류 메시지에는 접속 URI나 원문 SQL 오류를 출력하지 않습니다. SQL 스키마·Actions·Gemini 코드는 이번 연결에서 바꾸지 않았습니다.
+API·본문 파일 추출·변환이 성공한 뒤에만 DB 연결을 열고 기존 `save_notice_with_files()` 트랜잭션을 사용합니다. 성공은 stored=true·notice_id와 종료 코드 0, 수집/저장 오류는 1, 설정/CLI 옵션 오류는 2입니다. 서울시 원문 페이지는 요청하지 않습니다. API 본문에 지원 파일 참조가 없으면 파일 0건이 정상이며, 잘못된 다운로드 참조는 추출 실패로 처리합니다. DB 오류 메시지에는 접속 URI나 원문 SQL 오류를 출력하지 않습니다. SQL 스키마·Actions·Gemini 코드는 이번 연결에서 바꾸지 않았습니다.
 
-실제 sample 검증(2026-10-04): 경제 board24/POST_ID574744, 본문5625자/PDF1건을 두 번 저장하여 공지1행·파일1행·is_modified=false·고아0건을 확인했습니다. PDF·HWP·HWPX의 HEAD 응답도 200과 파일 Content-Type을 확인했습니다. HEAD는 파일 본문 판독/다운로드 검증이 아닙니다. 임시 DB 데이터는 검증 후 삭제했습니다.
+이전 원문 방식의 sample 저장·파일 HEAD 검증은 과거 이력이며 API 전용 검증을 대신하지 않습니다. 이 명령은 파일 다운로드·HEAD 요청을 수행하지 않습니다.
 
 ### 서울시 저장 전 결과 확인 — 읽기 전용
 
@@ -65,17 +69,25 @@ API·원문·파일 추출·변환이 성공한 뒤에만 DB 연결을 열고 �
 .\.venv\Scripts\python.exe -m pipeline inspect-prepared --source seoul --source-board 24 --index 2
 ```
 
-`SEOUL_NEWS_API_KEY`만 필요합니다. API 한 건 → HTTPS 원문 확인 → 파일 참조 추출 → NoticeRecord·FileRecord 변환 결과를 출력합니다. DB 연결·파일 다운로드·Gemini 호출은 하지 않으며 `stored=false`입니다. 성공은 종료 코드 0, 설정 오류 2, 수집·변환 오류 1입니다.
+`SEOUL_NEWS_API_KEY`만 필요합니다. API 한 건 → POST_CONTENT 본문 내 파일 참조 추출 → NoticeRecord·FileRecord 변환 결과를 출력합니다. DB 연결·파일 다운로드·Gemini 호출은 하지 않으며 `stored=false`입니다. 성공은 종료 코드 0, 설정 오류 2, 수집·변환 오류 1입니다.
 
-원문 URL은 확인한 BLOG_ID별 공식 주소와 POST_ID로 구성하고 canonical 주소와 대조합니다. 만족도 평가 폼 `#frmRating`이 있으면 blog_id/post_id가 모두 일치해야 합니다. 공식 페이지 중 평가 폼이 없는 변형은 **canonical과 `og:url`이 모두 요청한 글의 HTTPS 주소와 정확히 일치**할 때만 허용합니다. 기존 폼의 잘못된 번호를 대체 정보로 덮어 허용하지 않습니다. `wp본문시작`·`wp본문끝` 사이의 HTML을 사용하여 공유 버튼·만족도 조사·페이지 장식을 제외합니다. 본문 영역과 경계 검증은 그대로 유지합니다. 서울시 변환에는 API POST_CONTENT나 짧은 POST_EXCERPT 대신 이 **확인된 원문 글 영역**을 사용합니다. API 원본 모델은 변경하지 않습니다. UI 렌더링용 HTML 안전화는 별도 작업입니다.
+서울시는 **API 전용 수집**입니다. 원문 페이지를 크롤링하거나 파일을 다운로드하지 않습니다. `POST_CONTENT`를 본문으로 사용하고 `POST_EXCERPT`로 대체하지 않습니다. 내용 없는 HTML은 null로 정규화하며 이미지뿐인 HTML은 유지합니다. API 본문이 완전하다는 사용자 합의에 따른 가정이며 원문과의 일치를 검사한 결과가 아닙니다. 코드에서 본문 길이를 잘라 저장하지 않습니다. 앱 렌더링용 HTML 안전화는 별도 작업입니다.
 
-서울시 정기 수집의 원문 실패 `reason_code`는 `page_timeout`, `page_connection_failed`, `page_redirect`, `page_not_found`(404/410), `page_http_<상태코드>`, `rate_limited`, `page_content_type_invalid`, `page_identity_mismatch`, `page_body_invalid`, `page_license_invalid`로 구분합니다. 리다이렉트를 임의로 따라가거나 HTTP로 내려가지 않습니다. 실패 원문을 확인된 공지로 저장하지 않으며 파일 목록·공개 상태도 변경하지 않습니다. 모든 원문 실패를 삭제된 글로 해석하면 안 됩니다.
+공지 URL은 BLOG_ID별 공식 경로와 POST_ID로 구성합니다. 이 URL의 접근 가능 여부·리다이렉트·원문 삭제 여부는 확인하지 않습니다. 따라서 이전 `page_redirect`는 서울시 저장 조건이 아닙니다. API에 남아 있는 글은 원문이 열리지 않아도 API 데이터로 저장할 수 있으며, 이를 근거로 숨김 처리하지 않습니다.
 
-공공누리는 원문 담당 정보 영역의 공식 KOGL 링크에서 글별로 읽습니다. 표시가 없으면 None이며 제4유형으로 추정하지 않습니다. 충돌·미지원 유형·원문 식별/본문 경계 확인 실패는 오류입니다. 등록일은 API PUBLISH_DATE의 시각을 검증한 뒤 date로 변환하며, category=seoul, dong_group=None, is_pinned=False입니다.
+API에 공지별 공공누리 필드가 없어 `license_type=None`으로 저장합니다. 데이터셋 이용 조건과 개별 공지 유형을 동일하다고 추정하지 않습니다. 등록일은 PUBLISH_DATE의 시각을 검증한 뒤 date로 변환하며 category=seoul, dong_group=None, is_pinned=False입니다.
 
 본문의 img[src]와 PDF/HWP/HWPX 등 직접 파일 링크를 구분합니다. 상대·프로토콜 상대 주소를 절대 주소로 바꾸고 서울시 공식 파일 호스트만 HTTPS로 정규화합니다. 외부 HTTP 파일은 HTTPS 지원을 추정하지 않습니다. 동일 URL+kind는 중복 제거하며 같은 URL의 첨부·본문 이미지 역할은 둘 다 유지합니다. 서울시 UUID를 만들어 넣지 않고 file_sn/file_id=None, file_key=url:SHA256을 사용합니다. 파일명은 URL 경로의 마지막 부분을 디코딩해 사용합니다. 일반 신청 링크·썸네일·srcset 대체 이미지·본문 밖 장식과 본문 안에 섞인 공식 WordPress theme 아이콘은 파일 목록에 넣지 않습니다.
 
-현재는 본문에 확인되는 직접 파일 참조만 지원합니다. 별도 첨부 영역·확장자 없는 다운로드 endpoint·JavaScript 링크의 전수 지원을 보장하지 않습니다. download 속성이 있는데 파일 유형을 판별하지 못하면 오류로 보고합니다. 파일 URL 해시는 다운로드 성공이나 내용 동일성을 증명하지 않습니다.
+현재는 API 본문의 직접 파일 참조만 지원합니다. **API 본문에 없는 별도 첨부파일은 의도적으로 수집하지 않습니다.** 확장자 없는 다운로드 endpoint·JavaScript 링크의 전수 지원은 보장하지 않습니다. download 속성이 있는데 파일 유형을 판별하지 못하면 오류로 보고합니다. 파일 URL 해시는 다운로드 성공이나 내용 동일성을 증명하지 않습니다.
+
+### 서울시 장식 이미지 필터
+
+`attachments/seoul_html.py`의 `CULTURE_DECORATIVE_IMAGE_PATHS`는 실제 관측한 문화사이트 로고·SNS 경로4개입니다. 호스트가 `culture.seoul.go.kr`이고 경로가 `/_ui/images/main/cnl-common/` 아래의 `nLc-logo-culture.png`, `nLc-top-facebook.png`, `nLc-top-instargram.png`, `nLc-top-blog.png`와 정확히 일치하는 **img만** 파일 목록에서 제외합니다. 쿼리/fragment가 붙어도 적용합니다. 기존 공식 WordPress theme 이미지 제외는 유지합니다.
+
+디렉터리 전체·logo라는 이름·alt·작은 크기만으로 이미지를 버리지 않습니다. 알 수 없는 배너·포스터·다른 호스트/경로의 파일·명시적 첨부 링크는 유지합니다. 본문 HTML 자체는 수정하지 않습니다. #13에서 HTML을 직접 파싱해 Gemini 입력 이미지를 다운로드한다면 같은 필터 연동이 별도로 필요합니다.
+
+필터 추가 후 새 임시 PostgreSQL에서 전체 pytest **690 passed, 0 skipped**, Ruff 통과. 기존 장식 파일행이 있는 공지를 refresh하면 파일집합 변경으로 is_modified=true가 될 수 있으며, 실제DB 테스트에서 본문·ID 유지와 장식행 제거·반복저장을 확인했습니다. 위 발급 키 공지200·파일611행은 필터 추가 전 검증 결과입니다. 필터 적용 후 전체200건 재수집·장식후보24행 전부제거를 확인했다고 해석하지 마세요. SQL·환경 변수·Actions·공식 DB는 변경하지 않았습니다.
 
 ### API 한 건 확인 — DB에 저장하지 않음
 
@@ -91,7 +103,7 @@ services/pipeline 폴더에서 다음 명령을 실행합니다.
 
 `inspect-one`은 각 API의 1/1 XML 응답을 읽고 식별 정보·제목·등록일·본문 길이와 `stored=false`를 출력합니다. DB 연결·원문 페이지 요청·파일 다운로드·Gemini 호출은 하지 않습니다. 성공은 종료 코드 0, 설정 오류 2, 수집 오류 1입니다. `check-config`는 형식만 검사하며 실제 인증을 확인하지 않습니다.
 
-서울시 원본 `RawSeoulNotice`는 BLOG_ID→source_board, POST_ID→post_sn, POST_TITLE→title, PUBLISH_DATE→registered_on, MODIFY_DATE→modified_on, MANAGER_DEPT→department를 보존합니다. POST_CONTENT를 body_html로 쓰고 POST_EXCERPT는 별도로 보존하며 빈 본문을 미리보기로 대체하지 않습니다. 날짜는 이 단계에서 원본 문자열입니다. API에 없는 원문 URL·공공누리 값은 만들지 않고 이름·전화번호는 모델에 포함하지 않습니다.
+서울시 원본 `RawSeoulNotice`는 BLOG_ID→source_board, POST_ID→post_sn, POST_TITLE→title, PUBLISH_DATE→registered_on, MODIFY_DATE→modified_on, MANAGER_DEPT→department를 보존합니다. POST_CONTENT를 body_html로 쓰고 POST_EXCERPT는 별도로 보존하며 빈 본문을 미리보기로 대체하지 않습니다. 날짜는 이 단계에서 원본 문자열입니다. 원본 모델에는 API에 없는 URL·공공누리 값을 넣지 않고 이름·전화번호는 모델에 포함하지 않습니다.
 
 발급 키를 로컬 파일에 쓰지 않고 PowerShell에서 입력할 수 있습니다. 키를 출력하거나 채팅에 보내지 마세요.
 

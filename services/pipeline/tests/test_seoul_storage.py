@@ -16,26 +16,16 @@ from pipeline.cli import main
 from pipeline.collect_seoul import SeoulStorageError, collect_and_save_one, prepare_one
 from pipeline.config import DatabaseSettings, SeoulNewsSettings
 from pipeline.sources.seoul_api import SeoulSourceError, collect_one
-from pipeline.sources.seoul_page import SeoulPageError
 from pipeline.storage.notice_bundle import save_notice_with_files
+from pipeline.transform.seoul import SeoulTransformError
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SETTINGS = SeoulNewsSettings("sample", 5, 20)
 XML = (FIXTURES / "seoul_one.xml").read_bytes()
-HTML = (FIXTURES / "seoul_page.html").read_text(encoding="utf-8")
 
 
-def transports() -> tuple[httpx.MockTransport, httpx.MockTransport]:
-    return (
-        httpx.MockTransport(lambda r: httpx.Response(200, content=XML)),
-        httpx.MockTransport(
-            lambda r: httpx.Response(
-                200,
-                text=HTML,
-                headers={"content-type": "text/html"},
-            )
-        ),
-    )
+def api_transport() -> httpx.MockTransport:
+    return httpx.MockTransport(lambda r: httpx.Response(200, content=XML))
 
 
 def test_filtered_one_uses_exact_single_index_and_board() -> None:
@@ -62,23 +52,23 @@ def test_bad_selection_fails_before_request(index: object, board: object) -> Non
 
 def test_ignored_api_board_filter_is_error() -> None:
     with pytest.raises(SeoulSourceError, match="게시판"):
-        collect_one(SETTINGS, source_board="24", transport=transports()[0])
+        collect_one(SETTINGS, source_board="24", transport=api_transport())
 
 
 def test_failure_before_storage_never_connects() -> None:
     with (
-        patch("pipeline.collect_seoul.prepare_one", side_effect=SeoulPageError("wrong page")),
+        patch("pipeline.collect_seoul.prepare_one", side_effect=SeoulTransformError("wrong page")),
         patch(
             "pipeline.collect_seoul.psycopg.connect",
             side_effect=AssertionError("must not connect"),
         ),
     ):
-        with pytest.raises(SeoulPageError):
+        with pytest.raises(SeoulTransformError):
             collect_and_save_one(SETTINGS, DatabaseSettings("postgresql://user@localhost/test"))
 
 
 def test_db_error_hides_database_uri_and_chained_details() -> None:
-    api, page = transports()
+    api = api_transport()
     with patch(
         "pipeline.collect_seoul.psycopg.connect",
         side_effect=psycopg.OperationalError(
@@ -90,7 +80,6 @@ def test_db_error_hides_database_uri_and_chained_details() -> None:
                 SETTINGS,
                 DatabaseSettings("postgresql://user@localhost/test"),
                 api_transport=api,
-                page_transport=page,
             )
     assert "secret" not in str(caught.value) and caught.value.__suppress_context__
 
@@ -101,8 +90,8 @@ def test_cli_storage_summary_and_option_validation(
 ) -> None:
     monkeypatch.setenv("SEOUL_NEWS_API_KEY", "sample")
     monkeypatch.setenv("DATABASE_URL", "postgresql://user@localhost/test")
-    api, page = transports()
-    record, files = prepare_one(SETTINGS, api_transport=api, page_transport=page)
+    api = api_transport()
+    record, files = prepare_one(SETTINGS, api_transport=api)
     with patch("pipeline.cli.collect_and_save_one", return_value=(42, record, files)) as save:
         assert (
             main(["collect-one", "--source", "seoul", "--source-board", "25", "--index", "2"]) == 0
@@ -110,7 +99,7 @@ def test_cli_storage_summary_and_option_validation(
     assert save.call_args.kwargs == {"source_board": "25", "index": 2}
     summary = json.loads(capsys.readouterr().out)
     assert summary["stored"] is True and summary["notice_id"] == 42
-    assert summary["attachment_count"] == 2 and summary["inline_image_count"] == 1
+    assert summary["attachment_count"] == 1 and summary["inline_image_count"] == 1
     for argv in (
         ["collect-one", "--source", "seoul", "--index", "0"],
         ["collect-one", "--source", "seoul", "--post-sn", "123"],
@@ -154,26 +143,24 @@ def db_conn() -> Iterator[psycopg.Connection]:
 
 
 def test_actual_sql_new_repeat_and_order_keep_rows(db_conn: psycopg.Connection) -> None:
-    api, page = transports()
+    api = api_transport()
     with patch("pipeline.collect_seoul.psycopg.connect", return_value=nullcontext(db_conn)):
         first_id, record, files = collect_and_save_one(
             SETTINGS,
             DatabaseSettings("postgresql://not-used/test"),
             api_transport=api,
-            page_transport=page,
         )
         before = db_conn.execute(
             "select id,file_key,kind,file_id,file_sn from notice_files "
             "where notice_id=%s order by id",
             (first_id,),
         ).fetchall()
-        assert len(before) == 3 and all(r[3:] == (None, None) for r in before)
-        api, page = transports()
+        assert len(before) == 2 and all(r[3:] == (None, None) for r in before)
+        api = api_transport()
         second_id, _, _ = collect_and_save_one(
             SETTINGS,
             DatabaseSettings("postgresql://not-used/test"),
             api_transport=api,
-            page_transport=page,
         )
     assert first_id == second_id
     assert save_notice_with_files(db_conn, record, tuple(reversed(files))) == first_id
@@ -192,8 +179,8 @@ def test_actual_sql_new_repeat_and_order_keep_rows(db_conn: psycopg.Connection) 
 
 
 def test_actual_sql_file_insert_failure_rolls_back_notice(db_conn: psycopg.Connection) -> None:
-    api, page = transports()
-    record, files = prepare_one(SETTINGS, api_transport=api, page_transport=page)
+    api = api_transport()
+    record, files = prepare_one(SETTINGS, api_transport=api)
     notice_id = save_notice_with_files(db_conn, record, files)
     before = db_conn.execute(
         "select id,kind,url from notice_files where notice_id=%s order by id",
@@ -226,8 +213,8 @@ def test_actual_sql_file_insert_failure_rolls_back_notice(db_conn: psycopg.Conne
 
 
 def test_actual_sql_new_notice_rolls_back_on_file_failure(db_conn: psycopg.Connection) -> None:
-    api, page = transports()
-    record, files = prepare_one(SETTINGS, api_transport=api, page_transport=page)
+    api = api_transport()
+    record, files = prepare_one(SETTINGS, api_transport=api)
 
     def reject(conn: psycopg.Connection, parent: int, file: object) -> None:
         conn.execute(
@@ -243,6 +230,46 @@ def test_actual_sql_new_notice_rolls_back_on_file_failure(db_conn: psycopg.Conne
         db_conn.execute(
             "select count(*) from notices where category='seoul' "
             "and source_board='25' and post_sn='000123'",
+        ).fetchone()[0]
+        == 0
+    )
+
+
+def test_actual_sql_refresh_removes_known_decoration_but_preserves_body(
+    db_conn: psycopg.Connection,
+) -> None:
+    from pipeline.collect_seoul import prepare_notice
+
+    url = "https://culture.seoul.go.kr/_ui/images/main/cnl-common/nLc-logo-culture.png"
+    raw = collect_one(SETTINGS, transport=api_transport())
+    body = raw.body_html + f'<img src="{url}">'
+    record, filtered = prepare_notice(replace(raw, body_html=body))
+    decoration = replace(filtered[0], kind="inline_image", file_name="logo.png", url=url)
+    notice_id = save_notice_with_files(db_conn, record, (*filtered, decoration))
+    assert (
+        db_conn.execute(
+            "select count(*) from notice_files where notice_id=%s",
+            (notice_id,),
+        ).fetchone()[0]
+        == 3
+    )
+    assert save_notice_with_files(db_conn, record, filtered) == notice_id
+    assert db_conn.execute(
+        "select body_html,is_modified from notices where id=%s",
+        (notice_id,),
+    ).fetchone() == (body, True)
+    assert (
+        db_conn.execute(
+            "select count(*) from notice_files where notice_id=%s",
+            (notice_id,),
+        ).fetchone()[0]
+        == 2
+    )
+    assert save_notice_with_files(db_conn, record, filtered) == notice_id
+    assert (
+        db_conn.execute(
+            "select count(*) from notice_files where notice_id=%s and url=%s",
+            (notice_id, url),
         ).fetchone()[0]
         == 0
     )

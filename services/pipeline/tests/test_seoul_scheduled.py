@@ -14,7 +14,9 @@ import httpx
 import psycopg
 import pytest
 
+from pipeline.attachments.seoul_html import SeoulAttachmentError
 from pipeline.cli import main
+from pipeline.collect_seoul import prepare_notice
 from pipeline.collect_seoul_scheduled import (
     BoardResult,
     ScheduledSeoulResult,
@@ -25,8 +27,14 @@ from pipeline.collect_seoul_scheduled import (
 )
 from pipeline.config import DatabaseSettings, SeoulNewsSettings
 from pipeline.models import FileRecord, NoticeRecord, RawSeoulNotice
-from pipeline.sources.seoul_api import SeoulApiPage, SeoulSourceError, collect_page, parse_notice
-from pipeline.sources.seoul_page import BOARD_SLUGS, SeoulPageError
+from pipeline.sources.seoul_api import (
+    BOARD_SLUGS,
+    SeoulApiPage,
+    SeoulSourceError,
+    collect_page,
+    parse_notice,
+)
+from pipeline.transform.seoul import SeoulTransformError
 
 FIXTURE = Path(__file__).parent / "fixtures/seoul_one.xml"
 SETTINGS = SeoulNewsSettings("test-key", 5, 20)
@@ -53,9 +61,7 @@ def api_page(
     )
 
 
-def prepared(
-    n: RawSeoulNotice, settings: SeoulNewsSettings
-) -> tuple[NoticeRecord, tuple[FileRecord, ...]]:
+def prepared(n: RawSeoulNotice) -> tuple[NoticeRecord, tuple[FileRecord, ...]]:
     record = NoticeRecord(
         "seoul",
         n.source_board,
@@ -140,6 +146,18 @@ def test_each_empty_board_selects_25(mode: str) -> None:
         for call in fetch.call_args_list
     )
     assert {c.args[1].source_board for c in save.call_args_list} == set(BOARD_SLUGS)
+
+
+@pytest.mark.parametrize("mode", ["new", "refresh"])
+def test_scheduled_preparation_uses_api_html_without_original_or_file_requests(mode: str) -> None:
+    with patch("httpx.Client", side_effect=AssertionError("No page/file requests")):
+        result, _, preparation, save = run({}, set(), mode=mode, prepare=prepare_notice)
+    assert result.complete and preparation.call_count == save.call_count == 25
+    for call in save.call_args_list:
+        record, files = call.args[1:]
+        assert record.body_html == notice("25", 1).body_html
+        assert record.license_type is None
+        assert len(files) == 2
 
 
 def test_history_is_per_field_not_entire_seoul_category() -> None:
@@ -249,12 +267,13 @@ def test_one_page_failure_does_not_discard_other_fields() -> None:
     assert next(b for b in result.boards if b.source_board == "24").saved_count == 0
 
 
-@pytest.mark.parametrize("stage", ["page", "storage"])
+@pytest.mark.parametrize("stage", ["attachments", "transform", "storage"])
 def test_one_notice_failure_continues_without_hiding(stage: str) -> None:
-    def prepare(n: RawSeoulNotice, settings: SeoulNewsSettings) -> tuple:
-        if n.post_sn == "000002" and stage == "page":
-            raise SeoulPageError("missing page")
-        return prepared(n, settings)
+    def prepare(n: RawSeoulNotice) -> tuple:
+        if n.post_sn == "000002" and stage in ("attachments", "transform"):
+            error = SeoulAttachmentError if stage == "attachments" else SeoulTransformError
+            raise error("invalid API data")
+        return prepared(n)
 
     def save(conn: psycopg.Connection, record: NoticeRecord, files: tuple[FileRecord, ...]) -> None:
         if record.post_sn == "000002" and stage == "storage":
@@ -266,33 +285,14 @@ def test_one_notice_failure_continues_without_hiding(stage: str) -> None:
     assert b.failures[0].stage == stage
 
 
-@pytest.mark.parametrize("reason", ["page_identity_mismatch", "page_redirect"])
-def test_specific_page_reason_reaches_collection_report(reason: str) -> None:
-    def prepare(n: RawSeoulNotice, settings: SeoulNewsSettings) -> tuple:
-        if n.post_sn == "000002":
-            raise SeoulPageError("test", reason_code=reason)
-        return prepared(n, settings)
-
-    result, _, _, _ = run({}, set(), prepare=prepare)
-    assert result.boards[0].saved_count == 24
-    assert result.boards[0].failures[0].reason_code == reason
-
-
-@pytest.mark.parametrize("where", ["api", "page"])
-def test_rate_limit_stops_remaining_notices_and_fields(where: str) -> None:
+def test_api_rate_limit_stops_remaining_fields() -> None:
     def fetch(settings: SeoulNewsSettings, **kwargs) -> SeoulApiPage:
-        if where == "api":
-            raise SeoulSourceError("limited", retryable=True, rate_limited=True)
-        return api_page(settings, **kwargs)
+        raise SeoulSourceError("limited", retryable=True, rate_limited=True)
 
-    def prepare(n: RawSeoulNotice, settings: SeoulNewsSettings) -> tuple:
-        raise SeoulPageError("limited", retryable=True, rate_limited=True)
-
-    result, fetch_mock, prepare_mock, save = run(
-        {}, set(), board=None, fetch=fetch, prepare=prepare
-    )
+    result, fetch_mock, prepare_mock, save = run({}, set(), board=None, fetch=fetch)
     assert not result.complete and sum(b.saved_count for b in result.boards) == 0
-    assert fetch_mock.call_count == 1 and prepare_mock.call_count == (where == "page")
+    assert fetch_mock.call_count == 1
+    prepare_mock.assert_not_called()
     save.assert_not_called()
     assert all(b.failures[0].reason_code == "rate_limited_not_attempted" for b in result.boards[1:])
 
@@ -416,7 +416,7 @@ def test_cli_modes_json_and_invalid_combinations(
                 1,
                 True,
                 True,
-                (SeoulFailure("000002", "page", "page_unavailable"),),
+                (SeoulFailure("000002", "attachments", "invalid_file_reference"),),
             ),
         ),
     )
@@ -468,8 +468,8 @@ def test_real_sql_initial_25_new_skips_refresh_updates_and_parent_keys(
     assert first.saved_count == other.saved_count == 25
     assert next_new.saved_count == 0 and next_new.complete
 
-    def revised(n: RawSeoulNotice, settings: SeoulNewsSettings) -> tuple:
-        record, files = prepared(n, settings)
+    def revised(n: RawSeoulNotice) -> tuple:
+        record, files = prepared(n)
         return replace(record, title="17시 수정 제목"), files
 
     with (

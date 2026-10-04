@@ -10,21 +10,18 @@ import pytest
 
 from pipeline.attachments.seoul_html import SeoulAttachmentError, extract_files, normalize_file_url
 from pipeline.cli import main
-from pipeline.collect_seoul import prepare_one
+from pipeline.collect_seoul import prepare_notice, prepare_one
 from pipeline.config import SeoulNewsSettings
 from pipeline.models import RawSeoulNotice
-from pipeline.sources.seoul_api import parse_notice
-from pipeline.sources.seoul_page import (
-    BOARD_SLUGS,
-    SeoulPageError,
-    fetch_notice_page,
-    notice_url,
-    parse_page,
-)
+from pipeline.sources.seoul_api import BOARD_SLUGS, notice_url, parse_notice
 from pipeline.transform.seoul import SeoulTransformError, transform_seoul_notice
 
 FIXTURES = Path(__file__).parent / "fixtures"
-HTML = (FIXTURES / "seoul_page.html").read_text(encoding="utf-8")
+HTML = (
+    '<p>전체 본문 &amp; 안내</p><a href="/env/files/안내.pdf?a=1&amp;b=2">PDF</a>'
+    '<a href="/env/files/poster.jpg">첨부</a><img src="/env/files/poster.jpg">'
+    '<img src="/env/files/poster.jpg"><a href="/env/files/안내.pdf?a=1&amp;b=2">PDF</a>'
+)
 SETTINGS = SeoulNewsSettings("sample", 5.0, 20.0)
 
 
@@ -33,14 +30,14 @@ def raw() -> RawSeoulNotice:
 
 
 def test_prepare_contract_preserves_body_ids_dates_and_roles() -> None:
-    page = parse_page(raw(), HTML)
-    notice = transform_seoul_notice(raw(), page)
+    page = transform_seoul_notice(replace(raw(), body_html=HTML))
+    notice = page
     files = extract_files(page)
     assert notice.category == "seoul" and notice.source_board == "25"
     assert notice.post_sn == "000123"
     assert notice.dong_group is None and notice.is_pinned is False
     assert notice.registered_on == date(2026, 10, 2)
-    assert notice.license_type == "KOGL-4"
+    assert notice.license_type is None
     assert notice.url == "https://news.seoul.go.kr/env/archives/000123"
     assert notice.body_html == page.body_html
     assert "전체 본문 &amp; 안내" in notice.body_html
@@ -66,150 +63,25 @@ def test_all_eight_board_urls(board: str, slug: str) -> None:
     )
 
 
-def test_article_without_rating_uses_exact_canonical_and_og_url() -> None:
-    html = (FIXTURES / "seoul_page_without_rating.html").read_text(encoding="utf-8")
-    notice = replace(raw(), source_board="24")
-    page = parse_page(notice, html)
-    assert "식별 폼 없는 정상 공지 본문" in page.body_html
-    assert page.post_sn == "000123" and page.source_board == "24"
-
-
-@pytest.mark.parametrize(
-    "change",
-    [
-        "missing_og",
-        "wrong_og",
-        "duplicate_og",
-        "wrong_canonical",
-        "missing_body",
-        "wrong_form",
-        "partial_form",
-        "duplicate_form",
-    ],
-)
-def test_rating_fallback_does_not_accept_ambiguous_or_conflicting_identity(change: str) -> None:
-    html = (FIXTURES / "seoul_page_without_rating.html").read_text(encoding="utf-8")
-    og = '<meta property="og:url" content="https://news.seoul.go.kr/economy/archives/000123">'
-    form = (
-        '<form id="frmRating"><input name="blog_id" value="24">'
-        '<input name="post_id" value="000123"></form>'
-    )
-    if change == "missing_og":
-        html = html.replace(og, "")
-    elif change == "wrong_og":
-        html = html.replace(og, og.replace("000123", "999"))
-    elif change == "duplicate_og":
-        html = html.replace(og, og + og)
-    elif change == "wrong_canonical":
-        html = html.replace(
-            'rel="canonical" href="https://news.seoul.go.kr/economy/archives/000123"',
-            'rel="canonical" href="https://news.seoul.go.kr/env/archives/000123"',
-        )
-    elif change == "missing_body":
-        html = html.replace('id="post_content"', 'id="other"')
-    elif change == "wrong_form":
-        html = html.replace("</body>", form.replace('value="24"', 'value="25"') + "</body>")
-    elif change == "partial_form":
-        html = html.replace("</body>", '<form id="frmRating"></form></body>')
-    else:
-        html = html.replace("</body>", form + form + "</body>")
-    with pytest.raises(SeoulPageError) as caught:
-        parse_page(replace(raw(), source_board="24"), html)
-    assert caught.value.reason_code == (
-        "page_body_invalid" if change == "missing_body" else "page_identity_mismatch"
-    )
-
-
-@pytest.mark.parametrize(
-    "status,reason",
-    [
-        (302, "page_redirect"),
-        (404, "page_not_found"),
-        (410, "page_not_found"),
-        (403, "page_http_403"),
-        (429, "rate_limited"),
-        (503, "page_http_503"),
-    ],
-)
-def test_http_error_reason_is_specific_without_following_redirects(
-    status: int, reason: str
-) -> None:
-    requests = []
-
-    def response(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        return httpx.Response(status, headers={"location": "http://127.0.0.1/private"})
-
-    with pytest.raises(SeoulPageError) as caught:
-        fetch_notice_page(raw(), SETTINGS, transport=httpx.MockTransport(response))
-    assert caught.value.reason_code == reason
-    assert len(requests) == 1
-
-
-@pytest.mark.parametrize(
-    "failure,reason",
-    [(httpx.ReadTimeout, "page_timeout"), (httpx.ConnectError, "page_connection_failed")],
-)
-def test_network_error_reason_is_specific(failure: type[httpx.RequestError], reason: str) -> None:
-    def response(request: httpx.Request) -> httpx.Response:
-        raise failure("test", request=request)
-
-    with pytest.raises(SeoulPageError) as caught:
-        fetch_notice_page(raw(), SETTINGS, transport=httpx.MockTransport(response))
-    assert caught.value.reason_code == reason and caught.value.retryable
-
-
-@pytest.mark.parametrize(
-    "before,after",
-    [
-        ("archives/000123", "archives/999"),
-        ('name="blog_id" value="25"', 'name="blog_id" value="24"'),
-        ('name="post_id" value="000123"', 'name="post_id" value="123"'),
-        ('id="post_content"', 'id="not_content"'),
-        ("wp본문시작", "본문시작"),
-        ("wp본문끝", "본문끝"),
-        ('id="frmRating"', 'id="wrong_rating"'),
-    ],
-)
-def test_wrong_page_identity_or_body_boundary_rejected(before: str, after: str) -> None:
-    with pytest.raises(SeoulPageError):
-        parse_page(raw(), HTML.replace(before, after))
-
-
-@pytest.mark.parametrize("kind", [1, 2, 3, 4])
-def test_each_license_is_read_from_article_not_hardcoded(kind: int) -> None:
-    assert parse_page(raw(), HTML.replace("licenseType4", f"licenseType{kind}")).license_type == (
-        f"KOGL-{kind}"
-    )
-
-
-def test_missing_license_is_none_and_conflicting_unknown_license_is_error() -> None:
-    assert parse_page(raw(), HTML.replace("www.kogl.or.kr", "example.com")).license_type is None
-    with pytest.raises(SeoulPageError):
-        parse_page(raw(), HTML.replace("licenseType4", "licenseType9"))
-    with pytest.raises(SeoulPageError):
-        parse_page(
-            raw(),
-            HTML.replace(
-                'rel="license">',
-                'rel="license"></a><a href="//www.kogl.or.kr/info/licenseType1.do">',
-            ),
-        )
-
-
 @pytest.mark.parametrize("value", ["2026-02-30 12:00:00", "2026-10-02", "2026-10-02 25:00:00"])
 def test_invalid_dates_rejected(value: str) -> None:
     with pytest.raises(SeoulTransformError):
-        transform_seoul_notice(replace(raw(), registered_on=value), parse_page(raw(), HTML))
+        transform_seoul_notice(replace(raw(), registered_on=value))
 
 
-def test_transform_checks_parent_key_empty_body_and_image_only_body() -> None:
-    page = parse_page(raw(), HTML)
-    with pytest.raises(SeoulTransformError):
-        transform_seoul_notice(raw(), replace(page, source_board="24"))
-    assert transform_seoul_notice(raw(), replace(page, body_html="<p>&nbsp;</p>")).body_html is None
+def test_empty_body_never_uses_excerpt_or_thumbnail() -> None:
+    for body in (None, "<p>&nbsp;</p>"):
+        record, files = prepare_notice(replace(raw(), body_html=body))
+        assert record.body_html is None and files == ()
     body = '<img src="/env/files/poster.jpg">'
-    assert transform_seoul_notice(raw(), replace(page, body_html=body)).body_html == body
+    assert transform_seoul_notice(replace(raw(), body_html=body)).body_html == body
+
+
+def test_large_body_and_roles_are_preserved_without_requests() -> None:
+    body = "<p>" + "본문" * 20000 + "</p>" + HTML
+    with patch("httpx.Client", side_effect=AssertionError("No page/file requests")):
+        record, files = prepare_notice(replace(raw(), body_html=body))
+    assert record.body_html == body and len(files) == 3
 
 
 @pytest.mark.parametrize(
@@ -229,7 +101,7 @@ def test_bad_file_urls_rejected(url: str) -> None:
 
 def test_file_metadata_does_not_upgrade_external_http_or_invent_wp_image_uuid() -> None:
     page = replace(
-        parse_page(raw(), HTML),
+        transform_seoul_notice(replace(raw(), body_html=HTML)),
         body_html=(
             '<img class="wp-image-123" src="http://example.com/p.jpg">'
             '<a href="/env/endpoint" download>다운로드</a>'
@@ -242,35 +114,6 @@ def test_file_metadata_does_not_upgrade_external_http_or_invent_wp_image_uuid() 
     assert item.file_id is None
 
 
-@pytest.mark.parametrize("status", [302, 404, 429, 503])
-def test_http_failure_is_not_empty_success(status: int) -> None:
-    def response(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(status, headers={"location": "https://example.com/"})
-
-    with pytest.raises(SeoulPageError) as caught:
-        fetch_notice_page(raw(), SETTINGS, transport=httpx.MockTransport(response))
-    assert caught.value.retryable == (status in (429, 503))
-
-
-def test_timeout_and_non_html_rejected() -> None:
-    def timeout(request: httpx.Request) -> httpx.Response:
-        raise httpx.ReadTimeout("unsafe network details", request=request)
-
-    with pytest.raises(SeoulPageError) as caught:
-        fetch_notice_page(raw(), SETTINGS, transport=httpx.MockTransport(timeout))
-    assert caught.value.retryable and "unsafe" not in str(caught.value)
-    with pytest.raises(SeoulPageError):
-        fetch_notice_page(
-            raw(),
-            SETTINGS,
-            transport=httpx.MockTransport(
-                lambda r: httpx.Response(
-                    200, text=HTML, headers={"content-type": "application/json"}
-                ),
-            ),
-        )
-
-
 def test_prepare_and_cli_never_connect_to_db(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -281,14 +124,11 @@ def test_prepare_and_cli_never_connect_to_db(
         requests.append(request.url.path)
         return httpx.Response(200, content=(FIXTURES / "seoul_one.xml").read_bytes())
 
-    def page(request: httpx.Request) -> httpx.Response:
-        requests.append(request.url.path)
-        return httpx.Response(200, text=HTML, headers={"content-type": "text/html"})
-
-    record, files = prepare_one(
-        SETTINGS, api_transport=httpx.MockTransport(api), page_transport=httpx.MockTransport(page)
-    )
-    assert requests == ["/sample/xml/SeoulNewsList/1/1/", "/env/archives/000123"]
+    client = httpx.Client(transport=httpx.MockTransport(api))
+    with patch("httpx.Client", return_value=client):
+        record, files = prepare_one(SETTINGS)
+    assert requests == ["/sample/xml/SeoulNewsList/1/1/"]
+    assert record.body_html == raw().body_html
     monkeypatch.setenv("SEOUL_NEWS_API_KEY", "sample")
     with (
         patch("pipeline.cli.prepare_one", return_value=(record, files)),
@@ -300,7 +140,7 @@ def test_prepare_and_cli_never_connect_to_db(
         assert main(["inspect-prepared", "--source", "seoul"]) == 0
     output = json.loads(capsys.readouterr().out)
     assert output["stored"] is False and output["registered_on"] == "2026-10-02"
-    assert output["attachment_count"] == 2 and output["inline_image_count"] == 1
+    assert output["attachment_count"] == 1 and output["inline_image_count"] == 1
 
 
 def test_prepared_cli_errors_do_not_store(
@@ -311,29 +151,86 @@ def test_prepared_cli_errors_do_not_store(
     capsys.readouterr()
     monkeypatch.setenv("SEOUL_NEWS_API_KEY", "sample")
     with (
-        patch("pipeline.cli.prepare_one", side_effect=SeoulPageError("원문 누락")),
+        patch("pipeline.cli.prepare_one", side_effect=SeoulTransformError("날짜 오류")),
         patch(
             "pipeline.cli.psycopg.connect",
             side_effect=AssertionError("must not connect"),
         ),
     ):
         assert main(["inspect-prepared", "--source", "seoul"]) == 1
-    assert "원문 누락" in capsys.readouterr().err
+    assert "날짜 오류" in capsys.readouterr().err
 
 
 def test_malformed_download_url_is_safe_error() -> None:
-    page = replace(parse_page(raw(), HTML), body_html='<a href="https://[/x.pdf">파일</a>')
+    page = replace(
+        transform_seoul_notice(replace(raw(), body_html=HTML)),
+        body_html='<a href="https://[/x.pdf">파일</a>',
+    )
     with pytest.raises(SeoulAttachmentError):
         extract_files(page)
 
 
 def test_observed_theme_tag_icon_inside_body_is_not_a_file() -> None:
     page = replace(
-        parse_page(raw(), HTML),
+        transform_seoul_notice(replace(raw(), body_html=HTML)),
         body_html=(
             '<img src="//news.seoul.go.kr/wp-content/themes/seoul/images/common/icon_tag.gif">'
             '<a href="/env/files/notice.pdf">PDF</a>'
         ),
     )
     files = extract_files(page)
+    assert len(files) == 1 and files[0].kind == "attachment"
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "nLc-logo-culture.png",
+        "nLc-top-facebook.png",
+        "nLc-top-instargram.png",
+        "nLc-top-blog.png",
+    ],
+)
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        "https://culture.seoul.go.kr",
+        "http://culture.seoul.go.kr",
+        "//culture.seoul.go.kr",
+        "https://culture.seoul.go.kr:443",
+    ],
+)
+def test_known_culture_decoration_excluded_without_changing_body(
+    filename: str,
+    prefix: str,
+) -> None:
+    url = f"{prefix}/_ui/images/main/cnl-common/{filename}?v=1#preview"
+    body = f'<img src="{url}"><img src="/culture/files/poster.jpg">'
+    with patch("httpx.Client", side_effect=AssertionError("No network requests")):
+        record, files = prepare_notice(replace(raw(), body_html=body))
+    assert record.body_html == body
+    assert len(files) == 1 and files[0].url.endswith("/culture/files/poster.jpg")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://culture.seoul.go.kr/_ui/images/main/cnl-common/nLc-title-exhibition_2026.png",
+        "https://culture.seoul.go.kr/_ui/images/main/cnl-common/poster.png",
+        "https://culture.seoul.go.kr/cmmn/file/imageSrc.do?fileStreCours=a&streFileNm=b",
+        "https://culture.seoul.go.kr/uploads/nLc-logo-culture.png",
+        "https://example.com/_ui/images/main/cnl-common/nLc-logo-culture.png",
+        "https://culture.seoul.go.kr.example.com/_ui/images/main/cnl-common/nLc-logo-culture.png",
+    ],
+)
+def test_unknown_banner_poster_or_other_host_is_not_discarded(url: str) -> None:
+    _, files = prepare_notice(replace(raw(), body_html=f'<img src="{url}" width="1" alt="logo">'))
+    assert len(files) == 1 and files[0].kind == "inline_image"
+    assert files[0].url == url
+
+
+def test_decoration_filter_does_not_remove_explicit_attachment_role() -> None:
+    url = "https://culture.seoul.go.kr/_ui/images/main/cnl-common/nLc-logo-culture.png"
+    body = f'<a href="{url}">첨부</a><img src="{url}">'
+    _, files = prepare_notice(replace(raw(), body_html=body))
     assert len(files) == 1 and files[0].kind == "attachment"
