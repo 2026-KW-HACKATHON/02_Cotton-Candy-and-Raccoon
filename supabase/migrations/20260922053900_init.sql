@@ -1,7 +1,9 @@
 -- ============================================================================
 -- notices, notice_files: 수집한 공지를 그대로 저장하는 테이블
 --
--- 범위: 노원구 공지 API와 동주민센터 게시판에서 받은 내용만 저장한다.
+-- 범위: 노원구·동주민센터·서울시 공지와 파일 참조 메타데이터.
+-- #16 최초 생성용 통합본. 이미 적용된 DB를 업그레이드하는 SQL이 아니다.
+-- 공지 관련 후속 identity 마이그레이션은 이 파일에 통합했다.
 --       LLM 요약 결과, 수집 이력, 첨부파일 추출 상태는 여기 두지 않는다.
 --       해당 단계를 만들 때 별도 테이블로 추가한다.
 --
@@ -18,12 +20,15 @@ create table notices (
   -- notice_files가 이 값을 참조한다.
   id             bigint      generated always as identity primary key,
 
-  -- 출처 구분. 'nowon' = 노원구 공지 API, 'dong' = 동주민센터 게시판.
-  -- 두 출처가 post_sn 번호 체계를 공유하지 않으므로 유일 키에 함께 들어간다.
+  -- 출처: nowon = 노원구, dong = 동 게시판, seoul = 서울시.
   category       text        not null,
 
+  -- 게시판/분야 식별자. 노원구 1001, 동 게시판 1042, 서울시 API BLOG_ID.
+  -- 같은 동 게시판에 표시되는 다른 동 고정 글도 1042다. dong_group과 다르다.
+  source_board   text        not null,
+
   -- 동 공지가 어느 동 것인지. 'wolgye1' = 월계1동, 'other' = 다른 동.
-  -- 노원 공지에는 해당이 없어 null.
+  -- 노원구·서울시 공지에는 해당이 없어 null.
   -- 판단 기준: 번호 붙은 행은 월계1동 목록에서 왔으므로 wolgye1,
   --            고정 행은 부서 표기가 "월계1동"으로 시작하면 wolgye1, 아니면 other.
   dong_group     text,
@@ -32,7 +37,7 @@ create table notices (
   -- 다른 동 글은 고정이 풀리면 볼 이유가 없어져 is_visible도 false가 된다.
   is_pinned      boolean     not null default false,
 
-  -- 게시물 번호 (17자리). 노원 API는 ID 필드, 동 게시판은 URL의 q_bbscttSn.
+  -- 게시물 번호. 노원 API ID, 동 게시판 q_bbscttSn, 서울시 API POST_ID.
   -- 앞자리 0이 의미를 가질 수 있어 숫자형이 아니라 text로 둔다.
   post_sn        text        not null,
 
@@ -42,7 +47,7 @@ create table notices (
   -- 노원 API의 MANAGER는 sample 5건 모두 DEPARTMENT와 같아서 저장하지 않는다.
   department     text,
 
-  -- 등록일 (KST). 시각 없이 날짜만 제공되므로 date.
+  -- 등록일 (KST). 서울시의 시각 포함 값도 저장 시 날짜로 변환한다.
   -- 이 때문에 "받은 범위의 가장 오래된 날짜(D)" 당일 글은 범위 안인지 밖인지
   -- 판단할 수 없고, 동기화 규칙에서 D 당일 글은 숨김 대상에서 제외한다.
   registered_on  date        not null,
@@ -56,7 +61,7 @@ create table notices (
   body_html      text,
 
   -- 공공누리 유형. 노원 API는 데이터셋 제4유형이라 KOGL-4,
-  -- 동 게시판은 게시물 하단 표시값을 그대로 쓴다.
+  -- 동 게시판·서울시는 원문 표시값을 쓴다. 표시가 없으면 null.
   license_type   text,
 
   -- 한 번이라도 수정된 적이 있는지. 앱에서 "수정됨" 표시에 쓴다.
@@ -75,25 +80,31 @@ create table notices (
   -- 동기화가 조용히 멈췄을 때 이 값으로 알아차린다.
   updated_at     timestamptz not null default now(),
 
-  -- 같은 글은 분류당 한 행만. 출처가 다르면 번호가 겹쳐도 별개 행이다.
+  -- 같은 글은 출처·게시판/분야별 한 행. 서울시 분야가 다르면 같은 번호도 별개다.
   -- 동 게시판에서 같은 post_sn이 고정 행과 번호 행에 모두 나오면
   -- pipeline이 한 행으로 합치고 is_pinned = true로 둔다.
-  constraint notices_post_uq      unique (category, post_sn),
+  constraint notices_post_uq      unique (category, source_board, post_sn),
 
   -- 아래 check들은 이름을 붙여 두었다.
   -- pipeline에서 psycopg 예외를 잡을 때 제약 이름으로 원인을 구분할 수 있다.
-  constraint notices_category_ck  check (category in ('nowon', 'dong')),
+  constraint notices_category_ck  check (category in ('nowon', 'dong', 'seoul')),
+
+  constraint notices_source_board_ck check (
+    (category = 'nowon' and source_board = '1001')
+    or (category = 'dong' and source_board = '1042')
+    or (category = 'seoul' and source_board in ('21','22','23','24','25','26','27','30'))
+  ),
 
   constraint notices_dong_group_ck check (dong_group in ('wolgye1', 'other')),
 
   constraint notices_license_ck   check (license_type in ('KOGL-1', 'KOGL-2', 'KOGL-3', 'KOGL-4')),
 
   -- 출처별로 컬럼 조합이 맞는지 강제한다.
-  -- 노원 공지에는 동 정보가 없고 고정 개념도 없다.
+  -- 노원구·서울시 공지에는 동 정보가 없고 고정 개념도 없다.
   -- 동 공지에는 어느 동인지가 반드시 있어야 한다.
   -- pipeline 버그로 분류가 섞이면 조용히 저장되는 대신 여기서 막힌다.
   constraint notices_shape_ck     check (
-    (category = 'nowon' and dong_group is null and is_pinned = false)
+    (category in ('nowon', 'seoul') and dong_group is null and is_pinned = false)
     or (category = 'dong' and dong_group is not null)
   )
 );
@@ -128,14 +139,18 @@ create table notice_files (
   notice_id  bigint not null references notices(id) on delete cascade,
 
   -- 'attachment' = 첨부 목록의 파일, 'inline_image' = 본문 <img>.
-  -- 노원 API에는 첨부 목록이 없어 inline_image만 생긴다.
+  -- 본문과 확인된 원문 첨부 영역에서 추출한 참조를 저장한다.
   kind       text   not null,
 
-  -- 다운로드 URL의 q_fileSn. 같은 공지 안에서 파일을 구분하는 번호.
-  file_sn    text   not null,
+  -- 실제 q_fileSn(파일 집합 번호). 중복 가능하며 출처에 없으면 null.
+  file_sn    text,
 
-  -- 다운로드 URL의 q_fileId (UUID). 다운로드에 필요하다.
-  file_id    text   not null,
+  -- 실제 q_fileId. 출처에 없으면 null이며 가짜 UUID를 만들지 않는다.
+  file_id    text,
+
+  -- 실제 ID가 있으면 id:<file_id>, 없으면 url:<저장 URL의 UTF-8 SHA256>.
+  -- URL 정규화는 저장 코드의 책임이다. 파일 내용 해시가 아니다.
+  file_key   text   not null,
 
   -- 첨부 목록의 표시 이름. 본문 이미지는 이름이 없어 null.
   -- "직권조치결과공고문(이0진).pdf"처럼 마스킹된 성명이 들어갈 수 있어
@@ -147,16 +162,33 @@ create table notice_files (
   -- 정규식이 아니라 HTML parser로 src를 얻고 urllib.parse로 query를 나눈다.
   url        text   not null,
 
-  -- 같은 공지에 같은 파일 번호가 두 번 들어가지 않게 한다.
-  --
-  -- 주의: 같은 이미지가 본문에 두 번 나오는 공지가 있으면 두 번째 insert가
-  -- 여기 걸려 동기화 transaction 전체가 롤백된다. pipeline에서 file_sn 기준으로
-  -- 중복을 제거하거나 on conflict (notice_id, file_sn) do nothing을 붙일 것.
-  constraint notice_files_sn_uq   unique (notice_id, file_sn),
+  -- 같은 파일의 첨부·본문 이미지 역할은 각각 보존하고 같은 역할만 중복 차단.
+  constraint notice_files_identity_uq unique (notice_id, file_key, kind),
+
+  constraint notice_files_identifiers_ck check (
+    (file_sn is null or (file_sn = btrim(file_sn) and length(file_sn) > 0))
+    and (file_id is null or (file_id = btrim(file_id) and length(file_id) > 0))
+  ),
+  constraint notice_files_url_nonblank_ck check (url = btrim(url) and length(url) > 0),
+  constraint notice_files_key_ck check (
+    file_key = case when file_id is not null then 'id:' || file_id
+      else 'url:' || encode(sha256(convert_to(url, 'UTF8')), 'hex') end
+  ),
 
   constraint notice_files_kind_ck check (kind in ('attachment', 'inline_image'))
 );
 
 -- notice_id 단독 인덱스는 두지 않는다.
--- notice_files_sn_uq가 notice_id를 선행 컬럼으로 하는 인덱스를 이미 만들어서
+-- notice_files_identity_uq가 notice_id를 선행 컬럼으로 하는 인덱스를 이미 만들어서
 -- "이 공지의 파일 전부" 조회를 그 인덱스가 처리한다.
+
+comment on column public.notices.source_board is
+  'Source board: Nowon 1001, dong board 1042, SeoulNewsList BLOG_ID. Not dong_group.';
+comment on column public.notices.post_sn is
+  'Source post ID as text: Nowon ID, dong q_bbscttSn, Seoul POST_ID. Preserve leading zeros.';
+comment on column public.notice_files.file_key is
+  'id:<actual file_id>, or url:<SHA256 hex of stored normalized URL UTF-8> if file_id is NULL.';
+comment on column public.notice_files.file_id is
+  'Actual source file ID; NULL when absent. Do not invent a UUID.';
+comment on column public.notice_files.file_sn is
+  'Actual source file group/serial number; NULL when absent, not a uniqueness key.';
