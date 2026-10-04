@@ -1,6 +1,7 @@
 """Summarize extracted text or prepared visual files with distinct evidence checks."""
 
 import json
+import re
 from copy import deepcopy
 
 from pydantic import ValidationError
@@ -217,7 +218,90 @@ def _with_notes_review(summary: NoticeSummary, notice: NoticeInput) -> NoticeSum
     return summary
 
 
-def _merge_note_correction(first: NoticeSummary | None, retry: NoticeSummary) -> NoticeSummary:
+_NOTE_RESTRICTION = re.compile(r"불가(?!피)|금지|할\s*수\s*없|하지\s*못")
+_NOTE_EXCEPTION = re.compile(r"불가피|예외|경우(?:에)?\s*한(?:하여|해)|다만|(?:^|\s)단\s*[,，:：]")
+_NOTE_RULE_BOUNDARY = re.compile(r"\n|[;；※•●○■□]|[!?。](?=\s|$)|(?<!\d)\.(?=\s|$)")
+
+
+def _note_condition_groups(
+    notes: list[str], evidence: list[Evidence], notice: NoticeInput
+) -> list[list[int]]:
+    """Link returned restriction/exception fragments in the same original rule."""
+    parents = list(range(len(notes)))
+
+    def root(index: int) -> int:
+        while parents[index] != index:
+            index = parents[index]
+        return index
+
+    sources = [notice.body_text, *(item.text for item in notice.attachments)]
+    sources.extend(item.excerpt for item in evidence if item.field == "notes")
+    for source in dict.fromkeys(sources):
+        units = []
+        start = 0
+        for boundary in [*_NOTE_RULE_BOUNDARY.finditer(source), None]:
+            end = boundary.start() if boundary is not None else len(source)
+            if source[start:end].strip():
+                units.append((start, end))
+            start = boundary.end() if boundary is not None else end
+        for index, (start, end) in enumerate(units):
+            unit = source[start:end]
+            if not _NOTE_RESTRICTION.search(unit):
+                continue
+            if not _NOTE_EXCEPTION.search(unit) and index + 1 < len(units):
+                next_start, next_end = units[index + 1]
+                if _NOTE_EXCEPTION.match(source[next_start:next_end].lstrip()):
+                    end = next_end
+                    unit = source[start:end]
+            if not _NOTE_EXCEPTION.search(unit):
+                continue
+            mentioned = [position for position, note in enumerate(notes) if note in unit]
+            exception_start = _NOTE_EXCEPTION.search(unit).start()
+            # A returned quote may begin after '다만' or '불가피한 경우'. Its
+            # source position still links it to the original rule's exception.
+            has_exception_fragment = any(
+                match.end() > exception_start
+                for position in mentioned
+                for match in re.finditer(re.escape(notes[position]), unit)
+            )
+            if (
+                not any(_NOTE_RESTRICTION.search(notes[position]) for position in mentioned)
+                or not has_exception_fragment
+            ):
+                continue
+            for position in mentioned[1:]:
+                parents[root(position)] = root(mentioned[0])
+    groups: dict[int, list[int]] = {}
+    for index in range(len(notes)):
+        groups.setdefault(root(index), []).append(index)
+    return list(groups.values())
+
+
+def _select_note_conditions(
+    notes: list[str], evidence: list[Evidence], notice: NoticeInput
+) -> list[str]:
+    """Keep linked rules together; never display only one side of a returned pair."""
+    if len(notes) <= MAX_NOTES_ITEMS:
+        return notes
+    groups = _note_condition_groups(notes, evidence, notice)
+    selected = []
+    remaining = MAX_NOTES_ITEMS
+    # Preserve linked limits/exceptions before spending slots on standalone notes.
+    # Oversized rules are omitted as a whole, with review marked by the caller.
+    for group in sorted(groups, key=lambda indices: (len(indices) == 1, indices[0])):
+        if len(group) <= remaining:
+            selected.append(group)
+            remaining -= len(group)
+    return [
+        notes[index]
+        for group in sorted(selected, key=lambda indices: indices[0])
+        for index in group
+    ]
+
+
+def _merge_note_correction(
+    first: NoticeSummary | None, retry: NoticeSummary, notice: NoticeInput
+) -> NoticeSummary:
     """A notes-only retry must not remove already verified fields or conditions."""
     if first is None:
         return retry
@@ -230,11 +314,17 @@ def _merge_note_correction(first: NoticeSummary | None, retry: NoticeSummary) ->
         if identity not in seen:
             evidence.append(item)
             seen.add(identity)
-    # Keep the verified first conditions first. If corrected conditions cannot
-    # also fit, explicitly expose the omission rather than losing a first rule.
+    notes = _select_note_conditions(notes, evidence, notice)
+    evidence = [
+        item
+        for item in evidence
+        if item.field != "notes" or any(note in item.excerpt for note in notes)
+    ]
+    # Limits and their exceptions take slots together. Other verified first
+    # fields remain intact, and any omitted condition is explicitly exposed.
     return first.model_copy(
         update={
-            "notes": notes[:MAX_NOTES_ITEMS],
+            "notes": notes,
             "evidence": evidence,
             "uncertainties": [REVIEW_NOTE]
             if first.uncertainties or retry.uncertainties or overflow
@@ -349,7 +439,7 @@ def _summarize_input(
                         try:
                             summary = _validate_summary(merged, notice, media_sources=media_sources)
                             return _with_notes_review(
-                                _merge_note_correction(first_summary, summary), notice
+                                _merge_note_correction(first_summary, summary, notice), notice
                             )
                         except SummaryValidationError:
                             pass
@@ -363,7 +453,7 @@ def _summarize_input(
                                 repaired, notice, media_sources=media_sources
                             )
                             return _with_notes_review(
-                                _merge_note_correction(first_summary, summary), notice
+                                _merge_note_correction(first_summary, summary, notice), notice
                             )
                         except SummaryValidationError:
                             continue
@@ -377,7 +467,7 @@ def _summarize_input(
             feedback = _retry_feedback(raw, str(exc), first_missing)
         else:
             if attempt == 1:
-                summary = _merge_note_correction(first_summary, summary)
+                summary = _merge_note_correction(first_summary, summary, notice)
             missing = find_missing_note_conditions(summary, notice)
             if not missing:
                 return summary

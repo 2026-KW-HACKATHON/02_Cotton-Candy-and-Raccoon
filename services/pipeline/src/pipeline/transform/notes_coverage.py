@@ -169,8 +169,14 @@ def _support(source: str, start: int, end: int, unit: str) -> _Candidate | None:
     verb = _SUPPORT_VERB.search(unit, value.start())
     if verb is None or _UNCERTAIN_SUPPORT.search(unit[charge.end() :]):
         return None
-    # Multiple values/verbs may describe different groups or competing benefits.
-    if len(_SUPPORT_VALUE.findall(unit[charge.end() :])) != 1:
+    # "전액 면제" has one extent plus its exemption verb, not two competing
+    # amounts. A lone "면제" can itself supply both the extent and the verb.
+    values = [
+        match
+        for match in _SUPPORT_VALUE.finditer(unit, charge.end())
+        if match.span() != verb.span() or match.span() == value.span()
+    ]
+    if len(values) != 1:
         return None
     target_start = len(unit[: charge.start()]) - len(unit[: charge.start()].lstrip())
     target_end = charge.start() - (
@@ -242,7 +248,9 @@ def find_missing_note_conditions(
             if _UNSAFE_UNIT.search(unit):
                 continue
             # A directly labelled "cost: none" is still an explicit cost value.
-            direct_cost = _COST.fullmatch(unit)
+            # Use the same harmless terminal punctuation allowed by _cost;
+            # never strip words such as "아님" or treat "지원 없음" as free.
+            direct_cost = _COST.fullmatch(unit.rstrip(" .。()[]"))
             explicit_none = direct_cost is not None and direct_cost.group("value") == "없음"
             if _NEGATED.search(unit) and not explicit_none:
                 continue

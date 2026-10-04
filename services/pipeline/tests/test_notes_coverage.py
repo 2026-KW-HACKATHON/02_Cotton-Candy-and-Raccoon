@@ -246,6 +246,53 @@ def test_direct_amount_and_percentage_support_rules_are_checked(support: str) ->
 
 
 @pytest.mark.parametrize(
+    "support",
+    [
+        "사회적배려대상 본인부담금 전액 면제",
+        "수급자 수강료 면제",
+        "청년 이용료 50% 면제",
+        "학생 참가비 10,000원 면제",
+        "학생 참가비 전액 무료",
+    ],
+)
+def test_a_single_exemption_is_one_support_condition_not_two_amounts(support: str) -> None:
+    notice = _notice(support)
+    assert [
+        condition.kind for condition in find_missing_note_conditions(_summary(notice), notice)
+    ] == ["support"]
+    assert find_missing_note_conditions(_summary(notice, [support]), notice) == ()
+
+
+@pytest.mark.parametrize(
+    "cost", ["참가비: 없음.", "참가비: 없음。", "참가비 : 없음 .", "참가비 없음."]
+)
+def test_terminal_period_does_not_negate_an_explicit_no_cost_value(cost: str) -> None:
+    notice = _notice(cost)
+    assert [
+        condition.kind for condition in find_missing_note_conditions(_summary(notice), notice)
+    ] == ["cost"]
+    assert find_missing_note_conditions(_summary(notice, [cost]), notice) == ()
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "사회적배려대상 본인부담금 전액 면제 아님",
+        "사회적배려대상 본인부담금 전액 면제 지원 없음",
+        "사회적배려대상 본인부담금 전액 지원 또는 면제",
+        "사회적배려대상 본인부담금 전액 면제 또는 일부 지원",
+        "참가비: 없음이 아닙니다.",
+        "참가비: 무료 아님.",
+        "참가비: 없음 (지원 없음).",
+        "참가비: 없음?",
+    ],
+)
+def test_exemption_and_none_fixes_do_not_accept_negated_or_competing_rules(source: str) -> None:
+    notice = _notice(source)
+    assert find_missing_note_conditions(_summary(notice), notice) == ()
+
+
+@pytest.mark.parametrize(
     "target",
     [
         "신청 대상은 홈페이지 참고",

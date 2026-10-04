@@ -425,6 +425,92 @@ def test_notes_union_overflow_preserves_first_conditions_and_marks_review(
     assert result.audience == "노원구 거주 초등학생"
 
 
+@pytest.mark.parametrize("separator", [", ", ". ", "\n", ". 다만 "])
+def test_note_limit_keeps_a_returned_cancellation_exception_with_its_restriction(
+    monkeypatch: pytest.MonkeyPatch, separator: str
+) -> None:
+    restriction = "선정된 학생은 취소할 수 없다"
+    exception = (
+        "사전 연락 후 처리할 수 있다"
+        if "다만" in separator
+        else "불가피하면 사전 연락 후 처리할 수 있다"
+    )
+    rule = restriction + separator + exception
+    standalone = [
+        "신청 시 보호자 동의서 제출",
+        "개인 물품은 직접 준비해야 합니다",
+        "집결 시간을 확인해야 합니다",
+        "참가자는 안내 문자를 확인해야 합니다",
+    ]
+    notice = _notice(COST, rule, *standalone)
+    first = _output(notice, *standalone, restriction)
+    correction = _output(notice, COST, restriction, exception)
+    requests = _mock_responses(monkeypatch, first, correction)
+
+    result = summarize_module.summarize_notice(notice, api_key="test-key")
+
+    assert len(requests) == 2
+    assert restriction in result.notes
+    assert exception in result.notes
+    assert result.notes.index(exception) == result.notes.index(restriction) + 1
+    assert len(result.notes) == 5
+    assert result.uncertainties == [REVIEW_NOTE]
+    assert result.summary == TITLE
+    assert result.audience == "노원구 거주 초등학생"
+    assert all(any(note in item.excerpt for item in result.evidence) for note in result.notes)
+
+
+def test_a_rule_larger_than_the_note_limit_is_omitted_as_a_whole(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rule_notes = [
+        "선정된 학생은 취소할 수 없다",
+        "불가피하면 사전 연락 후 처리할 수 있다",
+        "사전 연락은 담당 부서로 해야 합니다",
+        "담당 부서의 승인 이후에만 처리합니다",
+        "처리 결과는 개별 안내합니다",
+        "연락 없이 불참하면 다음 행사 참여가 제한됩니다",
+    ]
+    rule = ", ".join(rule_notes)
+    notice = _notice(COST, rule)
+    first = _output(notice, *rule_notes[:5])
+    correction = _output(notice, COST, *rule_notes[4:])
+    requests = _mock_responses(monkeypatch, first, correction)
+
+    result = summarize_module.summarize_notice(notice, api_key="test-key")
+
+    assert len(requests) == 2
+    assert result.notes == [COST]
+    assert result.uncertainties == [REVIEW_NOTE]
+    assert result.summary == TITLE
+    assert result.audience == "노원구 거주 초등학생"
+    assert not any(
+        item.field == "notes" and any(note in item.excerpt for note in rule_notes)
+        for item in result.evidence
+    )
+
+
+@pytest.mark.parametrize("condition", ["수급자 수강료 전액 면제", "참가비 없음", "참가비 없음."])
+@pytest.mark.parametrize("repaired", [True, False], ids=["repaired", "still-missing"])
+def test_exemption_and_no_fee_conditions_use_the_same_omission_retry(
+    monkeypatch: pytest.MonkeyPatch, condition: str, repaired: bool
+) -> None:
+    notice = _notice(condition)
+    first = _output(notice)
+    retry = _output(notice, condition) if repaired else first
+    requests = _mock_responses(monkeypatch, first, retry)
+
+    result = summarize_module.summarize_notice(notice, api_key="test-key")
+
+    assert len(requests) == 2
+    retry_feedback = requests[1]["notice_text"][len(requests[0]["notice_text"]) :]
+    assert condition in retry_feedback
+    assert result.notes == ([condition] if repaired else [])
+    assert result.uncertainties == ([] if repaired else [REVIEW_NOTE])
+    assert result.summary == TITLE
+    assert result.audience == "노원구 거주 초등학생"
+
+
 @pytest.mark.parametrize("family", ("다문화가정", "한부모가정", "맞벌이가정"))
 @pytest.mark.parametrize("repaired", (True, False), ids=("repaired", "still-missing"))
 def test_family_audience_title_does_not_suppress_explicit_cost_coverage(
