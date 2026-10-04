@@ -918,8 +918,10 @@ def test_summarizer_validates_response_without_using_a_real_key(
 
     example_summary["evidence"][0]["excerpt"] = "원문에 없는 구절"
     uncertain = summarize_module.summarize_notice(notice, api_key="dummy-key")
-    assert uncertain.category == "unknown"
-    assert uncertain.summary == "원문 확인 필요"
+    assert uncertain.category == example_summary["category"]
+    assert uncertain.summary == "온라인 신청"
+    assert uncertain.action == "온라인 신청"
+    assert next(item for item in uncertain.evidence if item.field == "summary").verification is None
     assert uncertain.uncertainties == ["원문 확인 필요"]
     assert calls == 2  # one call for each summary, no retry for absent evidence
 

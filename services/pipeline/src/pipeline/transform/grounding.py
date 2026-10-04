@@ -4,6 +4,12 @@ import re
 from dataclasses import dataclass
 from datetime import date, datetime, time
 
+from pipeline.transform.file_only_summary import (
+    REVIEW_NOTE,
+    is_file_only_notice,
+    preserve_file_only_summary,
+    reversed_end_fields,
+)
 from pipeline.transform.notice_input import KST, NoticeInput
 from pipeline.transform.summary_schema import (
     FIELD_TEXT_LIMITS,
@@ -15,7 +21,6 @@ from pipeline.transform.summary_schema import (
     validate_evidence,
 )
 
-REVIEW_NOTE = "원문 확인 필요"
 DATE_TOKEN = re.compile(
     r"(?<!\d)(?:(?P<year>\d{4})\s*(?:년|[./-])\s*)?"
     r"(?P<month>\d{1,2})\s*(?:월|[./-])\s*(?P<day>\d{1,2})(?:일)?(?!\d)"
@@ -1003,7 +1008,13 @@ def ground_summary(
     *,
     media_sources: tuple[MediaSource, ...] = (),
 ) -> NoticeSummary:
-    """Drop unsupported fields and leave a single instruction to consult the source."""
+    """Produce the strict comparison result, not the final resident-facing output.
+
+    The caller preserves uncertain claims with preserve_uncertain_summary instead
+    of publishing the blanks produced by this diagnostic comparison.
+    """
+    if is_file_only_notice(notice, media_sources):
+        return preserve_file_only_summary(summary, notice, media_sources)
     sources = [notice.body_text, *(attachment.text for attachment in notice.attachments)]
     evidence = [
         item.model_copy(
@@ -1268,3 +1279,91 @@ def ground_summary(
         media_sources=media_sources,
     )
     return grounded
+
+
+def preserve_uncertain_summary(
+    summary: NoticeSummary,
+    checked: NoticeSummary,
+    notice: NoticeInput,
+    *,
+    media_sources: tuple[MediaSource, ...] = (),
+) -> NoticeSummary:
+    """Keep schema-valid claims and mark inconclusive comparisons for review.
+
+    A literal quote match verifies the quote, not the meaning of the claim. An
+    unmatched quote is retained with verification=None, including invalid file
+    references; no source ID/page is guessed. Impossible endpoint ordering is
+    still repaired. This function never fabricates missing model claims.
+    """
+    if is_file_only_notice(notice, media_sources):
+        return checked
+    if not notice.body_text.strip() and not notice.attachments and not media_sources:
+        return unknown_summary(notice)
+
+    data = summary.model_dump()
+    uncertain = bool(checked.uncertainties or summary.summary == REVIEW_NOTE)
+    for field in NoticeSummary.model_fields:
+        if field not in ("publisher", "evidence", "uncertainties"):
+            uncertain = uncertain or getattr(summary, field) != getattr(checked, field)
+
+    if notice.publisher and len(notice.publisher) <= FIELD_TEXT_LIMITS["publisher"]:
+        data["publisher"] = notice.publisher
+    elif summary.publisher != checked.publisher:
+        uncertain = True
+
+    sources = [
+        notice.body_text,
+        *(attachment.text for attachment in notice.attachments),
+        *(value for value in (notice.title, notice.publisher, notice.department) if value),
+    ]
+    evidence = []
+    cited_fields = set()
+    for item in summary.evidence:
+        if getattr(summary, item.field) in (None, []):
+            uncertain = True
+            continue
+        if item.field == "publisher" and notice.publisher:
+            continue
+        valid = evidence_reference_valid(item, sources=sources, media_sources=media_sources)
+        verification = (
+            ("text_matched" if item.source_type == "text" else "file_reference_only")
+            if valid
+            else None
+        )
+        uncertain = uncertain or not valid
+        if valid:
+            cited_fields.add(item.field)
+        evidence.append(item.model_copy(update={"verification": verification}).model_dump())
+    required = {"summary"} if summary.summary != REVIEW_NOTE else set()
+    required.update(
+        field
+        for field in (
+            "applicable_area",
+            "audience",
+            "action",
+            "location",
+            "dates",
+            "notes",
+            "topics",
+        )
+        if getattr(summary, field) not in (None, [])
+    )
+    uncertain = uncertain or bool(required - cited_fields)
+    data["evidence"] = evidence
+
+    reversed_order = False
+    for index, entry in enumerate(summary.dates):
+        for field in reversed_end_fields(entry):
+            data["dates"][index][field] = None
+            reversed_order = True
+    if reversed_order:
+        uncertain = True
+        data["status"] = "unknown"
+        data["status_detail"] = None
+        data["evidence"] = [
+            item for item in data["evidence"] if item["field"] not in ("status", "status_detail")
+        ]
+    data["uncertainties"] = list(
+        dict.fromkeys([*summary.uncertainties, *([REVIEW_NOTE] if uncertain else [])])
+    )
+    return NoticeSummary.model_validate(data)

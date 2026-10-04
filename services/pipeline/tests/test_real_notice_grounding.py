@@ -83,18 +83,18 @@ def test_captured_response_fixture_preserves_original_bytes_and_source_reference
     assert "기  간" in pdf["review_extracted_text"]
 
 
-def test_actual_pdf_response_keeps_spaced_period_and_place_even_when_summary_is_unsupported(
+def test_actual_pdf_only_response_preserves_summary_period_and_place(
     captures: dict[str, Any],
 ) -> None:
     result = _ground_case(captures, "camp_pdf")
-    assert result.summary == REVIEW_NOTE
+    assert result.summary == _case(captures, "camp_pdf")[1].summary
     assert result.category == "event"
     assert result.location == "강원도 고성 일원"
     assert [(entry.kind, entry.start_date, entry.end_date) for entry in result.dates] == [
         ("event", "2026-10-29", "2026-10-31")
     ]
     assert result.status == "upcoming"
-    assert result.uncertainties == [REVIEW_NOTE]
+    assert result.uncertainties == _case(captures, "camp_pdf")[1].uncertainties
     original_quotes = {item.field: item.excerpt for item in _case(captures, "camp_pdf")[1].evidence}
     for field in ("location", "dates"):
         item = next(item for item in result.evidence if item.field == field)
@@ -148,11 +148,10 @@ def test_original_text_responses_replay_through_the_public_summarizer_without_ap
     assert result.category == "application"
     if case_name == "camp_text":
         assert result.action == "노원구청 홈페이지 인터넷 접수"
-        assert any(
-            entry.kind == "other" and entry.start_date == "2026-10-29" for entry in result.dates
-        )
+        assert any(entry.start_date == "2026-10-29" for entry in result.dates)
     else:
-        assert result.summary == REVIEW_NOTE
+        assert result.summary == "노원영재교육원 심화과정 신입생 모집 신청 안내"
+    assert REVIEW_NOTE in result.uncertainties
 
 
 @pytest.mark.parametrize("spacing", [" ", "  ", "\t", "\u3000"])
@@ -228,8 +227,8 @@ def test_a_bare_period_keeps_dates_as_other_without_establishing_event_kind() ->
     assert result.uncertainties == [REVIEW_NOTE]
 
 
-def test_generic_pdf_period_cannot_borrow_event_context_from_another_file() -> None:
-    notice = _notice("")
+def test_mixed_generic_pdf_period_cannot_borrow_event_context_from_another_file() -> None:
+    notice = _notice("첨부 자료를 확인하세요.")
     summary = _summary(
         notice,
         dates=[_date()],
@@ -330,8 +329,8 @@ def test_generic_period_does_not_borrow_event_kind_from_disconnected_title(
     assert result.uncertainties == [REVIEW_NOTE]
 
 
-def test_same_pdf_page_preserves_both_quotes_for_generic_and_explicit_application_periods() -> None:
-    notice = _notice("")
+def test_mixed_same_pdf_page_preserves_both_quotes_for_different_application_periods() -> None:
+    notice = _notice("첨부 자료를 확인하세요.")
     period_a = "기 간: 2026-10-29~2026-10-31"
     period_b = "신청기간: 2026-10-10~2026-10-20"
 
@@ -495,7 +494,7 @@ def test_a_wrong_event_category_does_not_destroy_supported_recruitment_fields(
     assert result.status == "unknown"
 
 
-def test_the_captured_image_response_without_source_ids_is_still_rejected(
+def test_captured_image_only_response_without_source_ids_is_preserved_as_unverified(
     captures: dict[str, Any],
 ) -> None:
     case = captures["cases"]["camp_pdf"]
@@ -507,11 +506,13 @@ def test_the_captured_image_response_without_source_ids_is_still_rejected(
         NoticeInput.model_validate(case["notice"]),
         media_sources=tuple(MediaSource(**value) for value in image["media_sources"]),
     )
-    assert result.category == "unknown"
-    assert result.summary == REVIEW_NOTE
-    assert result.location is None
-    assert result.dates == []
-    assert result.evidence == []
+    assert result.category == raw.category
+    assert result.summary == raw.summary
+    assert result.location == raw.location
+    assert result.dates == raw.dates
+    assert result.evidence
+    assert all(item.verification is None for item in result.evidence)
+    assert result.uncertainties == [REVIEW_NOTE]
 
 
 def test_valid_unknown_classification_retains_fields_but_does_not_infer_status(

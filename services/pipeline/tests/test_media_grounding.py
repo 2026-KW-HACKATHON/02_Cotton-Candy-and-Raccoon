@@ -285,8 +285,8 @@ def test_available_media_does_not_turn_an_invented_text_quote_into_valid_evidenc
 
 
 @pytest.mark.parametrize("kind", ["document", "image"])
-def test_file_quote_still_rejects_negated_action_and_cost(kind: MediaKind) -> None:
-    notice = _notice()
+def test_mixed_file_quote_still_rejects_negated_action_and_cost(kind: MediaKind) -> None:
+    notice = _notice("첨부 자료를 확인하세요.")
     summary = _summary(
         notice,
         [
@@ -309,8 +309,8 @@ def test_file_quote_still_rejects_negated_action_and_cost(kind: MediaKind) -> No
     assert result.uncertainties == [REVIEW_NOTE]
 
 
-def test_file_audience_quote_does_not_drop_its_conditions() -> None:
-    notice = _notice()
+def test_mixed_file_audience_quote_does_not_drop_its_conditions() -> None:
+    notice = _notice("첨부 자료를 확인하세요.")
     summary = _summary(
         notice,
         [
@@ -360,8 +360,8 @@ def test_file_schedule_retains_korean_clock_and_date_roles(kind: MediaKind) -> N
     assert all(item.verification == "file_reference_only" for item in result.evidence)
 
 
-def test_file_period_start_cannot_be_claimed_as_end_and_marked_ended() -> None:
-    notice = _notice()
+def test_mixed_file_period_start_cannot_be_claimed_as_end_and_marked_ended() -> None:
+    notice = _notice("첨부 자료를 확인하세요.")
     summary = _summary(
         notice,
         [
@@ -385,8 +385,10 @@ def test_file_period_start_cannot_be_claimed_as_end_and_marked_ended() -> None:
 
 
 @pytest.mark.parametrize("fragment_kind", ["range", "clock"])
-def test_schedule_cannot_borrow_another_files_period_endpoint_or_clock(fragment_kind: str) -> None:
-    notice = _notice()
+def test_mixed_schedule_cannot_borrow_another_files_period_endpoint_or_clock(
+    fragment_kind: str,
+) -> None:
+    notice = _notice("첨부 자료를 확인하세요.")
     if fragment_kind == "range":
         first = "행사 시작: 2026-09-25"
         second = "행사 종료: 2026-09-30"
@@ -448,8 +450,8 @@ def test_file_recurring_schedule_preserves_unresolved_original_expression() -> N
     assert result.status == "check_required"
 
 
-def test_media_with_no_supported_summary_remains_review_required() -> None:
-    notice = _notice()
+def test_mixed_media_with_no_supported_summary_remains_review_required() -> None:
+    notice = _notice("첨부 자료를 확인하세요.")
     summary = _summary(
         notice,
         [_file_quote("summary", "행사 참여 불가", "image")],

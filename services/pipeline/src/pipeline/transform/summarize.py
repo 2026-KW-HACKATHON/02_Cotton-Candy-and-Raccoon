@@ -6,10 +6,20 @@ from copy import deepcopy
 
 from pydantic import ValidationError
 
+from pipeline.transform.file_only_summary import (
+    file_reference_problems,
+    is_file_only_notice,
+    preserve_file_only_summary,
+)
 from pipeline.transform.gemini_client import DEFAULT_MODEL, generate_summary_json
 from pipeline.transform.gemini_input import GeminiInput, append_retry_text
 from pipeline.transform.gemini_prompt import load_gemini_api_key, load_summary_prompt
-from pipeline.transform.grounding import REVIEW_NOTE, ground_summary, unknown_summary
+from pipeline.transform.grounding import (
+    REVIEW_NOTE,
+    ground_summary,
+    preserve_uncertain_summary,
+    unknown_summary,
+)
 from pipeline.transform.notes_coverage import MissingNoteCondition, find_missing_note_conditions
 from pipeline.transform.notice_input import NoticeInput, render_notice_input
 from pipeline.transform.prepared_summary import (
@@ -19,6 +29,7 @@ from pipeline.transform.prepared_summary import (
     prepare_gemini_request,
 )
 from pipeline.transform.summary_schema import (
+    FIELD_TEXT_LIMITS,
     MAX_NOTES_ITEMS,
     DateEntry,
     Evidence,
@@ -73,11 +84,12 @@ def _validate_summary(
         ) from None
 
     try:
-        return ground_summary(summary, notice, media_sources=media_sources)
+        checked = ground_summary(summary, notice, media_sources=media_sources)
     except (ValidationError, SummaryValidationError):
-        # Repair unsupported claims locally. Explicit condition coverage is
-        # checked separately by the caller within the same one-retry budget.
-        return unknown_summary(notice, has_media=bool(media_sources))
+        # A failed content comparison does not erase schema-valid model values.
+        # The diagnostic fallback marks them for review in the preservation step.
+        checked = unknown_summary(notice, has_media=bool(media_sources))
+    return preserve_uncertain_summary(summary, checked, notice, media_sources=media_sources)
 
 
 def _merge_schema_corrections(
@@ -98,6 +110,7 @@ def _merge_schema_corrections(
         return None
 
     merged = deepcopy(first)
+    corrected_fields = {error["loc"][0] for error in errors if error["loc"]}
     for error in errors:
         path = error["loc"]
         if not path:
@@ -105,12 +118,27 @@ def _merge_schema_corrections(
         first_parent = merged
         retry_parent = retry
         try:
+            if error["type"] == "extra_forbidden":
+                for segment in path[:-1]:
+                    first_parent = first_parent[segment]
+                del first_parent[path[-1]]
+                continue
             for segment in path[:-1]:
                 first_parent = first_parent[segment]
                 retry_parent = retry_parent[segment]
             first_parent[path[-1]] = retry_parent[path[-1]]
         except (KeyError, IndexError, TypeError):
             return None
+    # References for corrected values travel with those values. Keep first
+    # references for other fields instead of replacing the entire evidence list.
+    if "evidence" not in corrected_fields and isinstance(retry.get("evidence"), list):
+        merged["evidence"] = [
+            item for item in merged.get("evidence", []) if item.get("field") not in corrected_fields
+        ] + [
+            item
+            for item in retry["evidence"]
+            if isinstance(item, dict) and item.get("field") in corrected_fields
+        ]
     if correct_notes:
         # A retry may fix a missing condition as well as a shape error. Keep its
         # notes and their references together instead of restoring the omission.
@@ -126,10 +154,39 @@ def _merge_schema_corrections(
         merged["evidence"] = [item for item in first_evidence if item.get("field") != "notes"] + [
             item for item in retry_evidence if item.get("field") == "notes"
         ]
+    restored = any(
+        field not in corrected_fields
+        and value not in (None, [], REVIEW_NOTE, "unknown")
+        and retry.get(field) in (None, [], REVIEW_NOTE, "unknown")
+        for field, value in first.items()
+        if field not in ("evidence", "uncertainties")
+    )
+    if restored:
+        merged["uncertainties"] = list(
+            dict.fromkeys(
+                [*_usable_uncertainties(first), *_usable_uncertainties(retry), REVIEW_NOTE]
+            )
+        )
     return json.dumps(merged, ensure_ascii=False)
 
 
-def _drop_invalid_fields(raw: str) -> str | None:
+def _usable_uncertainties(data: dict) -> list[str]:
+    """Do not restore malformed raw warning values as characters or dictionary keys."""
+    values = data.get("uncertainties")
+    if not isinstance(values, list):
+        return []
+    return [
+        value
+        for value in values
+        if isinstance(value, str)
+        and value.strip()
+        and "\n" not in value
+        and "\r" not in value
+        and len(value) <= FIELD_TEXT_LIMITS["uncertainties"]
+    ]
+
+
+def _drop_invalid_fields(raw: str, *, allow_extra: bool = False) -> str | None:
     """Preserve valid fields when the model repeats a schema mistake."""
     try:
         data = json.loads(raw)
@@ -170,8 +227,23 @@ def _drop_invalid_fields(raw: str) -> str | None:
         if not path:
             return None
         field = path[0]
+        if error["type"] == "extra_forbidden":
+            if not allow_extra:
+                return None
+            parent = data
+            try:
+                for segment in path[:-1]:
+                    parent = parent[segment]
+                del parent[path[-1]]
+            except (KeyError, IndexError, TypeError):
+                return None
+            continue
         if field in scalar_defaults:
             data[field] = scalar_defaults[field]
+            if field == "action":
+                data["action_requirement"] = "unknown"
+            elif field == "audience":
+                data["audience_scope"] = "unknown"
         elif field == "notes" and len(path) == 1 and error["type"] == "too_long":
             # Do not choose five conditions and silently lose an important sixth one.
             data["notes"] = []
@@ -189,6 +261,14 @@ def _drop_invalid_fields(raw: str) -> str | None:
     for field, indices in removals.items():
         for index in sorted(indices, reverse=True):
             data[field].pop(index)
+    # A repaired entry containing only its kind has no surviving schedule fact.
+    # Keep recurring expressions/known endpoints, but do not later restore an
+    # empty shell produced by removing the only invalid label or date.
+    data["dates"] = [
+        item
+        for item in data["dates"]
+        if any(item.get(field) is not None for field in DateEntry.model_fields if field != "kind")
+    ]
     data["uncertainties"] = [REVIEW_NOTE]
     try:
         NoticeSummary.model_validate(data)
@@ -201,7 +281,7 @@ def _missing_notes_after_shape_repair(
     raw: str, notice: NoticeInput, *, media_sources: tuple[MediaSource, ...]
 ) -> tuple[MissingNoteCondition, ...]:
     """Collect omissions from usable parts so the single retry fixes both problems."""
-    repaired = _drop_invalid_fields(raw)
+    repaired = _drop_invalid_fields(raw, allow_extra=True)
     if repaired is None:
         return ()
     try:
@@ -214,13 +294,36 @@ def _missing_notes_after_shape_repair(
 def _with_notes_review(summary: NoticeSummary, notice: NoticeInput) -> NoticeSummary:
     """Retain verified fields and mark remaining detectable omissions after the retry."""
     if find_missing_note_conditions(summary, notice):
-        return summary.model_copy(update={"uncertainties": [REVIEW_NOTE]})
+        return summary.model_copy(
+            update={"uncertainties": list(dict.fromkeys([*summary.uncertainties, REVIEW_NOTE]))}
+        )
     return summary
 
 
 _NOTE_RESTRICTION = re.compile(r"불가(?!피)|금지|할\s*수\s*없|하지\s*못")
 _NOTE_EXCEPTION = re.compile(r"불가피|예외|경우(?:에)?\s*한(?:하여|해)|다만|(?:^|\s)단\s*[,，:：]")
 _NOTE_RULE_BOUNDARY = re.compile(r"\n|[;；※•●○■□]|[!?。](?=\s|$)|(?<!\d)\.(?=\s|$)")
+_NOTE_ACTION = re.compile(
+    r"취소|환불|반환|변경|접수|신청|예약|등록|제출|참여|입장|주차|수령|"
+    r"양도|납부|지급|발급|사용|이용|방문"
+)
+_NOTE_PERMISSION = re.compile(r"가능|할\s*수\s*있|허용")
+_NOTE_NEGATION = re.compile(r"아니|아닙|않|없|못|불가(?!피)|금지")
+
+
+def _note_permits_action(note: str, actions: set[str]) -> bool:
+    """A negative condition on a different action does not negate this permission."""
+    mentions = list(_NOTE_ACTION.finditer(note))
+    for index, mention in enumerate(mentions):
+        if mention.group() not in actions:
+            continue
+        end = mentions[index + 1].start() if index + 1 < len(mentions) else len(note)
+        clause = note[mention.end() : end]
+        if _NOTE_NEGATION.search(clause):
+            continue
+        if _NOTE_PERMISSION.search(clause) or _NOTE_EXCEPTION.search(note):
+            return True
+    return False
 
 
 def _note_condition_groups(
@@ -255,6 +358,20 @@ def _note_condition_groups(
                     unit = source[start:end]
             if not _NOTE_EXCEPTION.search(unit):
                 continue
+            # A paraphrase need not be a substring of its quote. Group opposite
+            # permissions only when the original rule contains a limit/exception
+            # and both returned notes share a concrete action from that rule.
+            # Generic words such as '가능' or '연락' never identify an action.
+            actions = set(_NOTE_ACTION.findall(unit))
+            for restricted, restriction in enumerate(notes):
+                if not _NOTE_RESTRICTION.search(restriction):
+                    continue
+                restricted_actions = actions.intersection(_NOTE_ACTION.findall(restriction))
+                for permitted, permission in enumerate(notes):
+                    if restricted == permitted:
+                        continue
+                    if _note_permits_action(permission, restricted_actions):
+                        parents[root(permitted)] = root(restricted)
             mentioned = [position for position, note in enumerate(notes) if note in unit]
             exception_start = _NOTE_EXCEPTION.search(unit).start()
             # A returned quote may begin after '다만' or '불가피한 경우'. Its
@@ -300,12 +417,42 @@ def _select_note_conditions(
 
 
 def _merge_note_correction(
-    first: NoticeSummary | None, retry: NoticeSummary, notice: NoticeInput
+    first: NoticeSummary | None,
+    retry: NoticeSummary,
+    notice: NoticeInput,
+    *,
+    media_sources: tuple[MediaSource, ...] = (),
 ) -> NoticeSummary:
     """A notes-only retry must not remove already verified fields or conditions."""
     if first is None:
         return retry
-    notes = list(dict.fromkeys([*first.notes, *retry.notes]))
+    # A source-matched retry may correct an otherwise identical monetary note.
+    # Preserve paraphrases and other uncertain conditions; do not display two
+    # conflicting amounts after a verified correction of the same sentence.
+    superseded = {
+        note
+        for note in first.notes
+        if re.search(r"\d[\d,]*\s*원", note)
+        and not any(
+            item.field == "notes" and item.verification == "text_matched" and note in item.excerpt
+            for item in first.evidence
+        )
+        and any(
+            note != corrected
+            and re.sub(r"\d[\d,]*(?=\s*원)", "<amount>", note)
+            == re.sub(r"\d[\d,]*(?=\s*원)", "<amount>", corrected)
+            and any(
+                item.field == "notes"
+                and item.verification == "text_matched"
+                and corrected in item.excerpt
+                for item in retry.evidence
+            )
+            for corrected in retry.notes
+        )
+    }
+    notes = list(
+        dict.fromkeys([*(note for note in first.notes if note not in superseded), *retry.notes])
+    )
     overflow = len(notes) > MAX_NOTES_ITEMS
     evidence = []
     seen = set()
@@ -314,23 +461,63 @@ def _merge_note_correction(
         if identity not in seen:
             evidence.append(item)
             seen.add(identity)
+    all_notes = notes
     notes = _select_note_conditions(notes, evidence, notice)
     evidence = [
         item
         for item in evidence
-        if item.field != "notes" or any(note in item.excerpt for note in notes)
+        if item.field != "notes"
+        or notes
+        and item.excerpt not in superseded
+        and (
+            any(note in item.excerpt for note in notes)
+            or not any(note in item.excerpt for note in all_notes)
+        )
     ]
     # Limits and their exceptions take slots together. Other verified first
     # fields remain intact, and any omitted condition is explicitly exposed.
-    return first.model_copy(
+    merged = first.model_copy(
         update={
             "notes": notes,
             "evidence": evidence,
-            "uncertainties": [REVIEW_NOTE]
-            if first.uncertainties or retry.uncertainties or overflow
-            else [],
+            "uncertainties": list(
+                dict.fromkeys(
+                    [
+                        *first.uncertainties,
+                        *retry.uncertainties,
+                        *([REVIEW_NOTE] if overflow else []),
+                    ]
+                )
+            ),
         }
     )
+    if retry.status != first.status and retry.status != "unknown":
+        # Do not freeze a wrong first status merely because this retry was
+        # requested for notes. Accept the correction only when the existing
+        # dates/source support it; file-only references cannot prove this.
+        if not is_file_only_notice(notice, media_sources):
+            candidate = merged.model_copy(
+                update={
+                    "status": retry.status,
+                    "status_detail": retry.status_detail,
+                    "evidence": [
+                        *merged.evidence,
+                        *(
+                            item
+                            for item in retry.evidence
+                            if item.field in ("status", "status_detail")
+                        ),
+                    ],
+                }
+            )
+            try:
+                checked = ground_summary(candidate, notice, media_sources=media_sources)
+            except (ValidationError, SummaryValidationError):
+                pass
+            else:
+                if checked.status == retry.status:
+                    merged = candidate.model_copy(update={"status_detail": checked.status_detail})
+    return merged
 
 
 def _retry_feedback(raw: str, problem: str, missing: tuple[MissingNoteCondition, ...]) -> str:
@@ -362,6 +549,42 @@ def _retry_feedback(raw: str, problem: str, missing: tuple[MissingNoteCondition,
         "uncertainties에 '원문 확인 필요'를 기록하세요. "
         "evidence의 발췌는 원문에서 글자를 그대로 복사하세요." + coverage_feedback
     )
+
+
+def _merge_text_retry(
+    first_raw: str | None,
+    first_summary: NoticeSummary | None,
+    retry_raw: str,
+    retry: NoticeSummary,
+    notice: NoticeInput,
+    *,
+    correct_notes: bool,
+    media_sources: tuple[MediaSource, ...],
+) -> NoticeSummary:
+    """Keep usable first facts for both shape and content corrections."""
+    if first_summary is not None:
+        return _merge_note_correction(first_summary, retry, notice, media_sources=media_sources)
+    if first_raw is None:
+        return retry
+    merged_raw = _merge_schema_corrections(first_raw, retry_raw, correct_notes=correct_notes)
+    repaired = _drop_invalid_fields(merged_raw) if merged_raw is not None else None
+    merged = (
+        _validate_summary(repaired, notice, media_sources=media_sources)
+        if repaired is not None
+        else retry
+    )
+    first_repaired = _drop_invalid_fields(first_raw, allow_extra=True)
+    if first_repaired is not None:
+        first = _validate_summary(first_repaired, notice, media_sources=media_sources)
+        # Array repairs may remove an element entirely, so error paths cannot
+        # always be copied by index. Restore usable facts from the repaired first
+        # object instead of abandoning preservation when that path is absent.
+        merged = _validate_summary(
+            json.dumps(_restore_retry_fields(first, merged, notice), ensure_ascii=False),
+            notice,
+            media_sources=media_sources,
+        )
+    return _merge_note_correction(merged, retry, notice, media_sources=media_sources)
 
 
 def summarize_notice(
@@ -410,10 +633,18 @@ def _summarize_input(
 ) -> NoticeSummary:
     prompt = load_summary_prompt()
     key = api_key if api_key is not None else load_gemini_api_key()
+    if is_file_only_notice(notice, media_sources):
+        return _summarize_file_only_input(
+            notice,
+            original_input,
+            prompt=prompt,
+            model=model,
+            api_key=key,
+            media_sources=media_sources,
+        )
     request_input = original_input
     first_raw: str | None = None
     first_missing: tuple[MissingNoteCondition, ...] = ()
-    first_was_valid = False
     first_summary: NoticeSummary | None = None
 
     for attempt in range(2):
@@ -424,42 +655,27 @@ def _summarize_input(
             summary = _validate_summary(raw, notice, media_sources=media_sources)
         except SummaryValidationError as exc:
             if attempt == 1:
-                if first_was_valid and _drop_invalid_fields(raw) is None:
-                    # A content retry returning unusable JSON is a processing
-                    # failure, not a success based on the incomplete first JSON.
+                repaired = _drop_invalid_fields(raw)
+                if repaired is None:
+                    # An unusable final response fails regardless of why the
+                    # retry was requested. Never turn an earlier partial JSON
+                    # into success after broken JSON or missing contract fields.
                     raise SummaryValidationError(
                         "Gemini summary JSON failed validation after one retry."
                     ) from None
-                merged = None
-                if first_raw is not None:
-                    merged = _merge_schema_corrections(
-                        first_raw, raw, correct_notes=bool(first_missing)
-                    )
-                    if merged is not None:
-                        try:
-                            summary = _validate_summary(merged, notice, media_sources=media_sources)
-                            return _with_notes_review(
-                                _merge_note_correction(first_summary, summary, notice), notice
-                            )
-                        except SummaryValidationError:
-                            pass
-                for candidate in (merged, raw, first_raw):
-                    if candidate is None:
-                        continue
-                    repaired = _drop_invalid_fields(candidate)
-                    if repaired is not None:
-                        try:
-                            summary = _validate_summary(
-                                repaired, notice, media_sources=media_sources
-                            )
-                            return _with_notes_review(
-                                _merge_note_correction(first_summary, summary, notice), notice
-                            )
-                        except SummaryValidationError:
-                            continue
-                raise SummaryValidationError(
-                    "Gemini summary JSON failed validation after one retry."
-                ) from None
+                summary = _validate_summary(repaired, notice, media_sources=media_sources)
+                return _with_notes_review(
+                    _merge_text_retry(
+                        first_raw,
+                        first_summary,
+                        raw,
+                        summary,
+                        notice,
+                        correct_notes=bool(first_missing),
+                        media_sources=media_sources,
+                    ),
+                    notice,
+                )
             first_raw = raw
             first_missing = _missing_notes_after_shape_repair(
                 raw, notice, media_sources=media_sources
@@ -467,15 +683,22 @@ def _summarize_input(
             feedback = _retry_feedback(raw, str(exc), first_missing)
         else:
             if attempt == 1:
-                summary = _merge_note_correction(first_summary, summary, notice)
+                summary = _merge_text_retry(
+                    first_raw,
+                    first_summary,
+                    raw,
+                    summary,
+                    notice,
+                    correct_notes=bool(first_missing),
+                    media_sources=media_sources,
+                )
             missing = find_missing_note_conditions(summary, notice)
             if not missing:
                 return summary
             if attempt == 1:
-                return summary.model_copy(update={"uncertainties": [REVIEW_NOTE]})
+                return _with_notes_review(summary, notice)
             first_raw = raw
             first_missing = missing
-            first_was_valid = True
             first_summary = summary
             # The detailed excerpts are request data only. Exception/log text
             # must never contain notice contents or attachment text.
@@ -484,4 +707,228 @@ def _summarize_input(
             )
         request_input = append_retry_text(original_input, feedback)
 
+    raise AssertionError("unreachable")
+
+
+def _retry_item_key(item: dict, field: str) -> tuple:
+    if field == "topics":
+        return (item["title"], item["category"])
+    return (item["kind"], item["label"])
+
+
+def _retry_item_score(
+    previous: dict, current: dict, field: str, previous_group: list[dict], current_group: list[dict]
+) -> int:
+    """Use distinguishing facts, never array position, to propose a correction."""
+    if _retry_item_key(previous, field) != _retry_item_key(current, field):
+        return 0
+    if previous == current:
+        return 100
+    if len(previous_group) == len(current_group) == 1:
+        return 1
+    if field == "topics":
+        # The title/category are not unique here. Different summaries cannot
+        # identify which of several topics a retry intended to correct.
+        return 0
+    if (
+        previous["start_date"] is not None
+        and current["start_date"] is not None
+        and previous["start_date"] != current["start_date"]
+    ):
+        return 0
+    same_day = (
+        previous["start_date"] is not None and previous["start_date"] == current["start_date"]
+    )
+    multiple_sessions = same_day and (
+        sum(item["start_date"] == previous["start_date"] for item in previous_group) > 1
+        or sum(item["start_date"] == current["start_date"] for item in current_group) > 1
+    )
+    if (
+        previous["start_time"] is not None
+        and current["start_time"] is not None
+        and previous["start_time"] != current["start_time"]
+        and (multiple_sessions or not same_day)
+    ):
+        return 0
+    return sum(
+        weight
+        for key, weight in (("start_date", 4), ("start_time", 2), ("end_date", 1), ("text", 3))
+        if previous[key] is not None and previous[key] == current[key]
+    )
+
+
+def _merge_retry_items(previous: list[dict], current: list[dict], field: str) -> list[dict]:
+    """Match corrections one to one; retain both candidates when correspondence is unclear."""
+    scores = [
+        [
+            _retry_item_score(
+                old,
+                new,
+                field,
+                [
+                    item
+                    for item in previous
+                    if _retry_item_key(item, field) == _retry_item_key(old, field)
+                ],
+                [
+                    item
+                    for item in current
+                    if _retry_item_key(item, field) == _retry_item_key(new, field)
+                ],
+            )
+            for new in current
+        ]
+        for old in previous
+    ]
+    matches = {}
+    for old_index, row in enumerate(scores):
+        best = max(row, default=0)
+        candidates = [index for index, score in enumerate(row) if score == best and score > 0]
+        if len(candidates) != 1:
+            continue
+        new_index = candidates[0]
+        column = [scores[index][new_index] for index in range(len(previous))]
+        if column.count(max(column)) == 1 and column[old_index] == max(column):
+            matches[old_index] = new_index
+    merged = []
+    for index, old in enumerate(previous):
+        if index not in matches:
+            merged.append(deepcopy(old))
+            continue
+        new = deepcopy(current[matches[index]])
+        # References may be fixed without re-emitting every nested value.
+        # The first objects have already had impossible end values removed.
+        for key, value in old.items():
+            if new[key] is None and value is not None:
+                new[key] = value
+        merged.append(new)
+    for index, new in enumerate(current):
+        if index not in matches.values() and new not in merged:
+            merged.append(deepcopy(new))
+    return merged
+
+
+def _restore_retry_fields(first: NoticeSummary, retry: NoticeSummary, notice: NoticeInput) -> dict:
+    """Preserve omissions in validated objects without reintroducing invalid raw values."""
+    data = retry.model_dump()
+    previous_data = first.model_dump()
+    restored = set()
+    for field in (
+        "summary",
+        "publisher",
+        "applicable_area",
+        "audience",
+        "action",
+        "location",
+        "dates",
+        "notes",
+        "topics",
+        "changed_details",
+        "status_detail",
+    ):
+        previous = getattr(first, field)
+        current = getattr(retry, field)
+        if previous not in (None, [], REVIEW_NOTE) and current in (None, [], REVIEW_NOTE):
+            # Copy nested models as JSON-compatible values, never share mutable lists.
+            data[field] = previous_data[field]
+            restored.add(field)
+        elif field in ("dates", "notes", "topics") and previous:
+            if field == "notes":
+                merged_items = _merge_note_correction(first, retry, notice).notes
+            else:
+                merged_items = _merge_retry_items(previous_data[field], data[field], field)
+            if merged_items != data[field]:
+                data[field] = merged_items
+                restored.add(field)
+    if not restored:
+        return data
+    for field, related in (
+        ("audience", "audience_scope"),
+        ("action", "action_requirement"),
+        ("changed_details", "notice_update"),
+    ):
+        if field in restored and getattr(retry, related) == "unknown":
+            data[related] = getattr(first, related)
+    data["evidence"].extend(item.model_dump() for item in first.evidence if item.field in restored)
+    data["uncertainties"] = list(
+        dict.fromkeys([*first.uncertainties, *retry.uncertainties, REVIEW_NOTE])
+    )
+    return data
+
+
+def _merge_file_reference_correction(
+    first: NoticeSummary | None,
+    retry: NoticeSummary,
+    notice: NoticeInput,
+    media_sources: tuple[MediaSource, ...],
+) -> NoticeSummary:
+    """A reference retry may correct facts, but must not silently erase them."""
+    if first is None:
+        return retry
+    merged = NoticeSummary.model_validate(_restore_retry_fields(first, retry, notice))
+    return preserve_file_only_summary(merged, notice, media_sources)
+
+
+def _summarize_file_only_input(
+    notice: NoticeInput,
+    original_input: GeminiInput,
+    *,
+    prompt: str,
+    model: str,
+    api_key: str,
+    media_sources: tuple[MediaSource, ...],
+) -> NoticeSummary:
+    """Share one retry across schema, reference, and chronological order problems.
+
+    Content comparisons are deliberately omitted because the caller supplied
+    visual files without extracted text. Malformed final JSON remains a failure.
+    """
+    reference_instruction = (
+        "\n[파일 전용 입력의 근거 형식]\n"
+        "파일의 내용에서 얻은 근거에는 source_type=document 또는 image와 "
+        "실제로 전송한 파일 목록의 source_id를 반드시 넣으세요. "
+        "PDF는 실제 1부터 시작하는 page 번호를, 이미지는 page=null을 넣으세요. "
+        "파일 인용을 source_type=text로 쓰지 마세요. 없는 파일 ID·페이지·종료 시각을 "
+        "추측하지 말고, 알 수 없는 내용은 uncertainties에 '원문 확인 필요'로 남기세요. "
+        "시작·종료 날짜와 시각의 순서도 확인하세요."
+    )
+    prompt += reference_instruction
+    request_input = original_input
+    first_summary: NoticeSummary | None = None
+    for attempt in range(2):
+        raw = generate_summary_json(
+            prompt=prompt, notice_text=request_input, api_key=api_key, model=model
+        )
+        try:
+            summary = _validate_summary(raw, notice, media_sources=media_sources)
+        except SummaryValidationError as exc:
+            if attempt == 1:
+                repaired = _drop_invalid_fields(raw)
+                if repaired is None:
+                    raise SummaryValidationError(
+                        "Gemini summary JSON failed validation after one retry."
+                    ) from None
+                return _merge_file_reference_correction(
+                    first_summary,
+                    _validate_summary(repaired, notice, media_sources=media_sources),
+                    notice,
+                    media_sources,
+                )
+            repaired = _drop_invalid_fields(raw, allow_extra=True)
+            if repaired is not None:
+                first_summary = _validate_summary(repaired, notice, media_sources=media_sources)
+            problem = str(exc)
+        else:
+            # Check the untouched model values before the preservation step
+            # clears an impossible end date/time and marks it for review.
+            original_summary = NoticeSummary.model_validate_json(raw)
+            problems = file_reference_problems(original_summary, notice, media_sources)
+            if not problems or attempt == 1:
+                return _merge_file_reference_correction(
+                    first_summary, summary, notice, media_sources
+                )
+            first_summary = summary
+            problem = "; ".join(problems)
+        feedback = _retry_feedback(raw, problem, ()) + reference_instruction
+        request_input = append_retry_text(original_input, feedback)
     raise AssertionError("unreachable")

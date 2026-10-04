@@ -148,7 +148,7 @@ def test_repeated_notes_overflow_remains_a_usable_partial_summary(
 
 
 @pytest.mark.parametrize("unsupported_summary", [False, True])
-def test_grounding_repairs_do_not_become_response_shape_failures(
+def test_inconclusive_grounding_preserves_claims_instead_of_becoming_shape_failure(
     monkeypatch: pytest.MonkeyPatch, unsupported_summary: bool
 ) -> None:
     data = _valid_output()
@@ -167,13 +167,11 @@ def test_grounding_repairs_do_not_become_response_shape_failures(
     result = summarize_module.summarize_notice(_notice("행사 안내"), api_key="test-key")
     assert calls == ["request"]
     assert result.category == "event"
-    assert result.summary == (REVIEW_NOTE if unsupported_summary else "행사 안내")
-    if unsupported_summary:
-        assert any(
-            item.field == "category" and item.excerpt == "행사 안내" for item in result.evidence
-        )
-        assert not any(item.field == "summary" for item in result.evidence)
-    assert result.action is None
+    assert result.summary == data["summary"]
+    assert result.action == data["action"]
+    assert any(item.field == "summary" for item in result.evidence)
+    if not unsupported_summary:
+        assert next(item for item in result.evidence if item.field == "action").verification is None
     assert result.uncertainties == [REVIEW_NOTE]
 
 
