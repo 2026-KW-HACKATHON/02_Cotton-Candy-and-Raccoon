@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from google.genai._gaos.lib.compat_errors import RateLimitError
+from google.genai import errors
 from pydantic import ValidationError
 
 from pipeline.transform import gemini_client
@@ -429,7 +429,7 @@ def test_mixed_topics_do_not_borrow_another_topic_summary(example_summary: dict)
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("summary", "열다섯 글자를 넘는 설명 문구입니다"),
+        ("summary", "가" * 41),
         ("category", "unsupported"),
     ],
 )
@@ -440,10 +440,10 @@ def test_invalid_output_is_rejected(example_summary: dict, field: str, value: st
         NoticeSummary.model_validate(invalid)
 
 
-def test_short_text_accepts_15_characters_and_rejects_16(example_summary: dict) -> None:
-    example_summary["summary"] = "가" * 15
+def test_summary_accepts_40_characters_and_rejects_41(example_summary: dict) -> None:
+    example_summary["summary"] = "가" * 40
     NoticeSummary.model_validate(example_summary)
-    example_summary["summary"] = "가" * 16
+    example_summary["summary"] = "가" * 41
     with pytest.raises(ValidationError):
         NoticeSummary.model_validate(example_summary)
 
@@ -799,7 +799,7 @@ def test_client_uses_stateless_structured_response(monkeypatch: pytest.MonkeyPat
 
         def create(self, **kwargs: object) -> SimpleNamespace:
             captured["request"] = kwargs
-            return SimpleNamespace(output_text='{"category":"unknown"}')
+            return SimpleNamespace(status="completed", output_text='{"category":"unknown"}')
 
     monkeypatch.setattr(gemini_client.genai, "Client", FakeClient)
     result = gemini_client.generate_summary_json(
@@ -828,7 +828,9 @@ def test_sdk_api_error_is_wrapped_without_response_body(monkeypatch: pytest.Monk
             return None
 
         def create(self, **_kwargs: object) -> None:
-            raise RateLimitError("dummy sensitive body", response=response, body={})
+            raise errors.ClientError(
+                429, {"error": {"message": "dummy sensitive body"}}, response=response
+            )
 
     monkeypatch.setattr(gemini_client.genai, "Client", FakeClient)
     with pytest.raises(gemini_client.GeminiRequestError, match="status 429") as exc:
@@ -960,7 +962,7 @@ def test_summarizer_retries_once_with_validation_feedback(
     example_summary["summary"] = "온라인 신청"
     example_summary["evidence"] = [{"field": "summary", "excerpt": "온라인 신청"}]
     valid = json.dumps(example_summary, ensure_ascii=False)
-    example_summary["summary"] = "열다섯 글자를 넘는 설명 문구입니다"
+    example_summary["summary"] = "가" * 41
     invalid = json.dumps(example_summary, ensure_ascii=False)
     requests: list[str] = []
 
@@ -972,7 +974,7 @@ def test_summarizer_retries_once_with_validation_feedback(
     result = summarize_module.summarize_notice(notice, api_key="dummy-key")
     assert result.summary == "온라인 신청"
     assert len(requests) == 2
-    assert "summary: 15자 제한 초과" in requests[1]
+    assert "summary: 40자 제한 초과" in requests[1]
     assert invalid in requests[1]
 
 
@@ -988,10 +990,10 @@ def test_retry_keeps_valid_first_response_fields(
     )
     example_summary["dates"] = []
     example_summary["evidence"] = [{"field": "summary", "excerpt": "온라인 신청"}]
-    example_summary["summary"] = "열다섯 글자를 넘는 설명 문구입니다"
+    example_summary["summary"] = "가" * 41
     first = json.dumps(example_summary, ensure_ascii=False)
     example_summary["summary"] = "온라인 신청"
-    example_summary["publisher"] = "열다섯 글자를 넘는 기관 이름입니다"
+    example_summary["publisher"] = "가" * 31
     retry = json.dumps(example_summary, ensure_ascii=False)
     responses = iter([first, retry])
 
@@ -1019,12 +1021,12 @@ def test_repeated_length_error_drops_only_the_invalid_strings(
         {
             "kind": "application",
             "label": "신청기간",
-            "text": "열다섯 글자를 넘는 일정 설명입니다",
+            "text": "가" * 31,
             "start_date": "2026-10-01",
             "end_date": "2026-10-19",
         }
     )
-    example_summary["notes"] = ["열다섯 글자를 넘는 비용 설명입니다"]
+    example_summary["notes"] = ["가" * 61]
     example_summary["evidence"] = [
         {"field": "summary", "excerpt": "수강생 모집"},
         {"field": "dates", "excerpt": "2026.10.1~2026.10.19"},
@@ -1049,7 +1051,7 @@ def test_repeated_length_error_drops_only_the_invalid_strings(
     assert result.uncertainties == ["원문 확인 필요"]
 
 
-def test_unparseable_response_falls_back_after_one_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_unparseable_response_fails_after_one_retry(monkeypatch: pytest.MonkeyPatch) -> None:
     notice = NoticeInput.model_validate(
         {
             "title": "접수 안내",
@@ -1064,8 +1066,6 @@ def test_unparseable_response_falls_back_after_one_retry(monkeypatch: pytest.Mon
         return "not json"
 
     monkeypatch.setattr(summarize_module, "generate_summary_json", fake_generate)
-    result = summarize_module.summarize_notice(notice, api_key="dummy-key")
+    with pytest.raises(SummaryValidationError, match="after one retry"):
+        summarize_module.summarize_notice(notice, api_key="dummy-key")
     assert len(requests) == 2
-    assert result.category == "unknown"
-    assert result.summary == "원문 확인 필요"
-    assert result.uncertainties == ["원문 확인 필요"]
