@@ -265,23 +265,213 @@ def _category_supported(
     return False
 
 
-def _location_supported(value: str, evidence: list[Evidence]) -> bool:
-    for excerpt in _excerpts(evidence, "location"):
-        if value not in excerpt:
+def _claim_context(source: str, start: int, end: int, *, quote_start: int) -> tuple[str, int, int]:
+    """Expand one claim only within its source sentence or list item."""
+    boundary = re.compile(
+        r"\n|[;；•●○■□※]|[!?。](?=\s|$)|(?<!\d)\.(?=\s|$)"
+        r"|(?P<label>(?<![가-힣])[가-힣](?:[가-힣]|[^\S\r\n]){0,12}\s*[:：])"
+    )
+    left, right = 0, len(source)
+    for match in boundary.finditer(source):
+        if match.end() <= start:
+            left = match.start() if match.group("label") else match.end()
+        elif match.start() >= end:
+            right = match.start()
+            break
+    # Preserve a label-only preceding line when it is part of the model's actual
+    # quote. A short value alone cannot borrow another list item's previous line.
+    line_start = source.rfind("\n", 0, start) + 1
+    if line_start > quote_start and not source[line_start:start].strip():
+        previous_start = source.rfind("\n", 0, line_start - 1) + 1
+        label_start = max(previous_start, quote_start)
+        if re.fullmatch(
+            r"\s*[■□•●○]?\s*"
+            r"(?:장소|위치|개최지|행사장|신청방법|접수방법|의무|반드시|필수)\s*[:：]?\s*",
+            _normalize_table_labels(source[label_start:start]),
+        ):
+            left = label_start
+    return source[left:right], start - left, end - left
+
+
+def _field_claim_contexts(
+    value: str, evidence: list[Evidence], field: str, sources: list[str]
+) -> list[list[tuple[str, int, int]]]:
+    """Keep all possible origins of each quote together, without borrowing quotes.
+
+    Text quotes have no source offset/ID. If the same quote occurs with conflicting
+    meanings, every possible origin must support a claim before it is retained.
+    File quotes have no local text to expand, so only that exact quote is used.
+    """
+    groups = []
+    for item in evidence:
+        if item.field != field or value not in item.excerpt:
             continue
-        before, after = excerpt.split(value, 1)
-        is_named_place = value.endswith(
-            ("공원", "센터", "회관", "도서관", "구청", "동주민센터", "역", "홀", "학교")
+        origins = (
+            [
+                _claim_context(item.excerpt, claim.start(), claim.end(), quote_start=0)
+                for claim in re.finditer(re.escape(value), item.excerpt)
+            ]
+            if item.source_type != "text"
+            else []
         )
-        if (
+        if item.source_type == "text":
+            for source in sources:
+                for match in re.finditer(re.escape(item.excerpt), source):
+                    for claim in re.finditer(re.escape(value), item.excerpt):
+                        origins.append(
+                            _claim_context(
+                                source,
+                                match.start() + claim.start(),
+                                match.start() + claim.end(),
+                                quote_start=match.start(),
+                            )
+                        )
+        if origins:
+            groups.append(origins)
+    return groups
+
+
+def _location_context_supported(value: str, context: tuple[str, int, int]) -> bool:
+    excerpt, start, end = context
+    before, after = excerpt[:start], excerpt[end:]
+    if re.match(
+        r"\s*(?:의\s*)?(?:공식\s*)?(?:홈페이지|누리집|웹사이트|인터넷|온라인)", after
+    ) or re.match(
+        r"\s*(?:[은는이가]\s*)?(?:(?:행사\s*)?장소(?:가)?\s*)?"
+        r"(?:아님|아니|아닙|불가)"
+        r"|\s*(?:에서|[은는이가])?\s*(?:(?:행사|캠프)(?:를|가|는|이)?\s*)?"
+        r"(?:(?:개최|진행|사용)(?:하지|되지)\s*않|열리지\s*않)",
+        after,
+    ):
+        return False
+    is_named_place = value.endswith(
+        ("공원", "센터", "회관", "도서관", "구청", "동주민센터", "역", "홀", "학교")
+    )
+    return bool(
+        (
             is_named_place
             and after.startswith(("에서", "에 위치", " 소재"))
             and not re.search(r"온라인|인터넷|접수|신청|문의", excerpt)
+        )
+        or re.search(r"(?:장소|위치|개최지|행사장)\s*[:：]?\s*$", _normalize_table_labels(before))
+    )
+
+
+def _location_supported(value: str, evidence: list[Evidence], sources: list[str]) -> bool:
+    return any(
+        all(_location_context_supported(value, context) for context in origins)
+        for origins in _field_claim_contexts(value, evidence, "location", sources)
+    )
+
+
+_ACTION_ROLE_WORDS = (
+    ("신청", "접수", "등록"),
+    ("제출", "보완"),
+    ("지참", "소지"),
+    ("납부", "결제", "입금"),
+    ("연락", "문의"),
+    ("참여", "방문", "출석"),
+    ("확인",),
+)
+_ACTION_ROLE_PATTERNS = tuple(
+    re.compile(r"(?:" + "|".join(words) + r")(?=$|[\s,，:：;；.()!?]|[은는이가을를하할해한했])")
+    for words in _ACTION_ROLE_WORDS
+)
+_ACTION_ACTOR = re.compile(
+    r"(?:참여자|참가자|신청자|접수자|선정자|당첨자|방문자|대상자|주민|학생|이용자)"
+    r"(?:는|은|만|의)"
+)
+_SHARED_ACTION_REQUIREMENT = re.compile(
+    r"(?:모두|각각|둘\s*다|전부)\s*(?:[은는이가]\s*)?(?:의무|필수|반드시|해야)"
+)
+
+
+def _action_requirement_context(value: str, origin: tuple[str, int, int]) -> tuple[str, int, int]:
+    """Keep obligations in this action's clause or an explicit continuation of it."""
+    context, start, end = origin
+    roles = {index for index, pattern in enumerate(_ACTION_ROLE_PATTERNS) if pattern.search(value)}
+    if not roles or re.match(r"\s*(?:의무|필수|반드시)\s*[:：]", context):
+        return origin
+    boundaries = [
+        match
+        for match in re.finditer(r"[,，]|(?:가능|선택)(?:하며|하고|이며|이고)", context)
+        if match.end() <= start or match.start() >= end
+    ]
+    own_left = max((match.end() for match in boundaries if match.end() <= start), default=0)
+    own_right = next(
+        (
+            match.start() if match.group() in (",", "，") else match.end()
+            for match in boundaries
+            if match.start() >= end
+        ),
+        len(context),
+    )
+    explicitly_optional = re.search(r"가능|선택|희망", context[own_left:own_right]) is not None
+    left, right = 0, len(context)
+    edges = [0, *(match.end() for match in boundaries), len(context)]
+    for index, match in enumerate(boundaries):
+        # A bare continuation (e.g. '반드시 해야 합니다') has no other action
+        # role and remains connected. A different action's clause is excluded.
+        if match.end() <= start:
+            clause = context[edges[index] : match.start()]
+        else:
+            clause = context[match.end() : edges[index + 2]]
+        # A subject such as '신청자' is not itself an application instruction.
+        clause_roles = {
+            role for role, pattern in enumerate(_ACTION_ROLE_PATTERNS) if pattern.search(clause)
+        }
+        if clause_roles and roles.isdisjoint(clause_roles):
+            separate_actor = _ACTION_ACTOR.search(clause) is not None
+            # A shared instruction can govern a list of different actions. Only
+            # detach a clause with a distinct actor or an explicit choice here;
+            # '모두 필수' without another actor still governs the whole list.
+            if not (explicitly_optional or separate_actor) or (
+                _SHARED_ACTION_REQUIREMENT.search(clause) and not separate_actor
+            ):
+                continue
+            if match.end() <= start:
+                left = match.end()
+            else:
+                right = match.end() if match.group() not in (",", "，") else match.start()
+                break
+    return context[left:right], start - left, end - left
+
+
+def _action_requirement_supported(
+    value: str, requirement: str, evidence: list[Evidence], sources: list[str]
+) -> bool:
+    words = {
+        "required": ("의무", "반드시", "필수", "해야"),
+        "optional": ("신청", "모집", "희망", "참여", "가능", "선택"),
+        "recommended": ("권고", "권장", "주의", "우회", "삼가"),
+    }.get(requirement)
+    if words is None:
+        return False
+
+    def supported(origin: tuple[str, int, int]) -> bool:
+        context, start, end = _action_requirement_context(value, origin)
+        nearby = context[max(0, start - 8) : end + 8]
+        mandatory = any(
+            not re.match(r"\s*(?:[은는이가]\s*)?(?:아님|아니|아닙|없)", context[match.end() :])
+            for match in re.finditer(r"의무|반드시|필수|해야", context)
+        )
+        if requirement == "optional" and mandatory:
+            return False
+        if requirement == "required" and (
+            re.search(r"선택|희망|가능", nearby)
+            or re.search(
+                r"(?:의무|필수)\s*(?:[은는이가]\s*)?(?:아님|아니|아닙|없)"
+                r"|하지\s*않아도|안\s*해도",
+                context,
+            )
         ):
-            return True
-        if re.search(r"(?:장소|위치|개최지|행사장)\s*[:：]?\s*$", _normalize_table_labels(before)):
-            return True
-    return False
+            return False
+        return any(word in nearby for word in words)
+
+    return any(
+        all(supported(context) for context in origins)
+        for origins in _field_claim_contexts(value, evidence, "action", sources)
+    )
 
 
 def _text_audience_supported(value: str, evidence: list[Evidence], sources: list[str]) -> bool:
@@ -835,7 +1025,7 @@ def ground_summary(
         if field == "audience":
             supported = supported and _audience_supported(value, evidence, sources)
         if field == "location":
-            supported = supported and _location_supported(value, evidence)
+            supported = supported and _location_supported(value, evidence, sources)
         if field == "action":
             if re.search(
                 r"(?:불가|금지|할\s*수\s*없|하지\s*못|하지\s*않|안\s*(?:되|됩))\s*$",
@@ -866,22 +1056,8 @@ def ground_summary(
     if data["action"] is None:
         data["action_requirement"] = "unknown"
     else:
-        local_contexts = []
-        for excerpt in _excerpts(evidence, "action"):
-            for match in re.finditer(re.escape(data["action"]), excerpt):
-                local_contexts.append(excerpt[max(0, match.start() - 8) : match.end() + 8])
-        requirement_words = {
-            "required": ("의무", "반드시", "필수", "해야"),
-            "optional": ("신청", "모집", "희망", "참여", "가능", "선택"),
-            "recommended": ("권고", "권장", "주의", "우회", "삼가"),
-        }.get(data["action_requirement"])
-        if (
-            requirement_words is None
-            or not any(word in context for context in local_contexts for word in requirement_words)
-            or (
-                data["action_requirement"] == "required"
-                and any(re.search(r"선택|희망|가능", context) for context in local_contexts)
-            )
+        if not _action_requirement_supported(
+            data["action"], data["action_requirement"], evidence, sources
         ):
             data["action_requirement"] = "unknown"
             changed = True
@@ -924,7 +1100,7 @@ def ground_summary(
                 continue
             after = excerpt[position + len(note) : position + len(note) + 15]
             if not re.match(
-                r"\s*(?:[은는이가]\s*)?(?:아님|아니|아닙|않|불가|금지|X|❌|하지\s*않)",
+                r"\s*(?:[은는이가]\s*)?(?:아님|아니|아닙|않|불가(?!피)|금지|X|❌|하지\s*않)",
                 after,
             ):
                 supported = True

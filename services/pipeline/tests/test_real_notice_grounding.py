@@ -529,3 +529,412 @@ def test_valid_unknown_classification_retains_fields_but_does_not_infer_status(
     assert result.notes == ["모집기간 내 상시 신청 가능"]
     assert any(entry.kind == "application" for entry in result.dates)
     assert result.status == "unknown"
+
+
+def test_actual_camp_short_quotes_keep_source_place_and_optional_application(
+    captures: dict[str, Any],
+) -> None:
+    notice, raw, _ = _case(captures, "camp_text")
+    values = raw.model_dump(mode="json")
+    values["action_requirement"] = "optional"
+    for item in values["evidence"]:
+        if item["field"] in ("location", "action"):
+            item["excerpt"] = values[item["field"]]
+    result = ground_summary(NoticeSummary.model_validate(values), notice)
+    assert result.location == "강원도 고성군 일원"
+    assert result.action == "노원구청 홈페이지 인터넷 접수"
+    assert result.action_requirement == "optional"
+    assert result.status == "closed"
+    for field in ("location", "action"):
+        item = next(item for item in result.evidence if item.field == field)
+        assert item.excerpt == values[field]
+        assert item.verification == "text_matched"
+
+
+@pytest.mark.parametrize("label", ["장소", "장 소", "장\t소", "위치", "개최지", "행사장"])
+def test_short_place_quote_uses_only_its_actual_source_label(label: str) -> None:
+    place = "강원도 고성군 일원"
+    notice = _notice(f"캠프 안내\n■ {label} : {place}")
+    result = ground_summary(
+        _summary(
+            notice,
+            location=place,
+            evidence=[
+                {"field": "summary", "excerpt": "캠프 안내"},
+                {"field": "location", "excerpt": place},
+            ],
+        ),
+        notice,
+    )
+    assert result.location == place
+
+
+@pytest.mark.parametrize("label", ["문의", "접수기관", "적용지역", "대상", "주최"])
+def test_contact_application_or_area_label_does_not_establish_a_place(label: str) -> None:
+    notice = _notice(f"캠프 안내\n{label}: 노원구청")
+    result = ground_summary(
+        _summary(
+            notice,
+            location="노원구청",
+            evidence=[
+                {"field": "summary", "excerpt": "캠프 안내"},
+                {"field": "location", "excerpt": "노원구청"},
+            ],
+        ),
+        notice,
+    )
+    assert result.location is None
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "장소: 노원구청 홈페이지 인터넷 접수",
+        "장소: 노원구청의 홈페이지에서 신청",
+        "장소: 노원구청 공식 홈페이지에서 신청",
+        "장소: 노원구청 아님",
+        "노원구청에서 캠프를 개최하지 않습니다",
+        "장소: 노원구청은 행사가 열리지 않는 장소입니다",
+        "장소: 노원구청은 행사 장소가 아닙니다",
+        "문의: 노원구청; 장소: 월계공원",
+    ],
+)
+def test_place_quote_cannot_hide_online_route_negation_or_another_place(source: str) -> None:
+    notice = _notice(f"캠프 안내\n{source}")
+    result = ground_summary(
+        _summary(
+            notice,
+            location="노원구청",
+            evidence=[
+                {"field": "summary", "excerpt": "캠프 안내"},
+                {"field": "location", "excerpt": "노원구청"},
+            ],
+        ),
+        notice,
+    )
+    assert result.location is None
+
+
+@pytest.mark.parametrize("separator", ["\n", "; ", ", "])
+@pytest.mark.parametrize("second_role", ["장소", "문의"])
+def test_repeated_short_place_quote_requires_all_possible_origins_to_agree(
+    separator: str,
+    second_role: str,
+) -> None:
+    place = "노원구청"
+    notice = _notice(f"캠프 안내\n장소: {place}{separator}{second_role}: {place}")
+    result = ground_summary(
+        _summary(
+            notice,
+            location=place,
+            evidence=[
+                {"field": "summary", "excerpt": "캠프 안내"},
+                {"field": "location", "excerpt": place},
+            ],
+        ),
+        notice,
+    )
+    assert result.location == (place if second_role == "장소" else None)
+
+
+def test_full_place_quote_disambiguates_a_repeated_contact_name() -> None:
+    notice = _notice("캠프 안내\n장소: 노원구청\n문의: 노원구청")
+    result = ground_summary(
+        _summary(
+            notice,
+            location="노원구청",
+            evidence=[
+                {"field": "summary", "excerpt": "캠프 안내"},
+                {"field": "location", "excerpt": "장소: 노원구청"},
+            ],
+        ),
+        notice,
+    )
+    assert result.location == "노원구청"
+
+
+def test_place_quote_keeps_a_venue_despite_a_conditional_weather_cancellation() -> None:
+    notice = _notice("캠프 안내\n장소: 월계공원 (우천 시 행사 취소 가능)")
+    result = ground_summary(
+        _summary(
+            notice,
+            location="월계공원",
+            evidence=[
+                {"field": "summary", "excerpt": "캠프 안내"},
+                {"field": "location", "excerpt": "월계공원"},
+            ],
+        ),
+        notice,
+    )
+    assert result.location == "월계공원"
+
+
+def test_short_place_quote_does_not_borrow_a_label_from_a_different_text_document() -> None:
+    notice = NoticeInput.model_validate(
+        _notice("캠프 안내\n문의: 노원구청").model_dump()
+        | {"attachments": [{"name": "다른 행사", "text": "장소: 노원구청"}]}
+    )
+    result = ground_summary(
+        _summary(
+            notice,
+            location="노원구청",
+            evidence=[
+                {"field": "summary", "excerpt": "캠프 안내"},
+                {"field": "location", "excerpt": "노원구청"},
+            ],
+        ),
+        notice,
+    )
+    assert result.location is None
+
+
+@pytest.mark.parametrize(
+    ("source", "requirement", "expected", "action_kept"),
+    [
+        ("신청방법: 온라인 접수", "optional", "optional", True),
+        ("접수방법: 희망자는 온라인 접수", "optional", "optional", True),
+        ("신청방법: 반드시 온라인 접수", "required", "required", True),
+        ("신청방법: 반드시 온라인 접수", "optional", "unknown", True),
+        ("신청방법: 온라인 접수 불가", "optional", "unknown", False),
+        ("필수 아님: 온라인 접수", "required", "unknown", True),
+        ("신청방법: 온라인 접수 (필수 아님)", "optional", "optional", True),
+        ("신청방법: 온라인 접수는 필수가 아닙니다", "required", "unknown", True),
+        ("신청방법: 온라인 접수는 의무가 아닙니다", "required", "unknown", True),
+        ("신청방법: 온라인 접수는 필수가 아닙니다", "optional", "optional", True),
+        ("신청방법: 온라인 접수는 의무가 아닙니다", "optional", "optional", True),
+        ("필수서류: 신분증; 신청방법: 온라인 접수", "required", "unknown", True),
+        ("필수서류: 신분증; 신청방법: 온라인 접수", "optional", "optional", True),
+    ],
+)
+def test_short_action_quote_retains_local_requirement_without_borrowing_or_negating_it(
+    source: str,
+    requirement: str,
+    expected: str,
+    action_kept: bool,
+) -> None:
+    action = "온라인 접수"
+    notice = _notice(f"캠프 안내\n{source}")
+    result = ground_summary(
+        _summary(
+            notice,
+            action=action,
+            action_requirement=requirement,
+            evidence=[
+                {"field": "summary", "excerpt": "캠프 안내"},
+                {"field": "action", "excerpt": action},
+            ],
+        ),
+        notice,
+    )
+    assert result.action_requirement == expected
+    assert result.action == (action if action_kept else None)
+
+
+@pytest.mark.parametrize("quote_style", ["text_short", "text_full", "document_full"])
+@pytest.mark.parametrize(
+    ("source", "requirement", "expected"),
+    [
+        ("온라인 접수 가능, 현장 참여자는 반드시 신분증 지참", "optional", "optional"),
+        ("현장 참여자는 반드시 신분증 지참, 온라인 접수 가능", "optional", "optional"),
+        ("온라인 접수 가능, 반드시 신분증 지참", "optional", "optional"),
+        ("온라인 접수 가능, 신청자는 반드시 신분증 지참", "optional", "optional"),
+        ("신청자는 반드시 신분증 지참, 온라인 접수 가능", "optional", "optional"),
+        ("온라인 접수 가능，현장 참여자는 반드시 신분증 지참", "optional", "optional"),
+        ("온라인 접수 가능하며 현장 참여자는 반드시 신분증 지참", "optional", "optional"),
+        ("신청방법: 온라인 접수, 신분증 지참은 모두 필수입니다", "optional", "unknown"),
+        ("온라인 접수 가능, 신분증 지참은 모두 필수입니다", "optional", "unknown"),
+        ("온라인 접수 가능, 현장 참여자는 모두 반드시 신분증 지참", "optional", "optional"),
+        ("온라인 접수 가능, 반드시 신분증 지참", "required", "unknown"),
+        ("신청방법: 온라인 접수, 반드시 해야 합니다", "optional", "unknown"),
+        ("신청방법: 온라인 접수, 반드시 해야 합니다", "required", "required"),
+        ("신청방법: 반드시, 온라인 접수", "optional", "unknown"),
+        ("신청방법: 반드시, 온라인 접수", "required", "required"),
+        (
+            "온라인 접수 필수, 현장 참여자의 신분증 지참은 필수가 아닙니다",
+            "required",
+            "required",
+        ),
+    ],
+)
+def test_other_actions_obligations_do_not_change_this_action_requirement(
+    source: str, requirement: str, expected: str, quote_style: str
+) -> None:
+    action = "온라인 접수"
+    notice = _notice(f"캠프 안내\n{source}" if quote_style != "document_full" else "캠프 안내")
+    quote: dict[str, Any] = {
+        "field": "action",
+        "excerpt": action if quote_style == "text_short" else source,
+    }
+    if quote_style == "document_full":
+        quote.update(source_type="document", source_id="media_1", page=1)
+    result = ground_summary(
+        _summary(
+            notice,
+            action=action,
+            action_requirement=requirement,
+            evidence=[{"field": "summary", "excerpt": "캠프 안내"}, quote],
+        ),
+        notice,
+        media_sources=(MediaSource("media_1", "document"),)
+        if quote_style == "document_full"
+        else (),
+    )
+    assert result.action == action
+    assert result.action_requirement == expected
+
+
+@pytest.mark.parametrize("quote_style", ["text_short", "text_full", "document_full"])
+def test_a_shared_leading_obligation_is_not_removed_from_an_application_list(
+    quote_style: str,
+) -> None:
+    action = "온라인 신청"
+    source = f"신청방법: 반드시 신분증 지참, {action}"
+    notice = _notice(f"캠프 안내\n{source}" if quote_style != "document_full" else "캠프 안내")
+    quote: dict[str, Any] = {
+        "field": "action",
+        "excerpt": action if quote_style == "text_short" else source,
+    }
+    if quote_style == "document_full":
+        quote.update(source_type="document", source_id="media_1", page=1)
+    result = ground_summary(
+        _summary(
+            notice,
+            action=action,
+            action_requirement="optional",
+            evidence=[{"field": "summary", "excerpt": "캠프 안내"}, quote],
+        ),
+        notice,
+        media_sources=(MediaSource("media_1", "document"),)
+        if quote_style == "document_full"
+        else (),
+    )
+    assert result.action == action
+    assert result.action_requirement == "unknown"
+    assert result.uncertainties == [REVIEW_NOTE]
+
+
+@pytest.mark.parametrize("second_role", ["희망자는", "반드시"])
+def test_repeated_short_action_quote_requires_compatible_requirement_at_every_origin(
+    second_role: str,
+) -> None:
+    action = "온라인 접수"
+    notice = _notice(f"캠프 안내\n신청방법: {action}\n접수방법: {second_role} {action}")
+    result = ground_summary(
+        _summary(
+            notice,
+            action=action,
+            action_requirement="optional",
+            evidence=[
+                {"field": "summary", "excerpt": "캠프 안내"},
+                {"field": "action", "excerpt": action},
+            ],
+        ),
+        notice,
+    )
+    assert result.action == action
+    assert result.action_requirement == ("optional" if second_role == "희망자는" else "unknown")
+
+
+@pytest.mark.parametrize("field", ["location", "action"])
+@pytest.mark.parametrize("quote_has_label", [False, True])
+def test_file_quote_cannot_borrow_its_place_or_requirement_label_from_body_text(
+    field: str,
+    quote_has_label: bool,
+) -> None:
+    value = "노원구청" if field == "location" else "온라인 접수"
+    label = "장소" if field == "location" else "신청방법"
+    quote = f"{label}: {value}" if quote_has_label else value
+    notice = _notice(f"캠프 안내\n{label}: {value}")
+    values: dict[str, Any] = {field: value}
+    if field == "action":
+        values["action_requirement"] = "optional"
+    result = ground_summary(
+        _summary(
+            notice,
+            **values,
+            evidence=[
+                {"field": "summary", "excerpt": "캠프 안내"},
+                {
+                    "field": field,
+                    "excerpt": quote,
+                    "source_type": "document",
+                    "source_id": "media_1",
+                    "page": 1,
+                },
+            ],
+        ),
+        notice,
+        media_sources=(MediaSource("media_1", "document"),),
+    )
+    if field == "location":
+        assert result.location == (value if quote_has_label else None)
+    else:
+        assert result.action == value
+        assert result.action_requirement == ("optional" if quote_has_label else "unknown")
+
+
+@pytest.mark.parametrize(
+    ("field", "label"),
+    [
+        ("location", "장소:"),
+        ("location", "장소"),
+        ("location", "장 소"),
+        ("action", "신청방법:"),
+    ],
+)
+@pytest.mark.parametrize("source_type", ["text", "document"])
+@pytest.mark.parametrize("quote_prefix", ["", "캠프 안내\n", "행사명: 캠프\n"])
+def test_a_label_only_preceding_line_is_preserved_when_included_in_the_quote(
+    field: str,
+    label: str,
+    source_type: str,
+    quote_prefix: str,
+) -> None:
+    value = "노원구청" if field == "location" else "온라인 접수"
+    quote = f"{quote_prefix}{label}\n{value}"
+    notice = _notice(f"캠프 안내\n{quote}" if source_type == "text" else "캠프 안내")
+    values: dict[str, Any] = {field: value}
+    if field == "action":
+        values["action_requirement"] = "optional"
+    evidence: dict[str, Any] = {"field": field, "excerpt": quote}
+    if source_type == "document":
+        evidence.update(source_type="document", source_id="media_1", page=1)
+    result = ground_summary(
+        _summary(
+            notice,
+            **values,
+            evidence=[{"field": "summary", "excerpt": "캠프 안내"}, evidence],
+        ),
+        notice,
+        media_sources=(MediaSource("media_1", "document"),),
+    )
+    assert getattr(result, field) == value
+    if field == "action":
+        assert result.action_requirement == "optional"
+    assert next(item.excerpt for item in result.evidence if item.field == field) == quote
+
+
+@pytest.mark.parametrize("field", ["location", "action"])
+def test_a_short_quote_does_not_borrow_a_disconnected_previous_line_label(field: str) -> None:
+    value = "노원구청" if field == "location" else "온라인 접수"
+    label = "장소" if field == "location" else "신청방법"
+    notice = _notice(f"캠프 안내\n{label}:\n다른 항목\n{value}")
+    values: dict[str, Any] = {field: value}
+    if field == "action":
+        values["action_requirement"] = "optional"
+    result = ground_summary(
+        _summary(
+            notice,
+            **values,
+            evidence=[
+                {"field": "summary", "excerpt": "캠프 안내"},
+                {"field": field, "excerpt": value},
+            ],
+        ),
+        notice,
+    )
+    if field == "location":
+        assert result.location is None
+    else:
+        assert result.action == value
+        assert result.action_requirement == "unknown"

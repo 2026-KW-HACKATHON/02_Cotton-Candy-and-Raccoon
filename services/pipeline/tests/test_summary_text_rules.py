@@ -313,3 +313,38 @@ def test_excess_notes_get_one_retry_and_do_not_discard_other_valid_claims(
         assert result.notes == []
         assert result.uncertainties == ["원문 확인 필요"]
         assert not any(item.field == "notes" for item in result.evidence)
+
+
+def test_long_cancellation_rule_preserves_restriction_and_exception_in_adjacent_notes() -> None:
+    title = "캠프 참가자 모집"
+    restriction = "전산추첨 후, 선정 된 학생은 임의로 취소 또는 포기할 수 없으며,"
+    exception = "불가피한 경우에 한하여 노원구청 기획예산과(02-2116-3158)로 반드시 사전 연락 바람"
+    rule = f"{restriction} {exception}"
+    cost = "참가비용 : 30,000원"
+    subsidy = "사회적배려대상 본인부담금 전액 노원구 지원"
+    disaster = "천재지변 등의 재난상황 발생시 캠프가 취소 또는 연기될 수 있음"
+    notes = [cost, subsidy, restriction, exception, disaster]
+    notice = make_notice(f"{title}\n{cost}\n{subsidy}\n※ {rule}\n※ {disaster}", title=title)
+    data = make_data(notice)
+    data.update(
+        category="application",
+        summary=title,
+        notes=notes,
+        uncertainties=[],
+        evidence=[
+            {"field": "summary", "excerpt": title},
+            {"field": "notes", "excerpt": cost},
+            {"field": "notes", "excerpt": subsidy},
+            {"field": "notes", "excerpt": rule},
+            {"field": "notes", "excerpt": disaster},
+        ],
+    )
+
+    result = ground_summary(NoticeSummary.model_validate(data), notice)
+
+    assert len(rule) > 60
+    assert all(len(note) <= 60 for note in notes)
+    assert result.notes == notes
+    assert result.uncertainties == []
+    assert any(item.field == "notes" and item.excerpt == rule for item in result.evidence)
+    assert "02-2116-3158" in result.notes[3]
