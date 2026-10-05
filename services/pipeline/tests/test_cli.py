@@ -23,6 +23,7 @@ def collect_env(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture
 def raw_notice() -> RawNotice:
     return RawNotice(
+        source_board="1001",
         category="nowon", dong_group=None, is_pinned=False, post_sn="00123",
         title="Notice", department=None, registered_on="2026-09-26",
         url=("https://www.nowon.kr/www/user/bbs/BD_selectBbs.do"
@@ -47,6 +48,7 @@ def test_collect_one_saves_after_complete_collection(
         assert main(["collect-one", "--source", "nowon"]) == 0
     saved_notice, saved_files = save.call_args.args[1:]
     assert saved_notice == NoticeRecord(
+        source_board="1001",
         category="nowon", dong_group=None, is_pinned=False, post_sn="00123",
         title="Notice", department=None, registered_on=date(2026, 9, 26),
         url=raw_notice.url, body_html="<p>Content</p>", license_type="KOGL-4",
@@ -161,6 +163,7 @@ def test_collect_one_twice_persists_one_notice_with_both_file_kinds(
     url = ("https://www.nowon.kr/www/user/bbs/BD_selectBbs.do"
            f"?q_bbsCode=1001&q_bbscttSn={post_sn}")
     source = RawNotice(
+        source_board="1001",
         category="nowon", dong_group=None, is_pinned=False, post_sn=post_sn,
         title="Synthetic notice", department=None, registered_on="2026-09-26", url=url,
         body_html='<img src="/file?q_fileSn=1&amp;q_fileId=image-a">',

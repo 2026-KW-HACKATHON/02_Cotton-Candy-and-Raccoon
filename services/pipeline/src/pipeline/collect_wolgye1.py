@@ -301,7 +301,8 @@ def _known_post_sns(
     if not entries:
         return set()
     rows = conn.execute(
-        "SELECT post_sn FROM notices WHERE category = 'dong' AND post_sn = ANY(%s)",
+        "SELECT post_sn FROM notices WHERE category = 'dong' "
+        "AND source_board = '1042' AND post_sn = ANY(%s)",
         ([entry.post_sn for entry in entries],),
     ).fetchall()
     return {row[0] for row in rows}
@@ -318,6 +319,7 @@ def collect_and_save_wolgye1_scheduled(
     try:
         initial_baseline = mode == "new" and not conn.execute(
             "SELECT EXISTS (SELECT 1 FROM notices WHERE category = 'dong' "
+            "AND source_board = '1042' "
             "AND dong_group = 'wolgye1' AND NOT is_pinned)",
         ).fetchone()[0]
         first = _fetch_list_with_retry(settings, 1)

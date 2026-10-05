@@ -10,6 +10,8 @@
 --   2층 POLICY - 행 단위. 조건에 맞는 행만 남는다. 에러 없이 조용히 걸러진다.
 --
 -- 이 파일은 init migration 다음에 적용되어야 한다.
+-- 통합 init의 nowon/dong/seoul에 동일한 공개 상태 규칙을 적용한다.
+-- source_board는 공지 조회로 공개하지만 file_key는 파일 허용 컬럼에 넣지 않는다.
 -- Supabase는 public 스키마의 새 테이블에 anon, authenticated의 select 권한을
 -- 자동으로 준다. 이 파일을 빼먹으면 숨긴 공지와 file_name이 전부 공개된다.
 -- ============================================================================
@@ -53,15 +55,19 @@ create policy "read files of visible notices"
 -- file_name에 "직권조치결과공고문(이0진).pdf"처럼 마스킹된 성명이 들어갈 수 있다.
 -- policy로는 행만 거를 수 있고 컬럼은 못 가리므로 GRANT 층에서 처리한다.
 --
--- Supabase가 테이블 생성 시 자동으로 준 테이블 전체 select 권한을 먼저 회수하고,
+-- Supabase가 테이블 생성 시 자동으로 준 테이블 권한을 먼저 회수하고,
 -- 필요한 컬럼만 다시 준다. 순서가 바뀌면 회수가 grant를 덮어쓴다.
 --
 -- 결과: 앱에서 select('*')는 permission denied로 실패한다.
 --       select('id, notice_id, kind, url')처럼 컬럼을 명시해야 한다.
 --
 -- file_id와 file_sn을 뺀 것은 실질적 차단이 아니다. url에 q_fileId와 q_fileSn이
--- 그대로 들어 있기 때문이다. 실제로 가려지는 것은 file_name 하나다.
-revoke select on notice_files from anon, authenticated;
+-- 그대로 들어 있기 때문이다. file_name과 file_key 등은 허용 목록 밖이다.
+-- 기본 테이블 권한에 기대지 않고 읽기 전용 허용 목록을 명시한다.
+-- 테이블 권한으로 쓰기·TRUNCATE도 막고 RLS로 공개 행만 남긴다.
+revoke all on notices, notice_files from anon, authenticated;
+
+grant  select on notices to anon, authenticated;
 grant  select (id, notice_id, kind, url) on notice_files to anon, authenticated;
 
 

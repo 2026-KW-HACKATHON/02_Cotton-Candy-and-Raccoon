@@ -1,4 +1,4 @@
-"""Use only an empty disposable loopback PostgreSQL database."""
+"""Validate the consolidated baseline using an empty disposable loopback DB."""
 
 import os
 from collections.abc import Iterator
@@ -32,18 +32,13 @@ def database() -> Iterator[psycopg.Connection]:
             "grant all on sequences to anon, authenticated"
         )
         files = sorted((ROOT / "supabase/migrations").glob("*.sql"))
-        assert len(files) == 5
-        for path in files[:4]:
+        assert [path.name for path in files] == [
+            "20260922053900_init.sql",
+            "20260922053901_rls.sql",
+            "20260923044500_holidays.sql",
+        ]
+        for path in files:
             conn.execute(path.read_text(encoding="utf-8"))
-        conn.execute("""insert into notices(category,post_sn,title,registered_on,url)
-                     values ('nowon','000001','legacy',current_date,'https://www.nowon.kr/old')""")
-        key = conn.execute("select id from notices where post_sn='000001'").fetchone()[0]
-        conn.execute(
-            """insert into notice_files(notice_id,kind,file_sn,file_id,url)
-                      values (%s,'attachment','group','old-uuid','https://www.nowon.kr/old.pdf')""",
-            (key,),
-        )
-        conn.execute(files[4].read_text(encoding="utf-8"))
         conn.execute((ROOT / "supabase/seed.sql").read_text(encoding="utf-8"))
         yield conn
     finally:
@@ -78,17 +73,26 @@ def insert_notice(
     ).fetchone()[0]
 
 
-def test_backfill_and_seed(db: psycopg.Connection) -> None:
+def test_consolidated_init_and_seed(db: psycopg.Connection) -> None:
     key, board, post = db.execute(
-        "select id,source_board,post_sn from notices where title='legacy'"
+        "select id,source_board,post_sn from notices where category='nowon'"
     ).fetchone()
-    assert (board, post) == ("1001", "000001")
+    assert (board, post) == ("1001", "20260901000000001")
     assert (
         db.execute("select file_key from notice_files where notice_id=%s", (key,)).fetchone()[0]
-        == "id:old-uuid"
+        == "id:aaaaaaaa-0000-0000-0000-000000000001"
     )
-    assert db.execute("select count(*) from notices").fetchone()[0] == 6
-    assert db.execute("select count(*) from notice_files").fetchone()[0] == 4
+    assert db.execute("select count(*) from notices").fetchone()[0] == 5
+    assert db.execute("select count(*) from notice_files").fetchone()[0] == 3
+    columns = dict(
+        db.execute(
+            "select column_name,is_nullable from information_schema.columns "
+            "where table_schema='public' and table_name='notice_files'"
+        ).fetchall()
+    )
+    assert columns["file_sn"] == columns["file_id"] == "YES"
+    assert columns["file_key"] == "NO"
+    assert db.execute("select to_regclass('public.holidays')").fetchone()[0] == "holidays"
 
 
 @pytest.mark.parametrize("board", ["21", "22", "23", "24", "25", "26", "27", "30"])
@@ -191,7 +195,7 @@ def test_invalid_file_key_rejected(
 def test_visible_rows_allowed_file_key_forbidden(db: psycopg.Connection, role: str) -> None:
     db.execute("set local role " + role)
     assert db.execute("select count(*) from notices where not is_visible").fetchone()[0] == 0
-    assert len(db.execute("select id,notice_id,kind,url from notice_files").fetchall()) == 3
+    assert len(db.execute("select id,notice_id,kind,url from notice_files").fetchall()) == 2
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         db.execute("select file_key from notice_files")
 
@@ -214,3 +218,37 @@ def test_app_write_forbidden(db: psycopg.Connection, role: str) -> None:
     db.execute("set local role " + role)
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         insert_notice(db)
+
+
+@pytest.mark.parametrize("role", ["anon", "authenticated"])
+def test_seoul_visible_notice_and_files_allowed_hidden_ones_filtered(
+    db: psycopg.Connection, role: str
+) -> None:
+    visible = insert_notice(db, board="25")
+    hidden = insert_notice(db, board="30")
+    db.execute("update notices set is_visible=false where id=%s", (hidden,))
+    for key in (visible, hidden):
+        db.execute(
+            "insert into notice_files(notice_id,kind,file_key,url) "
+            "values (%s,'inline_image','url:'||encode(sha256(convert_to(%s,'UTF8')),'hex'),%s)",
+            (key, "https://news.seoul.go.kr/image.png", "https://news.seoul.go.kr/image.png"),
+        )
+    db.execute("set local role " + role)
+    assert db.execute(
+        "select id,source_board,post_sn from notices where category='seoul'"
+    ).fetchall() == [(visible, "25", "00123")]
+    assert db.execute(
+        "select notice_id from notice_files where notice_id=any(%s)", ([visible, hidden],)
+    ).fetchall() == [(visible,)]
+
+
+@pytest.mark.parametrize("role", ["anon", "authenticated"])
+@pytest.mark.parametrize("table", ["notices", "notice_files"])
+def test_app_table_privileges_are_read_only(db: psycopg.Connection, role: str, table: str) -> None:
+    for privilege in ("INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"):
+        assert (
+            db.execute("select has_table_privilege(%s,%s,%s)", (role, table, privilege)).fetchone()[
+                0
+            ]
+            is False
+        )

@@ -34,10 +34,11 @@ def _file_identity(url: str) -> tuple[str, str] | None:
     return sn_values[0], id_values[0]
 
 
-def _unique_files(records: list[FileRecord]) -> dict[tuple[str, str], FileRecord]:
-    files: dict[tuple[str, str], FileRecord] = {}
+def _unique_files(records: list[FileRecord]) -> dict[tuple[str, ...], FileRecord]:
+    files: dict[tuple[str, ...], FileRecord] = {}
     for record in records:
-        key = (record.file_id, record.kind)
+        key = (record.category, record.source_board, record.post_sn,
+               record.file_key, record.kind)
         previous = files.get(key)
         if previous is not None and previous.url != record.url:
             raise AttachmentError(
@@ -57,15 +58,25 @@ def _normalize_nowon_file_url(url: str) -> str:
         and parsed.port in (None, 80, 443)
         and parsed.username is None and parsed.password is None
     ):
-        return urlunsplit(("https", "www.nowon.kr", parsed.path, parsed.query, parsed.fragment))
-    return url
+        return urlunsplit(("https", "www.nowon.kr", parsed.path, parsed.query, ""))
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, parsed.query, ""))
+
+
+def _is_editor_image(url: str) -> bool:
+    """Only accept observed official editor-upload paths without an ID."""
+    parsed = urlsplit(url)
+    return (
+        parsed.scheme == "https" and parsed.netloc == "www.nowon.kr"
+        and parsed.path.startswith("/webcontent/crosseditor/images/")
+        and parsed.path.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
+    )
 
 
 def extract_files(notice: RawNotice) -> list[FileRecord]:
-    """Return one file reference per file_id and kind in the API body.
+    """Return one file reference per source key, file_key and kind in the API body.
 
-    URLs without both file identifiers are not file records. No network or DB
-    access occurs.
+    Without identifiers, only official editor-upload images are recognized.
+    Ordinary navigation links and decorative images are excluded. No I/O occurs.
     """
     if notice.category != "nowon":
         raise ValueError("노원구 공지만 처리할 수 있습니다.")
@@ -90,9 +101,9 @@ def extract_files(notice: RawNotice) -> list[FileRecord]:
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
             continue
         identity = _file_identity(url)
-        if identity is None:
+        if identity is None and (is_attachment or not _is_editor_image(url)):
             continue
-        file_sn, file_id = identity
+        file_sn, file_id = identity if identity is not None else (None, None)
         file_name = None
         if is_attachment:
             download_name = element.get("download")
@@ -102,6 +113,7 @@ def extract_files(notice: RawNotice) -> list[FileRecord]:
             )
         files.append(FileRecord(
             category=notice.category,
+            source_board=notice.source_board,
             post_sn=notice.post_sn,
             kind="attachment" if is_attachment else "inline_image",
             file_sn=file_sn,
@@ -156,14 +168,19 @@ def extract_page_files(notice: RawNotice, page_html: str, page_url: str) -> list
                 code="invalid_file_url",
             )
         identity = _file_identity(url)
-        if identity is None:
+        # A direct file path is valid without a UUID; an unknown endpoint is not.
+        if identity is None and not parsed.path.lower().endswith(
+            (".pdf", ".hwp", ".hwpx", ".png", ".jpg", ".jpeg", ".webp",
+             ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".zip")
+        ):
             raise AttachmentError(
                 "원문 페이지 첨부파일의 식별 정보가 없습니다.",
                 code="missing_file_identity",
             )
-        file_sn, file_id = identity
+        file_sn, file_id = identity if identity is not None else (None, None)
         files.append(FileRecord(
             category=notice.category,
+            source_board=notice.source_board,
             post_sn=notice.post_sn,
             kind="attachment",
             file_sn=file_sn,

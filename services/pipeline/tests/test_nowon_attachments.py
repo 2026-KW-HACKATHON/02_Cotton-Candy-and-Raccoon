@@ -11,6 +11,7 @@ from pipeline.models import RawNotice
 
 def notice(html: str | None, *, category: str = "nowon") -> RawNotice:
     return RawNotice(
+        source_board="1001" if category == "nowon" else "1042",
         category=category, dong_group=None, is_pinned=False, post_sn="001234",
         title="Sample", department=None, registered_on="2026-09-23",
         url=("https://www.nowon.kr/www/user/bbs/BD_selectBbs.do"
