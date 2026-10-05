@@ -45,6 +45,7 @@ def transform_dong_notice(notice: RawNotice) -> NoticeRecord:
         if not soup.get_text(strip=True) and not soup.select_one("img[src], a[href]"):
             body_html = None
     return NoticeRecord(
+        source_board=notice.source_board,
         category="dong", dong_group=notice.dong_group, is_pinned=notice.is_pinned,
         post_sn=notice.post_sn, title=notice.title, department=notice.department,
         registered_on=registered_on, url=notice.url,

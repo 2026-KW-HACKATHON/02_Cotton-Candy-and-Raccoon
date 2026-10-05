@@ -23,6 +23,7 @@ EMPTY_ATTACHMENTS = (
 
 def _notice(post_sn: str, *, title: str = "Notice") -> RawNotice:
     return RawNotice(
+        source_board="1001",
         category="nowon", dong_group=None, is_pinned=False, post_sn=post_sn,
         title=title, department=None, registered_on="2026-09-26",
         url=("https://www.nowon.kr/www/user/bbs/BD_selectBbs.do"

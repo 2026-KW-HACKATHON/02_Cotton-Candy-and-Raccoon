@@ -266,6 +266,7 @@ def parse_detail_page(entry: BoardEntry, html: str) -> RawNotice:
     if not entry.is_pinned and not department.startswith("월계1동"):
         raise WolgyeSourceError("월계1동 일반 공지의 담당 동이 일치하지 않습니다.")
     return RawNotice(
+        source_board="1042",
         category="dong",
         dong_group="wolgye1" if department.startswith("월계1동") else "other",
         is_pinned=entry.is_pinned,
