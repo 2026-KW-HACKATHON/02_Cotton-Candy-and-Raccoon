@@ -105,7 +105,7 @@ def test_missing_page_does_not_save_even_when_api_body_has_file() -> None:
     full.assert_not_called()
 
 
-def test_bad_api_body_file_skips_notice_without_fetching_page() -> None:
+def test_real_file_conflict_is_rejected_after_original_page_is_read() -> None:
     source = replace(
         _notice("001"),
         body_html=(
@@ -116,7 +116,8 @@ def test_bad_api_body_file_skips_notice_without_fetching_page() -> None:
     settings, database = _settings()
     with (
         patch("pipeline.collect_nowon.collect_all", return_value=_listing((source,))),
-        patch("pipeline.collect_nowon.fetch_notice_page") as page,
+        patch("pipeline.collect_nowon.fetch_notice_page",
+              return_value=(source.url, EMPTY_ATTACHMENTS)) as page,
         patch("pipeline.collect_nowon.psycopg.connect", return_value=_mock_connection()),
         patch("pipeline.collect_nowon.save_notice_with_files") as save,
     ):
@@ -126,7 +127,7 @@ def test_bad_api_body_file_skips_notice_without_fetching_page() -> None:
         "attachments", "file_reference_conflict",
     )
     save.assert_not_called()
-    page.assert_not_called()
+    page.assert_called_once()
 
 
 def test_conflicting_id_is_skipped_but_other_notice_is_saved() -> None:

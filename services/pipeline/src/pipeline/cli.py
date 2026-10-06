@@ -10,6 +10,7 @@ from pipeline.attachments.nowon_html import (
     extract_files,
     extract_page_files,
     merge_files,
+    recover_masked_body_urls,
 )
 from pipeline.attachments.seoul_html import SeoulAttachmentError
 from pipeline.collect_nowon import collect_and_save_nowon, collect_and_save_nowon_scheduled
@@ -351,8 +352,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         try:
             notice = collect_one(settings)
-            body_files = extract_files(notice)
             page_url, page_html = fetch_notice_page(notice, settings)
+            notice = recover_masked_body_urls(notice, page_html)
+            body_files = extract_files(notice)
             page_files = extract_page_files(notice, page_html, page_url)
             files = merge_files(body_files, page_files)
             record = transform_nowon_notice(notice)

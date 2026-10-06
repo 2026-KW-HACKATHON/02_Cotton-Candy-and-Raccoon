@@ -11,6 +11,7 @@ from pipeline.attachments.nowon_html import (
     extract_files,
     extract_page_files,
     merge_files,
+    recover_masked_body_urls,
 )
 from pipeline.config import DatabaseSettings, NowonSettings
 from pipeline.models import FileRecord, NoticeRecord, RawNotice
@@ -104,12 +105,6 @@ def _prepare_notice(
 ) -> PreparedNotice:
     record = transform_nowon_notice(notice)
     try:
-        body_files = extract_files(notice)
-    except AttachmentError as error:
-        return PreparedNotice(
-            record, [], NoticeFailure(notice.post_sn, "attachments", error.code),
-        )
-    try:
         page_url, page_html = _fetch_page_with_retry(notice, settings)
     except NowonPageMissing:
         return PreparedNotice(
@@ -125,6 +120,9 @@ def _prepare_notice(
             ),
         )
     try:
+        notice = recover_masked_body_urls(notice, page_html)
+        body_files = extract_files(notice)
+        record = transform_nowon_notice(notice)
         page_files = extract_page_files(notice, page_html, page_url)
         files = merge_files(body_files, page_files)
     except AttachmentError as error:
