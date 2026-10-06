@@ -41,7 +41,7 @@ def recover_masked_body_urls(notice: RawNotice, page_html: str) -> RawNotice:
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
             continue
         identity = _file_identity(url)
-        if identity is not None and "***" in identity[1]:
+        if identity is not None and "*" in identity[1]:
             masked.append((tag, attribute, reference, identity))
     if not masked:
         return notice
@@ -77,7 +77,10 @@ def recover_masked_body_urls(notice: RawNotice, page_html: str) -> RawNotice:
             raise AttachmentError(
                 "가려진 파일 주소가 허용된 주소가 아닙니다.", code="masked_file_source_invalid"
             )
-        pattern = re.escape(masked_id).replace(re.escape("***"), "[0-9a-fA-F-]+")
+        pattern = "".join(
+            "[0-9a-fA-F-]+" if part.startswith("*") else re.escape(part)
+            for part in re.split(r"(\*+)", masked_id) if part
+        )
         candidates: set[str] = set()
         for original in original_bodies[0].select(f"{tag.name}[{attribute}]"):
             url = official_file_url(str(original.get(attribute, "")))

@@ -94,6 +94,38 @@ def test_encoded_stars_entities_and_duplicate_images_are_repaired() -> None:
     assert len(BeautifulSoup(repaired.body_html, "html.parser").select("img")) == 2
 
 
+@pytest.mark.parametrize("masked_id", [
+    "21*-e5ff5b2908a1", "21**-e5ff5b2908a1", "21****-e5ff5b2908a1",
+    "21*****-e5ff5b2908a1", "21*-6614-**-e5ff5b2908a1",
+])
+@pytest.mark.parametrize("outcome", ["success", "missing", "ambiguous", "invalid_uuid"])
+def test_variable_star_runs_require_one_valid_original_uuid(
+    masked_id: str, outcome: str,
+) -> None:
+    source = notice(html=f'<img src="{file_url(masked_id)}">')
+    original = f'<img src="{file_url()}">'
+    if outcome == "missing":
+        original = ""
+    elif outcome == "ambiguous":
+        original += f'<img src="{file_url(FILE_ID.replace("21986319", "21986318"))}">'
+    elif outcome == "invalid_uuid":
+        original = f'<img src="{file_url("21ab-6614-ab-e5ff5b2908a1")}">'
+    with patch(
+        "pipeline.collect_nowon.fetch_notice_page",
+        return_value=(source.url, page(html=original)),
+    ):
+        prepared = _prepare_notice(source, SETTINGS)
+    if outcome == "success":
+        assert prepared.failure is None
+        assert len(prepared.files) == 1 and prepared.files[0].file_id == FILE_ID
+        assert "*" not in prepared.record.body_html
+    else:
+        expected = "masked_file_ambiguous" if outcome == "ambiguous" else "masked_file_unresolved"
+        assert prepared.failure is not None
+        assert prepared.failure.reason_code == expected
+        assert prepared.files == []
+
+
 @pytest.mark.parametrize("tag", ["img", "a"])
 def test_masked_and_normal_references_share_one_normalized_file(tag: str) -> None:
     attribute = "src" if tag == "img" else "href"
