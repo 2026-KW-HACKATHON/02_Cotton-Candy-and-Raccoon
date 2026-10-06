@@ -15,6 +15,7 @@ from pipeline.storage.summary_record import (
     build_summary_record,
 )
 from pipeline.transform.prepared_summary import PreparedSummaryResult
+from pipeline.transform.summary_schema import NoticeSummary
 
 UPSERT_SUMMARY = """
 insert into notice_summaries (
@@ -37,6 +38,18 @@ on conflict (notice_id) do update set
 returning notice_id
 """
 
+UPSERT_SUMMARY_FAILURE = """
+insert into notice_summaries (
+    notice_id, status, result, category, deadline_on, attachment_status,
+    source_hash, model, prompt_version, attempt_count, last_error_code, generated_at
+) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+on conflict (notice_id) do update set
+    last_error_code = excluded.last_error_code,
+    attempt_count = notice_summaries.attempt_count + excluded.attempt_count,
+    updated_at = now()
+returning notice_id
+"""
+
 
 class SummaryStorageError(RuntimeError):
     """Storage failed; provider details and bound summary data stay out of messages."""
@@ -48,10 +61,12 @@ class SummaryStorageError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class StoredPreparedSummary:
-    """A completed write in the caller's transaction, with the original side data.
+    """A completed write with an in-memory snapshot for the pipeline caller.
 
     The caller must commit before reporting durable storage. Warnings are only
     retained as data; no message, log, or separate database field is produced.
+    result is internal caller data, not the public row's result JSON: needs_review
+    rows expose no summary content. Do not use this snapshot as an app response.
     """
 
     notice_id: int
@@ -62,11 +77,12 @@ class StoredPreparedSummary:
 
 
 def save_notice_summary(conn: Connection, record: SummaryRecord) -> int:
-    """Upsert one complete row; never commit, roll back, or close the connection.
+    """Store a summary or failure; leave transaction ownership with the caller.
 
     Database exceptions produce no success result. The caller must roll back an
     aborted transaction. Row status never claims that uncommitted data is durable.
-    Replacing every nullable result column clears stale successful data on failure.
+    Failure updates only its code, attempt count, and update time on an existing
+    row. A first failure inserts a failed row without summary data.
     """
     if not isinstance(record, SummaryRecord):
         raise SummaryRecordError("invalid_summary_record")
@@ -98,7 +114,8 @@ def save_notice_summary(conn: Connection, record: SummaryRecord) -> int:
     )
     try:
         with conn.cursor(row_factory=tuple_row) as cursor:
-            cursor.execute(UPSERT_SUMMARY, values)
+            sql = UPSERT_SUMMARY_FAILURE if checked.status == "failed" else UPSERT_SUMMARY
+            cursor.execute(sql, values)
             row = cursor.fetchone()
     except Error:
         raise SummaryStorageError() from None
@@ -121,7 +138,11 @@ def save_prepared_summary(
     generated_at: datetime,
     attempt_increment: int = 1,
 ) -> StoredPreparedSummary:
-    """Connect the summarizer's result to #14's existing table design."""
+    """Store public content only when verified; retain caller data in memory.
+
+    needs_review writes result=NULL and deadline_on=NULL so the app can show
+    only an original-notice instruction. No internal review JSON is persisted.
+    """
     record = build_summary_record(
         result,
         metadata,
@@ -129,10 +150,9 @@ def save_prepared_summary(
         generated_at=generated_at,
         attempt_increment=attempt_increment,
     )
-    assert record.result is not None
     snapshot = PreparedSummaryResult(
         notice_id=record.notice_id,
-        summary=record.result,
+        summary=NoticeSummary.model_validate(result.summary.model_dump(mode="json")),
         warnings=tuple(result.warnings),
         media_sources=tuple(result.media_sources),
     )
@@ -154,7 +174,7 @@ def record_summary_failure(
     reason_code: str,
     attempt_increment: int = 1,
 ) -> int:
-    """Record an unsuccessful execution with a known code and no result JSON."""
+    """Record a known failure code, preserving any existing summary and status."""
     return save_notice_summary(
         conn,
         SummaryRecord(

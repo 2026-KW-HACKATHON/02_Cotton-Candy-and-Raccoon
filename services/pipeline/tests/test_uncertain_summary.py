@@ -340,7 +340,7 @@ def test_diagnostic_exception_does_not_reset_schema_valid_content(
 
 
 @pytest.mark.parametrize("mixed", (False, True), ids=("text", "mixed"))
-def test_preserved_uncertain_result_stores_review_without_publishing_a_deadline(
+def test_preserved_uncertain_result_stores_review_without_publishing_content_or_deadline(
     mixed: bool,
 ) -> None:
     notice = _notice()
@@ -364,10 +364,10 @@ def test_preserved_uncertain_result_stores_review_without_publishing_a_deadline(
 
     assert record.status == "needs_review"
     assert record.deadline_on is None
-    assert record.result is not None
-    assert record.result.action == output["action"]
-    assert record.result.dates[0].end_date == "2026-10-10"
-    assert record.result.uncertainties == [REVIEW_NOTE]
+    assert record.result is None
+    assert prepared_result.summary.action == output["action"]
+    assert prepared_result.summary.dates[0].end_date == "2026-10-10"
+    assert prepared_result.summary.uncertainties == [REVIEW_NOTE]
 
 
 @pytest.mark.parametrize("invalid", ("malformed-json", "missing-action", "bad-date", "bad-page"))

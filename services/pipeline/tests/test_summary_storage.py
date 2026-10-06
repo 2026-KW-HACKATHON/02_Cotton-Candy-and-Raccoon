@@ -10,7 +10,13 @@ import pytest
 from psycopg.rows import tuple_row
 from psycopg.types.json import Jsonb
 
-from pipeline.storage.summaries import UPSERT_SUMMARY, SummaryStorageError, save_notice_summary
+from pipeline.storage.summaries import (
+    UPSERT_SUMMARY,
+    UPSERT_SUMMARY_FAILURE,
+    SummaryStorageError,
+    record_summary_failure,
+    save_notice_summary,
+)
 from pipeline.storage.summary_record import SummaryMetadata, SummaryRecord, SummaryRecordError
 from pipeline.transform.summary_schema import NoticeSummary
 
@@ -69,29 +75,47 @@ def _summary(**changes: Any) -> NoticeSummary:
             {
                 "field": "dates",
                 "excerpt": "신청 기간: 2026-10-03~2026-10-20 오전 9시~오후 6시",
-                "source_type": "document",
-                "source_id": "media_1",
-                "page": 3,
-                "verification": "file_reference_only",
+                "source_type": "text",
+                "source_id": None,
+                "page": None,
+                "verification": "text_matched",
             },
             {
                 "field": "notes",
                 "excerpt": "신분증 지참",
-                "source_type": "image",
-                "source_id": "media_2",
+                "source_type": "text",
+                "source_id": None,
                 "page": None,
-                "verification": "file_reference_only",
+                "verification": "text_matched",
             },
         ],
     }
+    values["evidence"].extend(
+        {
+            "field": field,
+            "excerpt": excerpt,
+            "source_type": "text",
+            "source_id": None,
+            "page": None,
+            "verification": "text_matched",
+        }
+        for field, excerpt in (
+            ("applicable_area", "월계1동"),
+            ("audience", "월계1동 주민"),
+            ("action", "주민센터 방문 신청"),
+            ("location", "월계1동 주민센터"),
+            ("topics", "지원 사업 신청"),
+        )
+    )
     return NoticeSummary.model_validate(values | changes)
 
 
 def _record(status: str = "summarized", **changes: Any) -> SummaryRecord:
     values: dict[str, Any] = {"notice_id": 42, "status": status, "metadata": _metadata()}
     if status in ("summarized", "needs_review"):
-        values.update(result=_summary(), generated_at=GENERATED_AT)
+        values["generated_at"] = GENERATED_AT
     if status == "summarized":
+        values["result"] = _summary()
         values["deadline_on"] = date(2026, 10, 20)
     if status == "failed":
         values["last_error_code"] = "api_timeout"
@@ -121,7 +145,7 @@ def test_all_four_summary_states_bind_their_complete_row_and_leave_transaction_t
     conn.cursor.assert_called_once_with(row_factory=tuple_row)
     cursor.execute.assert_called_once()
     sql, values = cursor.execute.call_args.args
-    assert sql == UPSERT_SUMMARY
+    assert sql == (UPSERT_SUMMARY_FAILURE if status == "failed" else UPSERT_SUMMARY)
     assert len(values) == 12
     assert values[:2] == (42, status)
     assert values[5:10] == ("all_read", "ab" * 32, "gemini-3.5-flash-lite", "notice-summary-v3", 1)
@@ -130,7 +154,7 @@ def test_all_four_summary_states_bind_their_complete_row_and_leave_transaction_t
     _assert_caller_keeps_transaction(conn)
 
 
-def test_storage_preserves_the_entire_json_and_each_evidence_verification_scope() -> None:
+def test_storage_preserves_the_entire_verified_summary_json() -> None:
     record = _record()
     conn, cursor = _connection()
     save_notice_summary(conn, record)
@@ -139,27 +163,37 @@ def test_storage_preserves_the_entire_json_and_each_evidence_verification_scope(
     assert values[2].obj == record.result.model_dump(mode="json")
     assert values[3] == "application"
     assert values[4] == date(2026, 10, 20)
-    assert [item["verification"] for item in values[2].obj["evidence"]] == [
-        "text_matched",
-        "file_reference_only",
-        "file_reference_only",
-    ]
-    assert values[2].obj["evidence"][1]["page"] == 3
-    assert values[2].obj["evidence"][2]["source_id"] == "media_2"
+    assert all(item["verification"] == "text_matched" for item in values[2].obj["evidence"])
     assert values[11].utcoffset() == timedelta(hours=9)
 
 
-@pytest.mark.parametrize("status", ["pending", "failed"])
-def test_non_result_states_overwrite_all_old_success_columns_with_null(status: str) -> None:
+def test_pending_state_binds_null_result_columns() -> None:
     conn, cursor = _connection()
     save_notice_summary(conn, _record())
-    save_notice_summary(conn, _record(status))
+    save_notice_summary(conn, _record("pending"))
     sql, values = cursor.execute.call_args.args
     assert values[2:5] == (None, None, None)
     assert values[11] is None
     for column in ("result", "category", "deadline_on", "generated_at", "last_error_code"):
         assert f"{column} = excluded.{column}" in sql
-    assert values[10] == ("api_timeout" if status == "failed" else None)
+    assert values[10] is None
+    _assert_caller_keeps_transaction(conn)
+
+
+def test_failure_updates_only_the_failure_code_attempt_count_and_timestamp() -> None:
+    conn, cursor = _connection()
+    assert record_summary_failure(conn, 42, _metadata(), reason_code="api_timeout") == 42
+    sql, values = cursor.execute.call_args.args
+    assert sql == UPSERT_SUMMARY_FAILURE
+    updates = sql.split("do update set", 1)[1].split("returning", 1)[0]
+    assert updates.strip() == (
+        "last_error_code = excluded.last_error_code,\n"
+        "    attempt_count = notice_summaries.attempt_count + excluded.attempt_count,\n"
+        "    updated_at = now()"
+    )
+    assert values[:5] == (42, "failed", None, None, None)
+    assert values[9:] == (1, "api_timeout", None)
+    assert "select " not in sql.lower()
     _assert_caller_keeps_transaction(conn)
 
 
@@ -197,20 +231,17 @@ def test_uncertain_or_incompletely_read_summary_cannot_be_claimed_as_summarized(
 
 
 @pytest.mark.parametrize("attachment_status", ["none", "all_read", "partial", "unread"])
-def test_review_state_preserves_unknown_result_and_does_not_publish_a_deadline(
+def test_review_state_publishes_no_summary_category_or_deadline(
     attachment_status: str,
 ) -> None:
     record = _record(
         "needs_review",
-        result=_summary(category="unknown", uncertainties=["원문 확인 필요"]),
         metadata=_metadata(attachment_status=attachment_status),
     )
     conn, cursor = _connection()
     save_notice_summary(conn, record)
     values = cursor.execute.call_args.args[1]
-    assert values[2].obj["uncertainties"] == ["원문 확인 필요"]
-    assert values[3] == "unknown"
-    assert values[4] is None
+    assert values[2:5] == (None, None, None)
     assert values[5] == attachment_status
 
 
@@ -221,7 +252,6 @@ def test_only_summarized_state_can_store_a_deadline(status: str) -> None:
     assert failure.value.reason_code == "unexpected_deadline_on"
 
 
-@pytest.mark.parametrize("status", ["summarized", "needs_review"])
 @pytest.mark.parametrize(
     ("changes", "reason_code"),
     [
@@ -232,10 +262,31 @@ def test_only_summarized_state_can_store_a_deadline(status: str) -> None:
     ],
 )
 def test_result_states_require_summary_and_generation_time_without_failure_code(
-    status: str, changes: dict[str, Any], reason_code: str
+    changes: dict[str, Any], reason_code: str
 ) -> None:
     with pytest.raises(SummaryRecordError) as failure:
-        _record(status, **changes)
+        _record(**changes)
+    assert failure.value.reason_code == reason_code
+
+
+@pytest.mark.parametrize("result", [_summary(), {}])
+def test_review_state_rejects_any_public_summary_payload(result: Any) -> None:
+    with pytest.raises(SummaryRecordError, match="unexpected_summary_result"):
+        _record("needs_review", result=result)
+
+
+@pytest.mark.parametrize(
+    ("changes", "reason_code"),
+    [
+        ({"generated_at": None}, "summary_generated_at_required"),
+        ({"last_error_code": "api_error"}, "unexpected_error_code"),
+    ],
+)
+def test_review_state_requires_generation_time_without_failure_code(
+    changes: dict[str, Any], reason_code: str
+) -> None:
+    with pytest.raises(SummaryRecordError) as failure:
+        _record("needs_review", **changes)
     assert failure.value.reason_code == reason_code
 
 
@@ -412,9 +463,9 @@ def test_serialized_json_is_detached_from_later_record_mutation() -> None:
     save_notice_summary(conn, record)
     stored = cursor.execute.call_args.args[1][2].obj
     record.result.notes.append("추가 메모")
-    record.result.evidence[1].page = 5
+    record.result.evidence[1].excerpt = "변경된 기간"
     assert stored["notes"] == ["신분증 지참"]
-    assert stored["evidence"][1]["page"] == 3
+    assert stored["evidence"][1]["excerpt"] == "신청 기간: 2026-10-03~2026-10-20 오전 9시~오후 6시"
 
 
 def test_optional_deadline_remains_caller_supplied_instead_of_using_every_end_date() -> None:

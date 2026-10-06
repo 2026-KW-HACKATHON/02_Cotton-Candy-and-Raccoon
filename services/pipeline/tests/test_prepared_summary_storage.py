@@ -147,25 +147,27 @@ def test_actual_prepared_summary_then_mock_storage_preserves_all_sources_and_res
         conn, result, _metadata(), deadline_on=DEADLINE, generated_at=GENERATED_AT
     )
     values = cursor.execute.call_args.args[1]
+    needs_review = kind in {"pdf", "image", "mixed"}
     assert stored.notice_id == 17
-    assert stored.status == "summarized"
-    assert stored.deadline_on == DEADLINE
+    assert stored.status == ("needs_review" if needs_review else "summarized")
+    assert stored.deadline_on == (None if needs_review else DEADLINE)
     assert stored.generated_at == GENERATED_AT
     assert stored.result.summary.model_dump(mode="json") == result.summary.model_dump(mode="json")
     assert stored.result.media_sources == result.media_sources
-    assert values[2].obj == result.summary.model_dump(mode="json")
-    assert values[3] == "event"
-    assert values[4] == DEADLINE
+    if needs_review:
+        assert values[2:5] == (None, None, None)
+    else:
+        assert values[2].obj == result.summary.model_dump(mode="json")
+        assert values[3:5] == ("event", DEADLINE)
     assert values[6:10] == ("cd" * 32, DEFAULT_MODEL, "summary-v3", 1)
     if kind in {"pdf", "image"}:
         assert stored.result.summary.evidence[0].verification == "file_reference_only"
-        assert values[2].obj["evidence"][0]["verification"] == "file_reference_only"
     if kind == "mixed":
         assert {item.verification for item in stored.result.summary.evidence} == {
             "text_matched",
             "file_reference_only",
         }
-        assert values[2].obj["evidence"][1]["page"] == 2
+        assert stored.result.summary.evidence[1].page == 2
     _assert_caller_keeps_transaction(conn)
 
 
@@ -203,10 +205,10 @@ def test_warnings_are_preserved_but_do_not_alone_change_status_or_emit_messages(
 
 
 @pytest.mark.parametrize("review_reason", ["unknown", "uncertainties", "partial", "unread"])
-def test_review_conditions_preserve_summary_but_never_publish_a_deadline(
+def test_review_conditions_keep_a_private_snapshot_without_publishing_summary_or_deadline(
     monkeypatch: pytest.MonkeyPatch, review_reason: str
 ) -> None:
-    _, result, _ = _summarize(monkeypatch, "pdf")
+    _, result, _ = _summarize(monkeypatch, "text")
     metadata = _metadata(review_reason if review_reason in {"partial", "unread"} else "all_read")
     if review_reason == "unknown":
         result = replace(result, summary=unknown_summary(_notice("행사 안내")))
@@ -217,6 +219,7 @@ def test_review_conditions_preserve_summary_but_never_publish_a_deadline(
         )
     record = build_summary_record(result, metadata, deadline_on=DEADLINE, generated_at=GENERATED_AT)
     assert record.status == "needs_review"
+    assert record.result is None
     assert record.deadline_on is None
     conn, cursor = _connection()
     stored = save_prepared_summary(
@@ -226,7 +229,7 @@ def test_review_conditions_preserve_summary_but_never_publish_a_deadline(
     assert stored.deadline_on is None
     assert stored.result.summary.model_dump(mode="json") == result.summary.model_dump(mode="json")
     assert stored.result.media_sources == result.media_sources
-    assert cursor.execute.call_args.args[1][4] is None
+    assert cursor.execute.call_args.args[1][2:5] == (None, None, None)
     _assert_caller_keeps_transaction(conn)
 
 
@@ -329,10 +332,11 @@ def test_failure_connector_storage_error_does_not_turn_into_a_saved_failure_succ
     _assert_caller_keeps_transaction(conn)
 
 
-def test_saved_summary_return_and_json_are_snapshots_of_the_same_result(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("kind", ["text", "pdf"])
+def test_saved_result_is_a_snapshot_and_only_summarized_results_publish_json(
+    monkeypatch: pytest.MonkeyPatch, kind: str
 ) -> None:
-    _, result, _ = _summarize(monkeypatch, "pdf")
+    _, result, _ = _summarize(monkeypatch, kind)
     conn, cursor = _connection()
     stored = save_prepared_summary(
         conn, result, _metadata(), deadline_on=DEADLINE, generated_at=GENERATED_AT
@@ -340,8 +344,13 @@ def test_saved_summary_return_and_json_are_snapshots_of_the_same_result(
     result.summary.summary = "나중에 변경한 요약"
     result.summary.evidence[0].page = 9
     assert stored.result.summary.summary == "행사 안내"
-    assert stored.result.summary.evidence[0].page == 1
-    assert cursor.execute.call_args.args[1][2].obj == stored.result.summary.model_dump(mode="json")
+    assert stored.result.summary.evidence[0].page == (1 if kind == "pdf" else None)
+    if kind == "pdf":
+        assert cursor.execute.call_args.args[1][2:5] == (None, None, None)
+    else:
+        assert cursor.execute.call_args.args[1][2].obj == (
+            stored.result.summary.model_dump(mode="json")
+        )
 
 
 @pytest.mark.parametrize("kind", ["text", "hwp", "pdf", "image", "mixed"])
@@ -365,7 +374,8 @@ def test_integrated_job_summarizes_each_input_then_saves_with_model_and_utc_time
         conn, prepared, metadata, deadline_resolver=deadline_resolver, api_key="test-key"
     )
     after = datetime.now(UTC)
-    assert stored.status == "summarized"
+    needs_review = kind in {"pdf", "image", "mixed"}
+    assert stored.status == ("needs_review" if needs_review else "summarized")
     assert stored.notice_id == prepared.notice_id
     assert stored.result.summary.summary == "행사 안내"
     assert len(requests) == 1
@@ -373,14 +383,20 @@ def test_integrated_job_summarizes_each_input_then_saves_with_model_and_utc_time
     assert [block for block in requests[0]["notice_text"] if block["type"] != "text"] == [
         block for block in prepared.blocks if block["type"] != "text"
     ]
-    deadline_resolver.assert_called_once()
-    assert deadline_resolver.call_args.args[0].model_dump(mode="json") == (
-        stored.result.summary.model_dump(mode="json")
-    )
+    if needs_review:
+        deadline_resolver.assert_not_called()
+    else:
+        deadline_resolver.assert_called_once()
+        assert deadline_resolver.call_args.args[0].model_dump(mode="json") == (
+            stored.result.summary.model_dump(mode="json")
+        )
     values = cursor.execute.call_args.args[1]
-    assert values[:2] == (17, "summarized")
-    assert values[2].obj == stored.result.summary.model_dump(mode="json")
-    assert values[4] == DEADLINE
+    assert values[:2] == (17, stored.status)
+    if needs_review:
+        assert values[2:5] == (None, None, None)
+    else:
+        assert values[2].obj == stored.result.summary.model_dump(mode="json")
+        assert values[4] == DEADLINE
     assert values[6:10] == (metadata.source_hash, metadata.model, metadata.prompt_version, 1)
     assert before <= values[11] <= after
     assert values[11].utcoffset().total_seconds() == 0
@@ -410,7 +426,7 @@ def test_integrated_review_outcome_never_calls_the_deadline_resolver(
     )
     assert stored.status == "needs_review"
     assert stored.deadline_on is None
-    assert cursor.execute.call_args.args[1][4] is None
+    assert cursor.execute.call_args.args[1][2:5] == (None, None, None)
     deadline_resolver.assert_not_called()
     _assert_caller_keeps_transaction(conn)
 
@@ -433,7 +449,8 @@ def test_integrated_shape_retry_retains_media_and_counts_as_one_execution(
     stored = summary_job.summarize_and_save_prepared_notice(
         conn, prepared, _metadata(), deadline_resolver=lambda _summary: None, api_key="test-key"
     )
-    assert stored.status == "summarized"
+    assert stored.status == "needs_review"
+    assert cursor.execute.call_args.args[1][2:5] == (None, None, None)
     assert len(calls) == 2
     assert calls[1]["notice_text"][: len(calls[0]["notice_text"])] == calls[0]["notice_text"]
     assert cursor.execute.call_args.args[1][9] == 1
