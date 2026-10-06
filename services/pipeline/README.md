@@ -311,6 +311,29 @@ GitHub 저장소의 Settings → Secrets and variables → Actions에서 아래�
 
 현재 워크플로와 Secret은 **코드 연결만 준비한 상태**입니다. 이 작업에서는 `PIPELINE_PRODUCTION_ENABLED`를 켜거나 공식 DB에 접속·저장하지 않았습니다.
 
+## Gemini 요약 저장 계약
+
+`summary_job.summarize_and_save_prepared_notice()`는 준비된 입력의 요약 결과와 실행 실패를
+`notice_summaries`에 전달합니다. DB 연결·트랜잭션 확정과 마감일 계산 함수는 호출자가 제공하며,
+테이블과 앱 읽기 권한은 #14에서 구성합니다.
+
+- `summarized`: 필요한 근거가 모두 텍스트와 대조된 결과만 공개 `result`에 저장합니다.
+- `needs_review`: 앱은 요약 대신 **“원문을 확인하세요”**를 안내합니다. 공개 `result`,
+  `category`, `deadline_on`은 모두 NULL입니다. 파일 참조만 확인한 근거, 미확인 근거,
+  불확실한 결과나 읽지 못한 첨부가 있으면 이 상태로 저장합니다. 텍스트와 파일 근거가
+  섞인 일정도 검토 대상이며 마감일 계산 함수를 호출하지 않습니다.
+- 실행 실패: 기존 행이 있으면 `last_error_code`, `attempt_count`, `updated_at`만 갱신해
+  기존 요약·상태·마감일과 메타데이터를 유지합니다. 기존 행이 없을 때만
+  `status='failed'`, `result=NULL`로 삽입합니다. 반환된 실패 상태는 이번 실행의 결과입니다.
+
+`StoredPreparedSummary.result`에는 파이프라인 호출자를 위한 원본의 메모리 스냅샷이 있습니다.
+앱 응답으로 사용하지 않으며 `needs_review`의 공개 DB 행에는 저장하지 않습니다.
+내부 검토 내용을 영구 보존하려면 #14에서 별도의 검토 테이블을 두고 `anon`·`authenticated`에는
+SELECT 권한을 부여하지 않는 방안을 제안합니다. 이번 변경은 내부 검토용 테이블을 추가하지 않습니다.
+
+`attempt_count`는 현재 누적 실행 횟수입니다. 성공 후 재시도 횟수 초기화와 PDF·이미지 내용을
+포함하는 `source_hash` 계약은 후속 설계 대상입니다.
+
 ## 실행과 검증
 
 ```powershell
