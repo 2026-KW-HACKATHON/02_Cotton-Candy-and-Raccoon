@@ -37,8 +37,9 @@ type DeadlineResolver = Callable[[NoticeSummary], date | None]
 class StoredSummaryFailure:
     """An execution failure, not the status of any previously stored summary.
 
-    Existing public summary data stays intact. status describes this execution;
-    it does not claim that the persisted row was changed to failed.
+    status describes this execution; it does not claim that the persisted row was
+    changed to failed. Existing public summary data stays intact when the source is
+    unchanged; a stale summary for a changed source is hidden as needs_review.
     """
 
     notice_id: int
@@ -73,7 +74,9 @@ def summarize_and_save_prepared_notice(
     Gemini. Internal shape retries still count as one summary execution.
     A known processing failure returns status=failed/result=None after recording it,
     so raising the API exception does not accidentally roll back the failure row.
-    Existing summary rows retain their public data and status on such a failure.
+    Existing summary rows retain their public data and status on such a failure
+    unless metadata.source_hash differs from the stored one; then a summarized row
+    becomes needs_review with no public result, category, or deadline.
     needs_review publishes no result and never calls the deadline resolver.
     The caller commits both outcome types before reporting durable storage; DB or
     programming failures still raise and must be rolled back.

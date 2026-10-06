@@ -60,12 +60,23 @@ def _stored(conn: psycopg.Connection) -> dict:
     return row
 
 
-def _failure(conn: psycopg.Connection, *, attempt_increment: int = 1) -> None:
+SAME_SOURCE = "ab" * 32
+CHANGED_SOURCE = "cd" * 32
+PUBLIC_COLUMNS = ("result", "category", "deadline_on")
+
+
+def _failure(
+    conn: psycopg.Connection,
+    *,
+    source_hash: str = SAME_SOURCE,
+    attempt_increment: int = 1,
+) -> None:
+    # Model and prompt differ from the stored row to model a rerun after a version change.
     assert record_summary_failure(
         conn,
         42,
         _metadata(
-            source_hash="cd" * 32,
+            source_hash=source_hash,
             model="different-model",
             prompt_version="different-prompt",
             attachment_status="unread",
@@ -118,7 +129,7 @@ def test_failure_preserves_every_existing_row_state(
 def test_first_failure_inserts_failed_row_without_summary_data(
     summary_db: psycopg.Connection,
 ) -> None:
-    _failure(summary_db)
+    _failure(summary_db, source_hash=CHANGED_SOURCE)
     row = _stored(summary_db)
     assert row["status"] == "failed"
     assert row["result"] is None
@@ -133,10 +144,69 @@ def test_first_failure_inserts_failed_row_without_summary_data(
     assert row["attachment_status"] == "unread"
 
 
+@pytest.mark.parametrize("attempt_increment", [0, 1])
+def test_changed_source_failure_hides_stale_summary_as_review(
+    summary_db: psycopg.Connection, attempt_increment: int
+) -> None:
+    save_notice_summary(summary_db, _record())
+    before = _stored(summary_db)
+    assert before["result"] is not None
+    _failure(summary_db, source_hash=CHANGED_SOURCE, attempt_increment=attempt_increment)
+    after = _stored(summary_db)
+    assert after["status"] == "needs_review"
+    for column in PUBLIC_COLUMNS:
+        assert after[column] is None
+    # The stored hash still names the last successful source: the new one never succeeded.
+    assert after["source_hash"] == SAME_SOURCE
+    assert after["last_error_code"] == "api_timeout"
+    assert after["attempt_count"] == before["attempt_count"] + attempt_increment
+    changed_columns = {"status", *PUBLIC_COLUMNS, "last_error_code", "attempt_count", "updated_at"}
+    assert {key: value for key, value in after.items() if key not in changed_columns} == {
+        key: value for key, value in before.items() if key not in changed_columns
+    }
+
+
+@pytest.mark.parametrize("existing_status", ["pending", "needs_review", "failed"])
+def test_changed_source_failure_keeps_unpublished_status(
+    summary_db: psycopg.Connection, existing_status: str
+) -> None:
+    save_notice_summary(summary_db, _record(existing_status))
+    before = _stored(summary_db)
+    _failure(summary_db, source_hash=CHANGED_SOURCE)
+    after = _stored(summary_db)
+    assert after["status"] == existing_status
+    for column in PUBLIC_COLUMNS:
+        assert after[column] is None
+    assert after["source_hash"] == before["source_hash"]
+    assert after["last_error_code"] == "api_timeout"
+
+
+def test_repeated_changed_source_failure_stays_review_until_new_source_succeeds(
+    summary_db: psycopg.Connection,
+) -> None:
+    save_notice_summary(summary_db, _record())
+    _failure(summary_db, source_hash=CHANGED_SOURCE)
+    _failure(summary_db, source_hash=CHANGED_SOURCE)
+    row = _stored(summary_db)
+    assert row["status"] == "needs_review"
+    assert row["result"] is None
+    assert row["attempt_count"] == 3
+    assert row["last_error_code"] is not None
+
+    save_notice_summary(summary_db, _record(metadata=_metadata(source_hash=CHANGED_SOURCE)))
+    row = _stored(summary_db)
+    assert row["status"] == "summarized"
+    assert row["result"] == _record().result.model_dump(mode="json")
+    assert row["deadline_on"] == date(2026, 10, 20)
+    assert row["source_hash"] == CHANGED_SOURCE
+    assert row["last_error_code"] is None
+    assert row["attempt_count"] == 4
+
+
 def test_success_after_failure_replaces_summary_columns_and_clears_failure_code(
     summary_db: psycopg.Connection,
 ) -> None:
-    _failure(summary_db)
+    _failure(summary_db, source_hash=CHANGED_SOURCE)
     save_notice_summary(summary_db, _record())
     row = _stored(summary_db)
     assert row["status"] == "summarized"

@@ -38,12 +38,31 @@ on conflict (notice_id) do update set
 returning notice_id
 """
 
+# A failure on the same source keeps the existing summary (model or prompt reruns).
+# A failure on a changed source must not leave the old summary public: a summarized
+# row becomes needs_review and its public columns are cleared. source_hash and the
+# other metadata keep the last successful values, recording that the new source has
+# not been summarized yet. Every SET expression reads the pre-update row.
 UPSERT_SUMMARY_FAILURE = """
 insert into notice_summaries (
     notice_id, status, result, category, deadline_on, attachment_status,
     source_hash, model, prompt_version, attempt_count, last_error_code, generated_at
 ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 on conflict (notice_id) do update set
+    status = case
+        when notice_summaries.source_hash <> excluded.source_hash
+            and notice_summaries.status = 'summarized' then 'needs_review'
+        else notice_summaries.status
+    end,
+    result = case
+        when notice_summaries.source_hash = excluded.source_hash then notice_summaries.result
+    end,
+    category = case
+        when notice_summaries.source_hash = excluded.source_hash then notice_summaries.category
+    end,
+    deadline_on = case
+        when notice_summaries.source_hash = excluded.source_hash then notice_summaries.deadline_on
+    end,
     last_error_code = excluded.last_error_code,
     attempt_count = notice_summaries.attempt_count + excluded.attempt_count,
     updated_at = now()
@@ -81,8 +100,11 @@ def save_notice_summary(conn: Connection, record: SummaryRecord) -> int:
 
     Database exceptions produce no success result. The caller must roll back an
     aborted transaction. Row status never claims that uncommitted data is durable.
-    Failure updates only its code, attempt count, and update time on an existing
-    row. A first failure inserts a failed row without summary data.
+    Failure on an existing row with the same source_hash updates only its code,
+    attempt count, and update time. With a different source_hash it also hides the
+    stale public summary: summarized becomes needs_review, and result, category, and
+    deadline_on become NULL; source_hash and other metadata are kept. A first
+    failure inserts a failed row without summary data.
     """
     if not isinstance(record, SummaryRecord):
         raise SummaryRecordError("invalid_summary_record")
@@ -174,7 +196,11 @@ def record_summary_failure(
     reason_code: str,
     attempt_increment: int = 1,
 ) -> int:
-    """Record a known failure code, preserving any existing summary and status."""
+    """Record a known failure code.
+
+    An existing summary for the same source_hash is preserved. If the source
+    changed, the stale summary is hidden as needs_review (see save_notice_summary).
+    """
     return save_notice_summary(
         conn,
         SummaryRecord(
