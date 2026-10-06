@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup
 from pipeline.attachments.nowon_html import (
     AttachmentError,
     extract_files,
+    extract_page_files,
     recover_masked_body_urls,
 )
 from pipeline.cli import main
@@ -91,6 +92,40 @@ def test_encoded_stars_entities_and_duplicate_images_are_repaired() -> None:
     repaired = recover_masked_body_urls(source, page(html=f'<img src="{file_url()}">' * 2))
     assert len(extract_files(repaired)) == 1
     assert len(BeautifulSoup(repaired.body_html, "html.parser").select("img")) == 2
+
+
+@pytest.mark.parametrize("tag", ["img", "a"])
+def test_masked_and_normal_references_share_one_normalized_file(tag: str) -> None:
+    attribute = "src" if tag == "img" else "href"
+    source = notice(html="".join(
+        f'<{tag} {attribute}="{ref}"></{tag}>' for ref in (file_url(MASK), file_url())
+    ))
+    original = page(html=f'<{tag} {attribute}="{file_url()}"></{tag}>')
+    repaired = recover_masked_body_urls(source, original)
+    files = extract_files(repaired)
+    assert len(files) == 1 and files[0].file_id == FILE_ID
+    with patch("pipeline.collect_nowon.fetch_notice_page", return_value=(source.url, original)):
+        prepared = _prepare_notice(source, SETTINGS)
+    assert prepared.failure is None and len(prepared.files) == 1
+
+
+@pytest.mark.parametrize("api_space,original_space", [(" ", ""), ("", " "), (" \t", " \t")])
+def test_recovery_strips_whitespace_from_both_url_attributes(
+    api_space: str, original_space: str,
+) -> None:
+    source = notice(html=f'<img src="{api_space}{file_url(MASK)}{api_space}">')
+    original = page(html=f'<img src="{original_space}{file_url()}{original_space}">')
+    repaired = recover_masked_body_urls(source, original)
+    files = extract_files(repaired)
+    assert len(files) == 1 and files[0].file_id == FILE_ID
+
+
+def test_original_attachment_and_body_use_the_same_url_normalization() -> None:
+    source = notice(html=f'<a href="{file_url()}">file.pdf</a>')
+    reversed_url = f"/component/file/ND_fileDownload.do?q_fileId={FILE_ID}&amp;q_fileSn=310123"
+    original = ('<table><tr><th>첨부파일</th><td><ul class="file-list">'
+                f'<li><a href="{reversed_url}">file.pdf</a></li></ul></td></tr></table>')
+    assert extract_files(source)[0].url == extract_page_files(source, original, source.url)[0].url
 
 
 def test_masked_body_download_link_keeps_its_name_and_role() -> None:

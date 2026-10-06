@@ -29,7 +29,7 @@ def recover_masked_body_urls(notice: RawNotice, page_html: str) -> RawNotice:
     masked = []
     for tag in body.select("img[src], a[href]"):
         attribute = "src" if tag.name == "img" else "href"
-        reference = str(tag.get(attribute, ""))
+        reference = str(tag.get(attribute, "")).strip()
         # Ordinary links containing stars are not file references.
         try:
             url = urljoin(notice.url, reference)
@@ -58,7 +58,7 @@ def recover_masked_body_urls(notice: RawNotice, page_html: str) -> RawNotice:
 
     def official_file_url(reference: str) -> str | None:
         try:
-            url = _normalize_nowon_file_url(urljoin(base_url, reference))
+            url = _normalize_nowon_file_url(urljoin(base_url, reference.strip()))
             parsed = urlsplit(url)
             if (
                 parsed.scheme == "https"
@@ -67,9 +67,7 @@ def recover_masked_body_urls(notice: RawNotice, page_html: str) -> RawNotice:
                 and not parsed.username
                 and not parsed.password
             ):
-                # Preserve every parameter; only ordering/encoding are canonicalized.
-                query = urlencode(sorted(parse_qsl(parsed.query, keep_blank_values=True)))
-                return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, query, ""))
+                return url
         except ValueError:
             pass
         return None
@@ -139,7 +137,7 @@ def _unique_files(records: list[FileRecord]) -> dict[tuple[str, ...], FileRecord
 
 
 def _normalize_nowon_file_url(url: str) -> str:
-    """Use the HTTPS origin for file links on the known Nowon public host."""
+    """Use HTTPS and canonical queries for the official Nowon file endpoint."""
     parsed = urlsplit(url)
     if (
         parsed.scheme in ("http", "https")
@@ -147,7 +145,14 @@ def _normalize_nowon_file_url(url: str) -> str:
         and parsed.port in (None, 80, 443)
         and parsed.username is None and parsed.password is None
     ):
-        return urlunsplit(("https", "www.nowon.kr", parsed.path, parsed.query, ""))
+        query = parsed.query
+        if parsed.path == "/component/file/ND_fileDownload.do":
+            # Preserve every parameter, including duplicates and blank values.
+            query = urlencode(sorted(
+                parse_qsl(query, keep_blank_values=True),
+                key=lambda item: (item[0] != "q_fileSn", item[0], item[1]),
+            ))
+        return urlunsplit(("https", "www.nowon.kr", parsed.path, query, ""))
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, parsed.query, ""))
 
 
