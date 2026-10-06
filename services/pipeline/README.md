@@ -16,7 +16,11 @@ Python·uv 기반 공지 수집 파이프라인입니다. 노원구 `NowonNewsNo
 
 파일 식별은 `(notice_id, file_key, kind)`입니다. `FileRecord.file_key`는 읽기 전용 계산 속성으로, 실제 ID가 있으면 `id:<file_id>`, 없으면 `url:<저장할 정규화 URL의 UTF-8 SHA256>`을 반환합니다. `file_sn`·`file_id`는 출처에 없을 때 None/SQL NULL이며, 빈 값이나 가짜 UUID를 넣지 않습니다. URL 해시는 파일 내용 해시가 아닙니다.
 
-식별자가 없는 본문 이미지는 확인된 공식 `/webcontent/crosseditor/images/`의 PNG/JPEG/WebP 경로를 처리합니다. 장식 이미지·일반 링크는 제외합니다. 원문 첨부 목록의 PDF/HWP 등 직접 파일 경로는 식별자가 없어도 처리하지만, 불명확한 다운로드 endpoint나 식별자가 일부만 있는 URL은 여전히 오류입니다. 본문 HTML은 원본을 보존하고 파일 메타데이터 URL만 HTTPS·절대 URL로 정리합니다.
+식별자가 없는 본문 이미지는 확인된 공식 `/webcontent/crosseditor/images/`의 PNG/JPEG/WebP 경로를 처리합니다. 장식 이미지·일반 링크는 제외합니다. 원문 첨부 목록의 PDF/HWP 등 직접 파일 경로는 식별자가 없어도 처리하지만, 불명확한 다운로드 endpoint나 식별자가 일부만 있는 URL은 여전히 오류입니다. 본문 HTML은 원칙적으로 API 원본을 보존하고 파일 메타데이터 URL만 HTTPS·절대 URL로 정리합니다.
+
+노원구 API 본문의 `q_fileId`에 `***`가 있으면 이미 수집하는 원문 페이지에서 복구합니다. 원문 게시물 번호·본문 영역을 확인한 뒤, 같은 태그 역할(`img/src` 또는 `a/href`), 같은 `file_sn`, UUID의 가려지지 않은 부분이 일치하는 **공식 다운로드 URL 하나**만 허용합니다. UUID를 추측하지 않습니다. 복구한 주소는 HTTPS 절대 URL로 본문 HTML에 반영하고, 그 본문에서 파일 메타데이터를 다시 추출하므로 `notices.body_html`과 `notice_files`가 같은 주소를 사용합니다. 복구한 HTML은 파서가 재직렬화하지만 별표가 없는 공지의 HTML은 변경하지 않습니다.
+
+원문 확인 실패(`masked_file_source_invalid`), 후보 없음(`masked_file_unresolved`), 복수 후보(`masked_file_ambiguous`)이면 해당 공지를 저장하지 않고 기존 공지·파일·공개 상태를 유지합니다. 다건 수집은 다음 공지를 계속 처리합니다. 일반 링크의 별표는 파일 UUID 마스킹으로 간주하지 않습니다. 이 처리는 노원구에만 적용하며 서울시 API 전용 정책·월계1동 수집·DB 스키마·환경 변수는 변경하지 않습니다. 이미 별표 주소로 저장됐던 공지를 복구하면 본문·파일 변경 규칙에 따라 `is_modified=true`가 될 수 있습니다. 동일한 복구 결과를 반복 저장하면 추가 변경으로 판단하지 않습니다.
 
 서울시는 `SeoulNewsList` API 한 건 읽기와 **API 본문 내 파일 메타데이터 추출·DB 형식 변환·공지/파일 원자적 저장**, 분야별 최초·정기 수집 CLI까지 구현했습니다. GitHub Actions 예약 실행은 아직 연결하지 않았습니다.
 

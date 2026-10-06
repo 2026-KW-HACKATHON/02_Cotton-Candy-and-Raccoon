@@ -1,6 +1,9 @@
 """Read Nowon file references from API HTML and the original notice page."""
 
+import re
+from dataclasses import replace
 from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
+from uuid import UUID
 
 from bs4 import BeautifulSoup
 
@@ -14,6 +17,81 @@ class AttachmentError(ValueError):
     def __init__(self, message: str, *, code: str = "attachment_error") -> None:
         super().__init__(message)
         self.code = code
+
+
+def recover_masked_body_urls(notice: RawNotice, page_html: str) -> RawNotice:
+    """Repair masked file UUIDs only from an unambiguous, verified original body.
+
+    No network or UUID guessing. Unaffected API HTML is returned byte-for-byte;
+    repaired HTML is serialized by BeautifulSoup and extracted again by callers.
+    """
+    body = BeautifulSoup(notice.body_html or "", "html.parser")
+    masked = []
+    for tag in body.select("img[src], a[href]"):
+        attribute = "src" if tag.name == "img" else "href"
+        reference = str(tag.get(attribute, ""))
+        # Ordinary links containing stars are not file references.
+        identity = _file_identity(urljoin(notice.url, reference))
+        if identity is not None and "***" in identity[1]:
+            masked.append((tag, attribute, reference, identity))
+    if not masked:
+        return notice
+
+    base_url = normalize_nowon_notice_url(notice)
+    page = BeautifulSoup(page_html, "html.parser")
+    identifiers = [tag.get("value") for tag in page.select('input[name="q_bbscttSn"]')]
+    original_bodies = page.select(".article-body")
+    if identifiers != [notice.post_sn] or len(original_bodies) != 1:
+        raise AttachmentError(
+            "가려진 파일 주소를 복구할 원문 게시물을 확인하지 못했습니다.",
+            code="masked_file_source_invalid",
+        )
+
+    def official_file_url(reference: str) -> str | None:
+        try:
+            url = _normalize_nowon_file_url(urljoin(base_url, reference))
+            parsed = urlsplit(url)
+            if (
+                parsed.scheme == "https"
+                and parsed.netloc == "www.nowon.kr"
+                and parsed.path == "/component/file/ND_fileDownload.do"
+                and not parsed.username
+                and not parsed.password
+            ):
+                return url
+        except ValueError:
+            pass
+        return None
+
+    for tag, attribute, reference, (file_sn, masked_id) in masked:
+        if official_file_url(reference) is None:
+            raise AttachmentError(
+                "가려진 파일 주소가 허용된 주소가 아닙니다.", code="masked_file_source_invalid"
+            )
+        pattern = re.escape(masked_id).replace(re.escape("***"), "[0-9a-fA-F-]+")
+        candidates: set[str] = set()
+        for original in original_bodies[0].select(f"{tag.name}[{attribute}]"):
+            url = official_file_url(str(original.get(attribute, "")))
+            if url is None:
+                continue
+            try:
+                identity = _file_identity(url)
+                if identity is None or identity[0] != file_sn:
+                    continue
+                original_id = identity[1]
+                if str(UUID(original_id)) != original_id.lower():
+                    continue
+                if re.fullmatch(pattern, original_id):
+                    candidates.add(url)
+            except (ValueError, AttachmentError):
+                continue
+        if len(candidates) != 1:
+            raise AttachmentError(
+                "가려진 파일 주소에 대응하는 원문 주소가 없거나 여러 개입니다.",
+                code="masked_file_unresolved" if not candidates else "masked_file_ambiguous",
+            )
+        tag[attribute] = next(iter(candidates))
+    return replace(notice, body_html=body.decode_contents())
 
 
 def _file_identity(url: str) -> tuple[str, str] | None:
