@@ -1,5 +1,6 @@
 """Validate summary storage contracts with mock transactions, never a database."""
 
+import re
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -180,17 +181,29 @@ def test_pending_state_binds_null_result_columns() -> None:
     _assert_caller_keeps_transaction(conn)
 
 
-def test_failure_updates_only_the_failure_code_attempt_count_and_timestamp() -> None:
+def test_failure_keeps_metadata_and_hides_public_columns_only_on_source_change() -> None:
     conn, cursor = _connection()
     assert record_summary_failure(conn, 42, _metadata(), reason_code="api_timeout") == 42
     sql, values = cursor.execute.call_args.args
     assert sql == UPSERT_SUMMARY_FAILURE
     updates = sql.split("do update set", 1)[1].split("returning", 1)[0]
-    assert updates.strip() == (
-        "last_error_code = excluded.last_error_code,\n"
-        "    attempt_count = notice_summaries.attempt_count + excluded.attempt_count,\n"
-        "    updated_at = now()"
-    )
+    assert re.findall(r"^    (\w+) = ", updates, re.MULTILINE) == [
+        "status",
+        "result",
+        "category",
+        "deadline_on",
+        "last_error_code",
+        "attempt_count",
+        "updated_at",
+    ]
+    # Public columns survive only for the same source; status changes only from summarized.
+    for column in ("result", "category", "deadline_on"):
+        assert (
+            f"when notice_summaries.source_hash = excluded.source_hash "
+            f"then notice_summaries.{column}\n    end" in updates
+        )
+    assert "notice_summaries.status = 'summarized' then 'needs_review'" in updates
+    assert "else notice_summaries.status" in updates
     assert values[:5] == (42, "failed", None, None, None)
     assert values[9:] == (1, "api_timeout", None)
     assert "select " not in sql.lower()

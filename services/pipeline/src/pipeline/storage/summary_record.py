@@ -126,7 +126,8 @@ class SummaryRecord:
 
     Only summarized rows contain public result JSON. needs_review tells the app
     to show an original-notice instruction, with no result or deadline. Failure
-    writes preserve an existing row apart from its execution counters and error.
+    writes preserve an existing row apart from its execution counters and error,
+    unless source_hash changed: then a stale public summary is hidden as needs_review.
 
     attempt_increment counts summary executions, including their internal API
     retry, rather than HTTP requests. Use 1 on a direct terminal write or when

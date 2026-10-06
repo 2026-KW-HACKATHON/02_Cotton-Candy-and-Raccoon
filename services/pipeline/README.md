@@ -328,9 +328,21 @@ GitHub 저장소의 Settings → Secrets and variables → Actions에서 아래�
   `category`, `deadline_on`은 모두 NULL입니다. 파일 참조만 확인한 근거, 미확인 근거,
   불확실한 결과나 읽지 못한 첨부가 있으면 이 상태로 저장합니다. 텍스트와 파일 근거가
   섞인 일정도 검토 대상이며 마감일 계산 함수를 호출하지 않습니다.
-- 실행 실패: 기존 행이 있으면 `last_error_code`, `attempt_count`, `updated_at`만 갱신해
-  기존 요약·상태·마감일과 메타데이터를 유지합니다. 기존 행이 없을 때만
-  `status='failed'`, `result=NULL`로 삽입합니다. 반환된 실패 상태는 이번 실행의 결과입니다.
+- 실행 실패: 기존 행이 없을 때만 `status='failed'`, `result=NULL`로 삽입합니다. 반환된 실패
+  상태는 이번 실행의 결과입니다. 기존 행이 있으면 저장된 `source_hash`와 이번 실행의 해시를
+  비교합니다.
+  - 해시가 같으면(모델·프롬프트 버전만 바뀐 재요약 등) `last_error_code`, `attempt_count`,
+    `updated_at`만 갱신하고 기존 요약, 상태, 마감일, 메타데이터를 유지합니다.
+  - 해시가 다르면(원문이 바뀐 뒤의 재요약) 옛 요약을 검증된 내용으로 공개하지 않습니다.
+    `summarized` 행은 `needs_review`로 바뀌고 `result`, `category`, `deadline_on`은 NULL이
+    됩니다. 다른 상태는 그대로 두되 공개 컬럼은 NULL로 비웁니다. `source_hash`와 `model`,
+    `prompt_version`, `attachment_status`, `generated_at`은 마지막 성공 값을 유지해 새 원문으로는
+    아직 요약에 성공하지 못했다는 사실을 남깁니다. 이후 새 해시로 요약에 성공하면 행 전체가
+    새 결과로 바뀝니다.
+- 재시도 대상 조회(#14): `status in ('pending', 'failed')`만으로는 원문 변경 후 실패해
+  `needs_review`로 바뀐 행이 빠집니다. `last_error_code is not null`인 행도 재시도 대상에
+  포함해야 하며, 재시도 인덱스 조건도 같이 맞춰야 합니다. 성공하면 `last_error_code`는
+  NULL로 돌아갑니다.
 
 `StoredPreparedSummary.result`에는 파이프라인 호출자를 위한 원본의 메모리 스냅샷이 있습니다.
 앱 응답으로 사용하지 않으며 `needs_review`의 공개 DB 행에는 저장하지 않습니다.
