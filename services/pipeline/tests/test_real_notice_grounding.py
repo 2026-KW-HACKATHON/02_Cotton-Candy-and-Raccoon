@@ -25,6 +25,17 @@ def captures() -> dict[str, Any]:
     return json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
 
 
+def _current_contract_raw(raw: str) -> str:
+    """Adapt historical replay shape without editing captures or inferring a field.
+
+    The old prompt never requested category_code. Use null only for these offline
+    grounding regressions; production continues to require the new response key.
+    """
+    data = json.loads(raw)
+    data.setdefault("category_code", None)
+    return json.dumps(data, ensure_ascii=False)
+
+
 def _notice(body: str, title: str = "캠프 안내") -> NoticeInput:
     return NoticeInput.model_validate(
         {
@@ -58,7 +69,7 @@ def _case(
 ) -> tuple[NoticeInput, NoticeSummary, tuple[MediaSource, ...]]:
     case = captures["cases"][name]
     notice = NoticeInput.model_validate(case["notice"])
-    raw = NoticeSummary.model_validate_json(case["responses"][-1]["raw"])
+    raw = NoticeSummary.model_validate_json(_current_contract_raw(case["responses"][-1]["raw"]))
     media = tuple(MediaSource(**value) for value in case["media_sources"])
     return notice, raw, media
 
@@ -130,12 +141,12 @@ def test_actual_gifted_response_retains_application_category_despite_unsupported
 
 
 @pytest.mark.parametrize("case_name", ["camp_text", "gifted_text"])
-def test_original_text_responses_replay_through_the_public_summarizer_without_api(
+def test_historical_text_responses_replay_with_unknown_field_and_without_api(
     monkeypatch: pytest.MonkeyPatch, captures: dict[str, Any], case_name: str
 ) -> None:
     case = captures["cases"][case_name]
     notice = NoticeInput.model_validate(case["notice"])
-    responses = iter(response["raw"] for response in case["responses"])
+    responses = iter(_current_contract_raw(response["raw"]) for response in case["responses"])
     calls: list[dict[str, Any]] = []
 
     def generate(**kwargs: Any) -> str:
@@ -145,6 +156,7 @@ def test_original_text_responses_replay_through_the_public_summarizer_without_ap
     monkeypatch.setattr(summarize_module, "generate_summary_json", generate)
     result = summarize_module.summarize_notice(notice, api_key="offline-test-key")
     assert len(calls) == 2
+    assert result.category_code is None
     assert result.category == "application"
     if case_name == "camp_text":
         assert result.action == "노원구청 홈페이지 인터넷 접수"
@@ -499,7 +511,7 @@ def test_captured_image_only_response_without_source_ids_is_preserved_as_unverif
 ) -> None:
     case = captures["cases"]["camp_pdf"]
     image = case["image_counterexample"]
-    raw = NoticeSummary.model_validate_json(image["response"]["raw"])
+    raw = NoticeSummary.model_validate_json(_current_contract_raw(image["response"]["raw"]))
     assert all(item.source_id is None for item in raw.evidence)
     result = ground_summary(
         raw,

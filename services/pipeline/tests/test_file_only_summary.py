@@ -17,6 +17,7 @@ def _file_output(kind: str = "image") -> dict[str, Any]:
     data = unknown_summary(_prepared().notice, has_media=True).model_dump()
     data.update(
         category="mixed",
+        category_code=26,
         summary="주민 문화 프로그램 안내",
         publisher="노원구청",
         applicable_area="월계1동",
@@ -64,6 +65,7 @@ def _file_output(kind: str = "image") -> dict[str, Any]:
                 ("dates", "10.10 10:00-11:00"),
                 ("notes", "예약제 / 프로그램별 비용"),
                 ("topics", "공예 / 음악 프로그램"),
+                ("category_code", "문화교실 일정표"),
             )
         ],
     )

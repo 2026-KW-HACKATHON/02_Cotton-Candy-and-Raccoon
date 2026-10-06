@@ -19,13 +19,14 @@ from pipeline.transform.summary_schema import NoticeSummary
 
 UPSERT_SUMMARY = """
 insert into notice_summaries (
-    notice_id, status, result, category, deadline_on, attachment_status,
+    notice_id, status, result, category, category_code, deadline_on, attachment_status,
     source_hash, model, prompt_version, attempt_count, last_error_code, generated_at
-) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 on conflict (notice_id) do update set
     status = excluded.status,
     result = excluded.result,
     category = excluded.category,
+    category_code = excluded.category_code,
     deadline_on = excluded.deadline_on,
     attachment_status = excluded.attachment_status,
     source_hash = excluded.source_hash,
@@ -40,11 +41,33 @@ returning notice_id
 
 UPSERT_SUMMARY_FAILURE = """
 insert into notice_summaries (
-    notice_id, status, result, category, deadline_on, attachment_status,
+    notice_id, status, result, category, category_code, deadline_on, attachment_status,
     source_hash, model, prompt_version, attempt_count, last_error_code, generated_at
-) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 on conflict (notice_id) do update set
+    status = case when notice_summaries.status = 'summarized'
+      and notice_summaries.source_hash is distinct from excluded.source_hash
+      then 'needs_review' else notice_summaries.status end,
+    result = case when notice_summaries.source_hash is distinct from excluded.source_hash
+      then null else notice_summaries.result end,
+    category = case when notice_summaries.source_hash is distinct from excluded.source_hash
+      then null else notice_summaries.category end,
+    category_code = case when notice_summaries.source_hash is distinct from excluded.source_hash
+      then null else notice_summaries.category_code end,
+    deadline_on = case when notice_summaries.source_hash is distinct from excluded.source_hash
+      then null else notice_summaries.deadline_on end,
     last_error_code = excluded.last_error_code,
+    attempt_count = notice_summaries.attempt_count + excluded.attempt_count,
+    updated_at = now()
+returning notice_id
+"""
+
+UPSERT_SUMMARY_PENDING = """
+insert into notice_summaries (
+    notice_id, status, result, category, category_code, deadline_on, attachment_status,
+    source_hash, model, prompt_version, attempt_count, last_error_code, generated_at
+) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+on conflict (notice_id) do update set
     attempt_count = notice_summaries.attempt_count + excluded.attempt_count,
     updated_at = now()
 returning notice_id
@@ -81,8 +104,11 @@ def save_notice_summary(conn: Connection, record: SummaryRecord) -> int:
 
     Database exceptions produce no success result. The caller must roll back an
     aborted transaction. Row status never claims that uncommitted data is durable.
-    Failure updates only its code, attempt count, and update time on an existing
-    row. A first failure inserts a failed row without summary data.
+    Same-source failures update only the code, count, and update time. Changed-source
+    failures also clear an old public summary and mark it needs_review (#24).
+    Previous input/version metadata survive for retry selection.
+    A first failure inserts a failed row without summary data.
+    Starting pending never removes an existing public summary or successful hash.
     """
     if not isinstance(record, SummaryRecord):
         raise SummaryRecordError("invalid_summary_record")
@@ -103,6 +129,7 @@ def save_notice_summary(conn: Connection, record: SummaryRecord) -> int:
         checked.status,
         Jsonb(summary.model_dump(mode="json")) if summary is not None else None,
         summary.category if summary is not None else None,
+        summary.category_code if summary is not None else None,
         checked.deadline_on,
         checked.metadata.attachment_status,
         checked.metadata.source_hash,
@@ -114,7 +141,10 @@ def save_notice_summary(conn: Connection, record: SummaryRecord) -> int:
     )
     try:
         with conn.cursor(row_factory=tuple_row) as cursor:
-            sql = UPSERT_SUMMARY_FAILURE if checked.status == "failed" else UPSERT_SUMMARY
+            sql = {
+                "failed": UPSERT_SUMMARY_FAILURE,
+                "pending": UPSERT_SUMMARY_PENDING,
+            }.get(checked.status, UPSERT_SUMMARY)
             cursor.execute(sql, values)
             row = cursor.fetchone()
     except Error:
@@ -174,7 +204,7 @@ def record_summary_failure(
     reason_code: str,
     attempt_increment: int = 1,
 ) -> int:
-    """Record a known failure code, preserving any existing summary and status."""
+    """Record a failure; preserve same-source summaries and withhold stale ones."""
     return save_notice_summary(
         conn,
         SummaryRecord(

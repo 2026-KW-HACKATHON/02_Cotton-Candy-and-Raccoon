@@ -24,7 +24,7 @@ from pipeline.storage.summary_record import (
 )
 from pipeline.transform import summarize as summarize_module
 from pipeline.transform.gemini_client import DEFAULT_MODEL, GeminiRequestError
-from pipeline.transform.gemini_prompt import GeminiConfigurationError
+from pipeline.transform.gemini_prompt import SUMMARY_PROMPT_VERSION, GeminiConfigurationError
 from pipeline.transform.grounding import REVIEW_NOTE, unknown_summary
 from pipeline.transform.prepared_summary import PreparedSummaryResult, SummaryPreparationError
 from pipeline.transform.summary_schema import NoticeSummary, SummaryValidationError
@@ -38,14 +38,14 @@ def _metadata(attachment_status: str = "all_read") -> SummaryMetadata:
     return SummaryMetadata(
         source_hash="cd" * 32,
         model=DEFAULT_MODEL,
-        prompt_version="summary-v3",
+        prompt_version=SUMMARY_PROMPT_VERSION,
         attachment_status=attachment_status,
     )
 
 
 def _response(kind: str) -> dict[str, Any]:
     data = unknown_summary(_notice("행사 안내")).model_dump(mode="json")
-    data.update(category="event", summary="행사 안내", uncertainties=[])
+    data.update(category="event", category_code=26, summary="행사 안내", uncertainties=[])
     evidence: dict[str, Any] = {"field": "summary", "excerpt": "행사 안내"}
     if kind in {"pdf", "image"}:
         evidence.update(
@@ -53,7 +53,7 @@ def _response(kind: str) -> dict[str, Any]:
             source_id="media_1",
             page=1 if kind == "pdf" else None,
         )
-    data["evidence"] = [evidence]
+    data["evidence"] = [evidence, evidence | {"field": "category_code"}]
     if kind == "mixed":
         data["dates"] = [
             {
@@ -155,11 +155,11 @@ def test_actual_prepared_summary_then_mock_storage_preserves_all_sources_and_res
     assert stored.result.summary.model_dump(mode="json") == result.summary.model_dump(mode="json")
     assert stored.result.media_sources == result.media_sources
     if needs_review:
-        assert values[2:5] == (None, None, None)
+        assert values[2:6] == (None, None, None, None)
     else:
         assert values[2].obj == result.summary.model_dump(mode="json")
-        assert values[3:5] == ("event", DEADLINE)
-    assert values[6:10] == ("cd" * 32, DEFAULT_MODEL, "summary-v3", 1)
+        assert values[3:6] == ("event", 26, DEADLINE)
+    assert values[7:11] == ("cd" * 32, DEFAULT_MODEL, SUMMARY_PROMPT_VERSION, 1)
     if kind in {"pdf", "image"}:
         assert stored.result.summary.evidence[0].verification == "file_reference_only"
     if kind == "mixed":
@@ -167,7 +167,7 @@ def test_actual_prepared_summary_then_mock_storage_preserves_all_sources_and_res
             "text_matched",
             "file_reference_only",
         }
-        assert stored.result.summary.evidence[1].page == 2
+        assert stored.result.summary.evidence[2].page == 2
     _assert_caller_keeps_transaction(conn)
 
 
@@ -229,7 +229,7 @@ def test_review_conditions_keep_a_private_snapshot_without_publishing_summary_or
     assert stored.deadline_on is None
     assert stored.result.summary.model_dump(mode="json") == result.summary.model_dump(mode="json")
     assert stored.result.media_sources == result.media_sources
-    assert cursor.execute.call_args.args[1][2:5] == (None, None, None)
+    assert cursor.execute.call_args.args[1][2:6] == (None, None, None, None)
     _assert_caller_keeps_transaction(conn)
 
 
@@ -257,7 +257,7 @@ def test_storage_connector_forwards_execution_increment_without_counting_http_re
         generated_at=GENERATED_AT,
         attempt_increment=increment,
     )
-    assert cursor.execute.call_args.args[1][9] == increment
+    assert cursor.execute.call_args.args[1][10] == increment
     cursor.execute.assert_called_once()
     _assert_caller_keeps_transaction(conn)
 
@@ -292,10 +292,10 @@ def test_summary_failure_is_written_as_failed_without_any_success_json(
     assert record_summary_failure(conn, 17, _metadata(), reason_code=error.value.reason_code) == 17
     values = cursor.execute.call_args.args[1]
     assert values[1] == "failed"
-    assert values[2:5] == (None, None, None)
-    assert values[10] == error.value.reason_code
-    assert values[11] is None
-    assert PRIVATE_MARKER not in str(values[10])
+    assert values[2:6] == (None, None, None, None)
+    assert values[11] == error.value.reason_code
+    assert values[12] is None
+    assert PRIVATE_MARKER not in str(values[11])
     _assert_caller_keeps_transaction(conn)
 
 
@@ -346,7 +346,7 @@ def test_saved_result_is_a_snapshot_and_only_summarized_results_publish_json(
     assert stored.result.summary.summary == "행사 안내"
     assert stored.result.summary.evidence[0].page == (1 if kind == "pdf" else None)
     if kind == "pdf":
-        assert cursor.execute.call_args.args[1][2:5] == (None, None, None)
+        assert cursor.execute.call_args.args[1][2:6] == (None, None, None, None)
     else:
         assert cursor.execute.call_args.args[1][2].obj == (
             stored.result.summary.model_dump(mode="json")
@@ -393,14 +393,14 @@ def test_integrated_job_summarizes_each_input_then_saves_with_model_and_utc_time
     values = cursor.execute.call_args.args[1]
     assert values[:2] == (17, stored.status)
     if needs_review:
-        assert values[2:5] == (None, None, None)
+        assert values[2:6] == (None, None, None, None)
     else:
         assert values[2].obj == stored.result.summary.model_dump(mode="json")
-        assert values[4] == DEADLINE
-    assert values[6:10] == (metadata.source_hash, metadata.model, metadata.prompt_version, 1)
-    assert before <= values[11] <= after
-    assert values[11].utcoffset().total_seconds() == 0
-    assert stored.generated_at == values[11]
+        assert values[5] == DEADLINE
+    assert values[7:11] == (metadata.source_hash, metadata.model, metadata.prompt_version, 1)
+    assert before <= values[12] <= after
+    assert values[12].utcoffset().total_seconds() == 0
+    assert stored.generated_at == values[12]
     cursor.execute.assert_called_once()
     _assert_caller_keeps_transaction(conn)
 
@@ -426,7 +426,7 @@ def test_integrated_review_outcome_never_calls_the_deadline_resolver(
     )
     assert stored.status == "needs_review"
     assert stored.deadline_on is None
-    assert cursor.execute.call_args.args[1][2:5] == (None, None, None)
+    assert cursor.execute.call_args.args[1][2:6] == (None, None, None, None)
     deadline_resolver.assert_not_called()
     _assert_caller_keeps_transaction(conn)
 
@@ -450,10 +450,10 @@ def test_integrated_shape_retry_retains_media_and_counts_as_one_execution(
         conn, prepared, _metadata(), deadline_resolver=lambda _summary: None, api_key="test-key"
     )
     assert stored.status == "needs_review"
-    assert cursor.execute.call_args.args[1][2:5] == (None, None, None)
+    assert cursor.execute.call_args.args[1][2:6] == (None, None, None, None)
     assert len(calls) == 2
     assert calls[1]["notice_text"][: len(calls[0]["notice_text"])] == calls[0]["notice_text"]
-    assert cursor.execute.call_args.args[1][9] == 1
+    assert cursor.execute.call_args.args[1][10] == 1
     cursor.execute.assert_called_once()
     _assert_caller_keeps_transaction(conn)
 
@@ -518,11 +518,11 @@ def test_integrated_known_failure_returns_saved_failure_without_raising_or_succe
     assert len(requests) == api_attempts
     values = cursor.execute.call_args.args[1]
     assert values[1] == "failed"
-    assert values[2:5] == (None, None, None)
-    assert values[9] == 1
-    assert values[10] == expected_code
-    assert values[11] is None
-    assert PRIVATE_MARKER not in values[10]
+    assert values[2:6] == (None, None, None, None)
+    assert values[10] == 1
+    assert values[11] == expected_code
+    assert values[12] is None
+    assert PRIVATE_MARKER not in values[11]
     # Returning a failure outcome leaves the caller's connection context without an exception.
     conn.__exit__.assert_called_once_with(None, None, None)
     deadline_resolver.assert_not_called()

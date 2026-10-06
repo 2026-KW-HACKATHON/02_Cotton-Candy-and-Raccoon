@@ -12,6 +12,7 @@ from pipeline.storage.summaries import (
     record_summary_failure,
     save_prepared_summary,
 )
+from pipeline.storage.summary_deadline import compute_deadline_on
 from pipeline.storage.summary_record import (
     FAILURE_CODES,
     SummaryMetadata,
@@ -21,7 +22,7 @@ from pipeline.storage.summary_record import (
 )
 from pipeline.transform.gemini_client import GeminiRequestError
 from pipeline.transform.gemini_input import GeminiInputError
-from pipeline.transform.gemini_prompt import GeminiConfigurationError
+from pipeline.transform.gemini_prompt import SUMMARY_PROMPT_VERSION, GeminiConfigurationError
 from pipeline.transform.prepared_summary import (
     PreparationIssueLike,
     PreparedSummaryLike,
@@ -37,8 +38,8 @@ type DeadlineResolver = Callable[[NoticeSummary], date | None]
 class StoredSummaryFailure:
     """An execution failure, not the status of any previously stored summary.
 
-    Existing public summary data stays intact. status describes this execution;
-    it does not claim that the persisted row was changed to failed.
+    Same-source public data stays intact; changed-source summaries become review
+    instructions. status describes this execution, not the persisted row status.
     """
 
     notice_id: int
@@ -60,20 +61,22 @@ def summarize_and_save_prepared_notice(
     prepared: PreparedSummaryLike,
     metadata: SummaryMetadata,
     *,
-    deadline_resolver: DeadlineResolver,
+    deadline_resolver: DeadlineResolver = compute_deadline_on,
     api_key: str | None = None,
 ) -> StoredPreparedSummary | StoredSummaryFailure:
     """Run one summary execution and write its completed result or failure.
 
     The caller owns preparation, source_hash, attachment_status, model/prompt
-    version metadata, #14's deadline calculation, and the DB connection/commit.
+    version metadata and the DB connection/commit. #14's deadline calculation is
+    the default resolver; tests can inject one without calling it on review rows.
     The supplied metadata must describe the actual request. This function performs
     no source query, downloads, extraction, SQL migration, or execution scheduling.
     It writes only after summarization finishes, and opens no DB transaction around
     Gemini. Internal shape retries still count as one summary execution.
     A known processing failure returns status=failed/result=None after recording it,
     so raising the API exception does not accidentally roll back the failure row.
-    Existing summary rows retain their public data and status on such a failure.
+    Same-source summary rows retain their public data and status on failure.
+    Changed-source failures withhold stale public data and mark needs_review.
     needs_review publishes no result and never calls the deadline resolver.
     The caller commits both outcome types before reporting durable storage; DB or
     programming failures still raise and must be rolled back.
@@ -83,6 +86,8 @@ def summarize_and_save_prepared_notice(
         status="pending",
         metadata=metadata,
     )
+    if checked.metadata.prompt_version != SUMMARY_PROMPT_VERSION:
+        raise SummaryRecordError("prompt_version_mismatch")
     if not isinstance(prepared.warnings, tuple):
         raise SummaryRecordError("invalid_preparation_warnings")
     warnings = tuple(prepared.warnings)

@@ -51,7 +51,10 @@ def file_reference_problems(
         else:
             cited_fields.add(item.field)
     required = {"summary"} if summary.summary != REVIEW_NOTE else set()
-    for field in ("applicable_area", "audience", "action", "location", "dates", "notes", "topics"):
+    for field in (
+        "category_code", "applicable_area", "audience", "action", "location", "dates", "notes",
+        "topics",
+    ):
         if getattr(summary, field) not in (None, []):
             required.add(field)
     problems.extend(

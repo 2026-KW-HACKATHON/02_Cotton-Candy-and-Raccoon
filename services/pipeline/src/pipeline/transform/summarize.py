@@ -206,6 +206,7 @@ def _drop_invalid_fields(raw: str, *, allow_extra: bool = False) -> str | None:
 
     scalar_defaults = {
         "category": "unknown",
+        "category_code": None,
         "summary": REVIEW_NOTE,
         "publisher": None,
         "applicable_area": None,
@@ -814,6 +815,7 @@ def _restore_retry_fields(first: NoticeSummary, retry: NoticeSummary, notice: No
     previous_data = first.model_dump()
     restored = set()
     for field in (
+        "category_code",
         "summary",
         "publisher",
         "applicable_area",

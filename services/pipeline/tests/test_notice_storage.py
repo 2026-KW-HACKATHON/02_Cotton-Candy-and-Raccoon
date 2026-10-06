@@ -78,31 +78,38 @@ def test_insert_repeat_department_visibility_and_timestamps(db_conn, record: Not
     with db_conn.cursor() as cursor:
         cursor.execute(
             "select category, post_sn, title, body_html, is_modified, is_visible, "
-            "created_at, updated_at from notices where id = %s", (notice_id,),
+            "created_at, updated_at, content_updated_at from notices where id = %s", (notice_id,),
         )
         initial = cursor.fetchone()
         assert initial[:6] == ("nowon", record.post_sn, "안내", "<p>원문</p>", False, True)
+        assert initial[8] == initial[6]
         cursor.execute(
-            "update notices set is_visible = false, updated_at = '2000-01-01' "
-            "where id = %s", (notice_id,),
+            "update notices set is_visible = false, updated_at = %s, content_updated_at = %s "
+            "where id = %s", (
+                datetime(2000, 1, 1, tzinfo=UTC), datetime(2000, 1, 1, tzinfo=UTC), notice_id,
+            ),
         )
 
     assert save_notice(db_conn, record) == notice_id
     with db_conn.cursor() as cursor:
         cursor.execute(
-            "select count(*), is_modified, is_visible, created_at, updated_at "
+            "select count(*), is_modified, is_visible, created_at, updated_at, content_updated_at "
             "from notices where id = %s group by is_modified, is_visible, "
-            "created_at, updated_at", (notice_id,),
+            "created_at, updated_at, content_updated_at", (notice_id,),
         )
-        count, modified, visible, created, updated = cursor.fetchone()
+        count, modified, visible, created, updated, content_updated = cursor.fetchone()
     assert (count, modified, visible) == (1, False, True)
     assert created == initial[6]
     assert updated > datetime(2000, 1, 1, tzinfo=UTC)
+    assert content_updated == datetime(2000, 1, 1, tzinfo=UTC)
 
     assert save_notice(db_conn, replace(record, department="새 부서")) == notice_id
     with db_conn.cursor() as cursor:
-        cursor.execute("select department, is_modified from notices where id = %s", (notice_id,))
-        assert cursor.fetchone() == ("새 부서", False)
+        cursor.execute(
+            "select department, is_modified, content_updated_at from notices where id = %s",
+            (notice_id,),
+        )
+        assert cursor.fetchone() == ("새 부서", False, datetime(2000, 1, 1, tzinfo=UTC))
 
 
 @pytest.mark.parametrize("changes", [
@@ -116,14 +123,35 @@ def test_five_fields_mark_modified_and_true_stays_true(
     db_conn, record: NoticeRecord, changes: dict[str, object],
 ) -> None:
     notice_id = save_notice(db_conn, record)
-    assert save_notice(db_conn, replace(record, **changes)) == notice_id
+    old_timestamp = datetime(2000, 1, 1, tzinfo=UTC)
+    db_conn.execute(
+        "update notices set content_updated_at = %s where id = %s", (old_timestamp, notice_id),
+    )
+    changed_record = replace(record, **changes)
+    assert save_notice(db_conn, changed_record) == notice_id
     with db_conn.cursor() as cursor:
-        cursor.execute("select is_modified from notices where id = %s", (notice_id,))
-        assert cursor.fetchone() == (True,)
+        cursor.execute(
+            "select is_modified, content_updated_at from notices where id = %s", (notice_id,),
+        )
+        modified, content_updated = cursor.fetchone()
+        assert modified is True and content_updated > old_timestamp
+
+    # A sticky is_modified flag must not advance the content timestamp on recollection.
+    db_conn.execute(
+        "update notices set content_updated_at = %s where id = %s", (old_timestamp, notice_id),
+    )
+    assert save_notice(db_conn, changed_record) == notice_id
+    assert db_conn.execute(
+        "select is_modified, content_updated_at from notices where id = %s", (notice_id,),
+    ).fetchone() == (True, old_timestamp)
+
     save_notice(db_conn, record)
     with db_conn.cursor() as cursor:
-        cursor.execute("select is_modified from notices where id = %s", (notice_id,))
-        assert cursor.fetchone() == (True,)
+        cursor.execute(
+            "select is_modified, content_updated_at from notices where id = %s", (notice_id,),
+        )
+        modified, content_updated = cursor.fetchone()
+        assert modified is True and content_updated > old_timestamp
 
 
 def test_caller_rollback_removes_uncommitted_notice(db_conn, record: NoticeRecord) -> None:

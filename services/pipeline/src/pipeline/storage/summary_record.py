@@ -72,6 +72,7 @@ def _requires_review(summary: NoticeSummary, metadata: "SummaryMetadata") -> boo
     """
     if (
         summary.category == "unknown"
+        or summary.category_code is None
         or summary.uncertainties
         or metadata.attachment_status in {"partial", "unread"}
         or any(
@@ -80,11 +81,17 @@ def _requires_review(summary: NoticeSummary, metadata: "SummaryMetadata") -> boo
         )
     ):
         return True
-    required = {"summary"}
+    required = {"summary", "category_code"}
     required.update(
         name
         for name in (
-            "applicable_area", "audience", "action", "location", "dates", "notes", "topics"
+            "applicable_area",
+            "audience",
+            "action",
+            "location",
+            "dates",
+            "notes",
+            "topics",
         )
         if getattr(summary, name) not in (None, [])
     )
@@ -95,9 +102,10 @@ def _requires_review(summary: NoticeSummary, metadata: "SummaryMetadata") -> boo
 class SummaryMetadata:
     """Caller-supplied input identity and version information.
 
-    The input owner computes source_hash and attachment_status: #13's current
-    preparation result does not retain all file IDs or the original file count.
-    Include PDF/image contents when the owners extend #14's text hash contract.
+    summary_metadata builds the text hash from body text and file_key-sorted
+    extracted attachment texts. The input owner supplies original/read file
+    counts because #13's preparation result does not retain that manifest.
+    PDF/image bytes are outside the current text hash contract.
     Model and prompt_version must describe the request that produced the result.
     """
 
@@ -126,12 +134,13 @@ class SummaryRecord:
 
     Only summarized rows contain public result JSON. needs_review tells the app
     to show an original-notice instruction, with no result or deadline. Failure
-    writes preserve an existing row apart from its execution counters and error.
+    writes preserve existing data when the source is unchanged. A changed source
+    invalidates the old public summary, retaining its input/version metadata.
 
     attempt_increment counts summary executions, including their internal API
     retry, rather than HTTP requests. Use 1 on a direct terminal write or when
     starting pending; use 0 to finish that same pending execution.
-    The caller supplies #14's computed deadline_on; this module does not compute it.
+    summary_deadline supplies #14's deterministic deadline calculation.
     """
 
     notice_id: int

@@ -35,6 +35,17 @@ SingleLineText = Annotated[str, Field(min_length=1), AfterValidator(_single_line
 NoteText = Annotated[SingleLineText, Field(max_length=FIELD_TEXT_LIMITS["notes"])]
 UncertaintyText = Annotated[SingleLineText, Field(max_length=FIELD_TEXT_LIMITS["uncertainties"])]
 Category = Literal["application", "event", "living", "obligation", "news", "mixed", "unknown"]
+CategoryCode = Literal[21, 22, 23, 24, 25, 26, 27, 30]
+CATEGORY_CODE_NAMES: dict[int, str] = {
+    21: "교통",
+    22: "안전",
+    23: "주택",
+    24: "경제",
+    25: "환경",
+    26: "문화",
+    27: "복지",
+    30: "행정",
+}
 
 
 class DateEntry(BaseModel):
@@ -96,6 +107,7 @@ class Evidence(BaseModel):
 
     field: Literal[
         "category",
+        "category_code",
         "summary",
         "publisher",
         "applicable_area",
@@ -128,11 +140,17 @@ class Evidence(BaseModel):
 
 
 class NoticeSummary(BaseModel):
-    """The complete output shape required by the checked-in prompt."""
+    """Internal model output; storage exposes only validated summarized results.
+
+    Unknown policy fields use category_code=None. Unverified claims may remain in
+    this in-memory contract, but needs_review rows expose only an original-notice
+    instruction, never this model output.
+    """
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
     category: Category
+    category_code: CategoryCode | None
     summary: SingleLineText = Field(max_length=FIELD_TEXT_LIMITS["summary"])
     publisher: SingleLineText | None = Field(max_length=FIELD_TEXT_LIMITS["publisher"])
     applicable_area: SingleLineText | None = Field(max_length=FIELD_TEXT_LIMITS["applicable_area"])
@@ -161,6 +179,14 @@ class NoticeSummary(BaseModel):
     topics: list[Topic]
     uncertainties: list[UncertaintyText]
     evidence: list[Evidence]
+
+    @field_validator("category_code", mode="before")
+    @classmethod
+    def integer_category_code(cls, value: object) -> object:
+        # Numeric literals otherwise accept equal floats, even in strict models.
+        if value is not None and type(value) is not int:
+            raise ValueError("category_code must be a JSON integer or null")
+        return value
 
 
 class SummaryValidationError(ValueError):
@@ -216,6 +242,7 @@ def validate_evidence(
     if not any(source.strip() for source in sources) and not media_sources:
         if (
             summary.category != "unknown"
+            or summary.category_code is not None
             or summary.summary != "공지 확인 불가"
             or summary.action is not None
             or summary.dates
@@ -231,7 +258,10 @@ def validate_evidence(
     required = set() if partial_headline else {"summary"}
     if partial_headline and summary.category != "unknown":
         required.add("category")
-    for field in ("applicable_area", "audience", "action", "location", "dates", "notes", "topics"):
+    for field in (
+        "category_code", "applicable_area", "audience", "action", "location", "dates", "notes",
+        "topics",
+    ):
         if getattr(summary, field) not in (None, []):
             required.add(field)
     missing = required - {item.field for item in summary.evidence}

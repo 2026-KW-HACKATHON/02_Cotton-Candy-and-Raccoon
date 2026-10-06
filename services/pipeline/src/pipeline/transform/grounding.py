@@ -134,6 +134,7 @@ def unknown_summary(notice: NoticeInput, *, has_media: bool = False) -> NoticeSu
         publisher = None
     return NoticeSummary(
         category="unknown",
+        category_code=None,
         summary=REVIEW_NOTE if has_source else "공지 확인 불가",
         publisher=publisher,
         applicable_area=None,
@@ -1008,10 +1009,11 @@ def ground_summary(
     *,
     media_sources: tuple[MediaSource, ...] = (),
 ) -> NoticeSummary:
-    """Produce the strict comparison result, not the final resident-facing output.
+    """Produce the strict comparison result for internal verification.
 
-    The caller preserves uncertain claims with preserve_uncertain_summary instead
-    of publishing the blanks produced by this diagnostic comparison.
+    The caller may preserve uncertain claims in memory with
+    preserve_uncertain_summary. Storage gates public output: needs_review means
+    the app shows an original-notice instruction and no model claims.
     """
     if is_file_only_notice(notice, media_sources):
         return preserve_file_only_summary(summary, notice, media_sources)
@@ -1058,6 +1060,10 @@ def ground_summary(
                 data["category"], summary.summary, [item], context_evidence=context_evidence
             )
         )
+
+    if data["category_code"] is not None and not _excerpts(evidence, "category_code"):
+        data["category_code"] = None
+        changed = True
 
     for field in ("applicable_area", "audience", "action", "location", "changed_details"):
         value = data[field]
@@ -1236,6 +1242,7 @@ def ground_summary(
         field
         for field in (
             "category",
+            "category_code",
             "publisher",
             "summary",
             "applicable_area",
@@ -1338,6 +1345,7 @@ def preserve_uncertain_summary(
     required.update(
         field
         for field in (
+            "category_code",
             "applicable_area",
             "audience",
             "action",

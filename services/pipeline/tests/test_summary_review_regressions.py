@@ -17,6 +17,7 @@ from pipeline.storage.summary_record import (
     build_summary_record,
 )
 from pipeline.transform import summarize as summarize_module
+from pipeline.transform.gemini_prompt import SUMMARY_PROMPT_VERSION
 from pipeline.transform.grounding import unknown_summary
 from pipeline.transform.prepared_summary import PreparedSummaryResult
 from pipeline.transform.summary_schema import MediaSource, NoticeSummary
@@ -29,7 +30,7 @@ def _metadata() -> SummaryMetadata:
     return SummaryMetadata(
         source_hash="cd" * 32,
         model="gemini-test",
-        prompt_version="summary-v3",
+        prompt_version=SUMMARY_PROMPT_VERSION,
         attachment_status="all_read",
     )
 
@@ -47,7 +48,13 @@ def _evidence(field: str = "summary", **changes: Any) -> dict[str, Any]:
 
 def _summary(**changes: Any) -> NoticeSummary:
     data = unknown_summary(_notice("행사 안내")).model_dump(mode="json")
-    data.update(category="event", summary="행사 안내", uncertainties=[], evidence=[_evidence()])
+    data.update(
+        category="event",
+        category_code=26,
+        summary="행사 안내",
+        uncertainties=[],
+        evidence=[_evidence(), _evidence("category_code")],
+    )
     return NoticeSummary.model_validate(data | changes)
 
 
@@ -100,8 +107,8 @@ def _assert_review_not_published(result: PreparedSummaryResult) -> None:
     assert stored.result.summary.model_dump(mode="json") == result.summary.model_dump(mode="json")
     values = cursor.execute.call_args.args[1]
     assert values[:2] == (17, "needs_review")
-    assert values[2:5] == (None, None, None)
-    assert values[11] == GENERATED_AT
+    assert values[2:6] == (None, None, None, None)
+    assert values[12] == GENERATED_AT
 
 
 @pytest.mark.parametrize("kind", ["document", "image"])
@@ -170,7 +177,11 @@ def test_unverified_or_missing_evidence_cannot_claim_summarized_status(
 def test_each_populated_claim_requires_its_own_text_evidence(field: str, value: Any) -> None:
     result = _result(_summary(**{field: value}))
     _assert_review_not_published(result)
-    matched = _result(_summary(**{field: value}, evidence=[_evidence(), _evidence(field)]))
+    matched = _result(
+        _summary(
+            **{field: value}, evidence=[_evidence(), _evidence("category_code"), _evidence(field)]
+        )
+    )
     record = build_summary_record(
         matched, _metadata(), deadline_on=DEADLINE, generated_at=GENERATED_AT
     )

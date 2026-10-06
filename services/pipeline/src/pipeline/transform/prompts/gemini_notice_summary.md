@@ -44,6 +44,23 @@ category는 다음 중 하나로 지정한다.
 행사와 교통통제가 함께 있으면 글의 주된 목적을 대표 분류로 선택한다.
 행사명에 캠프·강좌·프로그램이 있다는 이유로 참가자 모집을 추측하지 않는다. 모집이 없는 본문·파일에 "참가자 모집"을 추가하지 않는다.
 
+category_code는 위 내용 유형과 별개인 정책 분야다. 서울시·노원구·월계동 공지 모두 같은 분야 기준으로, 실제 내용의 주된 목적에 가장 가까운 분야 하나를 선택한다.
+
+- 21: 교통 — 대중교통, 도로, 주차, 교통 운영·통제
+- 22: 안전 — 재난, 사고 예방, 방재, 생활 안전
+- 23: 주택 — 주거, 주택 공급·관리, 임대, 주거 환경
+- 24: 경제 — 일자리, 창업, 소상공인, 산업·경제 활동
+- 25: 환경 — 환경 보호, 폐기물, 에너지, 녹지·생태
+- 26: 문화 — 문화·예술, 공연, 축제, 체육·여가
+- 27: 복지 — 돌봄, 취약계층 지원, 건강·생활 지원
+- 30: 행정 — 행정 절차, 주민 참여, 민원, 기관 운영
+
+반환값은 큰따옴표 없는 JSON 정수다. "27", "복지", 27.0, 목록에 없는 정수로 대신하지 않는다.
+게시판·발행기관·수집 출처의 코드를 복사하지 않고 본문·첨부 자료로 판단한다. 공공기관이 발행했다는 이유만으로 30을 선택하거나, 분야를 모르겠다는 뜻으로 30을 사용하지 않는다.
+여러 분야가 섞였으면 공지의 주된 목적과 주민이 얻는 핵심 정보로 하나를 선택한다. 분야를 판단할 근거가 부족하거나 충돌하면 category_code는 null로 두고 uncertainties에 "원문 확인 필요"를 넣는다.
+category_code는 category, topics의 category, dates의 kind를 대체하거나 바꾸지 않는다. 예를 들어 같은 복지 분야(27)에도 application, event, news 유형이 있을 수 있다.
+category_code에 정수를 넣으면 그 분야 판단을 뒷받침하는 원문 구절을 field가 category_code인 evidence로 반드시 넣는다. 코드 숫자 자체가 원문에 등장할 필요는 없다.
+
 [2. 대상과 지역]
 
 다음을 구분한다.
@@ -209,6 +226,7 @@ mixed의 단일 status는 not_applicable로 두고 필요하면 status_detail에
 
 {
   "category": "application",
+  "category_code": null,
   "summary": "핵심 내용 한 문장",
   "publisher": null,
   "applicable_area": null,
@@ -246,17 +264,18 @@ topics의 각 항목은 다음 형식으로 작성한다.
 }
 
 위 JSON의 값은 형식 예시이며 실제 입력에 따라 작성한다.
-본문과 첨부파일 추출 텍스트가 모두 없거나 비어 있고 전달된 PDF·이미지도 없으면 category는 unknown, summary는 "공지 확인 불가"로 작성한다.
+본문과 첨부파일 추출 텍스트가 모두 없거나 비어 있고 전달된 PDF·이미지도 없으면 category는 unknown, category_code는 null, summary는 "공지 확인 불가"로 작성한다.
 이 자료 없음의 경우에만 audience_scope, action_requirement, status, notice_update는 unknown, applicable_area, audience, action, location, status_detail, changed_details는 null, dates, notes, topics, evidence는 []로 두고 uncertainties에는 "원문 확인 필요"만 기록한다. publisher는 입력 메타데이터에서 확인되는 값이 30자 이내일 때만 유지한다.
 텍스트 또는 PDF·이미지 자료가 있지만 판독 문제·정보 충돌·근거 부족이나 길이 제한으로 summary를 정확하게 표현할 수 없으면 summary는 "원문 확인 필요"로 작성하고 uncertainties에 "원문 확인 필요"를 한 번만 넣는다.
 이 부분 확인의 경우 category는 summary와 독립적으로 판단한다. 분류를 뒷받침하는 원문 근거가 있으면 category를 보존하고 그 인용문을 field가 category인 근거로 넣는다. 분류 근거가 없으면 category는 unknown으로 둔다.
+category_code도 summary 및 category와 독립적으로 판단하며 분야 근거가 있으면 정수와 category_code 근거를 보존하고, 없으면 null로 둔다.
 applicable_area, audience, action, location, dates, notes, notice_update, changed_details, topics 등은 각 필드·항목의 원문 근거를 확인할 수 있으면 그대로 보존하고, 확인할 수 없는 값만 null, [] 또는 해당 코드값 unknown으로 둔다. summary를 확인하지 못했다는 이유로 다른 필드와 그 근거를 함께 비우지 않는다.
 category가 unknown이면 status는 unknown, status_detail은 null로 둔다. category가 unknown이어도 날짜·시간을 독립적으로 확인할 수 있으면 dates에 보존한다. 일정 종류의 명시적인 근거가 없으면 kind는 other로 두고 "원문 확인 필요"를 기록한다.
 제목이나 발행기관만 있다는 이유로 본문에 없는 핵심 내용·대상·행동·일정을 만들어 넣지 않는다.
 
 evidence의 각 항목은 다음 규칙을 따른다.
 - 항목 형식은 {"field": "출력 필드명", "excerpt": "원문에서 그대로 인용한 구절", "source_type": "text", "source_id": null, "page": null, "verification": null}이다.
-- field: 근거가 뒷받침하는 출력 필드의 이름이다. 예: category, summary, audience, action, dates, notes.
+- field: 근거가 뒷받침하는 출력 필드의 이름이다. 예: category, category_code, summary, audience, action, dates, notes.
 - source_type은 text, document, image 중 하나다. 본문·HWP 등 추출 텍스트는 text이며 source_id와 page를 null로 둔다.
 - PDF는 document, 이미지는 image로 지정하고 입력 끝의 파일 참조 목록에서 해당 source_id를 그대로 사용한다. 목록에 없는 ID를 만들거나 다른 파일의 ID를 붙이지 않는다.
 - PDF 근거의 page는 실제 인용문이 보이는 1부터 시작하는 페이지 번호다. 페이지를 알 수 없으면 근거를 만들어 넣지 말고 해당 값을 비운다. 이미지의 page는 null이다.
@@ -273,6 +292,7 @@ evidence의 각 항목은 다음 규칙을 따른다.
 - 근거를 확인할 수 없는 출력 값은 추측하지 않는다. 자료가 없으면 evidence는 []로 둔다.
 - 텍스트 또는 PDF·이미지 자료가 있고 summary가 "원문 확인 필요"가 아니면 summary의 근거를 반드시 넣는다.
 - summary가 "원문 확인 필요"이고 category가 unknown이 아니면 분류를 직접 뒷받침하는 원문 인용을 field가 category인 근거로 반드시 넣는다. "원문 확인 필요"라는 안내 문구를 summary의 원문 근거처럼 인용하지 않는다.
+- category_code가 null이 아니면 분야를 뒷받침하는 원문 인용을 field가 category_code인 근거로 반드시 넣는다. 다른 필드의 근거로 대신하지 않는다.
 - applicable_area, audience, action, location, dates, notes에 값이 있으면 해당 필드의 근거를 각각 넣는다.
 - topics에 사업별 항목이 있으면 해당 사업명과 핵심 내용이 함께 보이는 원문 구절을 field가 topics인 근거로 넣는다.
 - action에 온라인·방문·전화 등의 접수 방법을 적었다면 같은 근거 발췌에서 그 방법으로 신청·접수한다는 문구가 직접 확인되어야 한다.
@@ -315,6 +335,7 @@ evidence의 field는 출력 필드명이고 excerpt는 원문 인용이므로 �
 
 - 모든 JSON 키
 - category
+- category_code: 정수 21, 22, 23, 24, 25, 26, 27, 30 또는 null
 - audience_scope
 - action_requirement
 - status
@@ -366,6 +387,7 @@ evidence의 field는 출력 필드명이고 excerpt는 원문 인용이므로 �
 본문과 첨부파일 추출 텍스트가 모두 없거나 비어 있고 PDF·이미지도 전달되지 않았으면 다음과 같이 작성한다.
 
 - category: "unknown"
+- category_code: null
 - summary: "공지 확인 불가"
 
 텍스트 또는 PDF·이미지는 있지만 summary를 정확하게 표현할 수 없으면 summary는 "원문 확인 필요"로 작성하고, category와 다른 필드·항목은 [8]의 부분 확인 규칙을 따른다.
@@ -380,6 +402,7 @@ evidence의 field는 출력 필드명이고 excerpt는 원문 인용이므로 �
 - summary가 "공지 확인 불가"나 "원문 확인 필요"가 아닌 경우 원문 제목 또는 summary 근거 하나 안의 핵심 표현만 원문 어순대로 사용했고, 다른 근거의 대상·날짜나 원문에 없는 신청·개최·모집을 추가하지 않았는가?
 - summary가 "원문 확인 필요"이면 uncertainties에 같은 안내가 있고, 독립적으로 확인한 category의 근거와 다른 필드·항목을 보존했는가? category가 unknown이면 status와 status_detail을 unknown과 null로 두었는가?
 - 고정 코드값과 날짜·시간 형식을 유지했는가?
+- category_code는 허용된 정수 하나 또는 null이며, 내용 유형과 별개로 원문 근거에 따라 판단했고 기본값으로 30을 넣지 않았는가?
 - 짧게 쓰면서 자격·기한·금액·금지 조건을 왜곡하지 않았는가?
 - 문서 뒤쪽의 취소·포기 제한, 예외 연락, 재난 시 변경 조건까지 살폈고, 중요한 조건 대신 중복 기간 안내나 홍보 문구를 넣지 않았는가?
 - 제한과 예외, 비용과 감면을 함께 보존했으며 중요한 조건이 배열에 들어가지 못했다면 uncertainties에 "원문 확인 필요"를 표시했는가?
