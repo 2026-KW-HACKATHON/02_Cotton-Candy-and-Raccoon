@@ -36,6 +36,8 @@ def database() -> Iterator[psycopg.Connection]:
             "20260922053900_init.sql",
             "20260922053901_rls.sql",
             "20260923044500_holidays.sql",
+            "20261005000000_glossary.sql",
+            "20261006000000_notice_glossary.sql",
         ]
         for path in files:
             conn.execute(path.read_text(encoding="utf-8"))
@@ -243,7 +245,7 @@ def test_seoul_visible_notice_and_files_allowed_hidden_ones_filtered(
 
 
 @pytest.mark.parametrize("role", ["anon", "authenticated"])
-@pytest.mark.parametrize("table", ["notices", "notice_files"])
+@pytest.mark.parametrize("table", ["notices", "notice_files", "notice_glossary_results"])
 def test_app_table_privileges_are_read_only(db: psycopg.Connection, role: str, table: str) -> None:
     for privilege in ("INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"):
         assert (
@@ -252,3 +254,49 @@ def test_app_table_privileges_are_read_only(db: psycopg.Connection, role: str, t
             ]
             is False
         )
+
+
+@pytest.mark.parametrize("role", ["anon", "authenticated"])
+def test_notice_glossary_originals_follow_notice_visibility(
+    db: psycopg.Connection, role: str
+) -> None:
+    visible = insert_notice(db, board="25")
+    hidden = insert_notice(db, board="30")
+    db.execute("update notices set is_visible=false where id=%s", (hidden,))
+    db.execute(
+        """with source as (
+               select id, 'policy test dummy'::text as original_text,
+                      '2026-10-06T00:00:00+00:00'::timestamptz as generated_at
+               from notices where id=any(%s)
+           ), content as (
+               select *, encode(sha256(convert_to(original_text,'UTF8')),'hex') as source_hash
+               from source
+           )
+           insert into notice_glossary_results
+               (notice_id,source_hash,rules_version,generated_at,status,result)
+           select id,source_hash,'policy-test',generated_at,'completed',jsonb_build_object(
+               'notice_id',id,'source_hash',source_hash,'rules_version','policy-test',
+               'generated_at',generated_at,'status','completed',
+               'original_text',original_text,'easy_text',original_text)
+           from content""",
+        ([visible, hidden],),
+    )
+    for permitted, denied in ((visible, hidden), (hidden, visible)):
+        db.execute(
+            "update notices set is_visible=(id=%s) where id=any(%s)",
+            (permitted, [visible, hidden]),
+        )
+        db.execute("set local role " + role)
+        assert db.execute(
+            "select notice_id,result->>'original_text' from notice_glossary_results "
+            "where notice_id=any(%s)",
+            ([visible, hidden],),
+        ).fetchall() == [(permitted, "policy test dummy")]
+        assert (
+            db.execute(
+                "select result->>'original_text' from notice_glossary_results where notice_id=%s",
+                (denied,),
+            ).fetchone()
+            is None
+        )
+        db.execute("reset role")
