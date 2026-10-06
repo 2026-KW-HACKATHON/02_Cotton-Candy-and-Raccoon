@@ -2,7 +2,7 @@
 
 import re
 from dataclasses import replace
-from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
+from urllib.parse import parse_qs, parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 from uuid import UUID
 
 from bs4 import BeautifulSoup
@@ -31,7 +31,16 @@ def recover_masked_body_urls(notice: RawNotice, page_html: str) -> RawNotice:
         attribute = "src" if tag.name == "img" else "href"
         reference = str(tag.get(attribute, ""))
         # Ordinary links containing stars are not file references.
-        identity = _file_identity(urljoin(notice.url, reference))
+        try:
+            url = urljoin(notice.url, reference)
+            parsed = urlsplit(url)
+        except ValueError:
+            raise AttachmentError(
+                "파일 URL 형식이 올바르지 않습니다.", code="invalid_file_url",
+            ) from None
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            continue
+        identity = _file_identity(url)
         if identity is not None and "***" in identity[1]:
             masked.append((tag, attribute, reference, identity))
     if not masked:
@@ -58,7 +67,9 @@ def recover_masked_body_urls(notice: RawNotice, page_html: str) -> RawNotice:
                 and not parsed.username
                 and not parsed.password
             ):
-                return url
+                # Preserve every parameter; only ordering/encoding are canonicalized.
+                query = urlencode(sorted(parse_qsl(parsed.query, keep_blank_values=True)))
+                return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, query, ""))
         except ValueError:
             pass
         return None

@@ -154,6 +154,88 @@ def test_external_masked_url_is_rejected() -> None:
     assert caught.value.code == "masked_file_source_invalid"
 
 
+def collision_input(post_sn: str = "001234") -> tuple[RawNotice, str, set[str]]:
+    second_id = FILE_ID.replace("21986319", "21986318")
+    source = notice(
+        post_sn, html=(f'<img src="{file_url(MASK, "1")}"><img src="{file_url(MASK, "2")}">')
+    )
+    original = page(
+        post_sn,
+        html=(f'<img src="{file_url(FILE_ID, "1")}"><img src="{file_url(second_id, "2")}">'),
+    )
+    return source, original, {FILE_ID, second_id}
+
+
+def test_same_masked_ids_are_recovered_before_collection_duplicate_check() -> None:
+    source, original, ids = collision_input()
+    with patch(
+        "pipeline.collect_nowon.fetch_notice_page",
+        return_value=(source.url, original),
+    ) as fetch:
+        prepared = _prepare_notice(source, SETTINGS)
+    fetch.assert_called_once()
+    assert prepared.failure is None
+    assert {file.file_id for file in prepared.files} == ids
+    assert len(prepared.files) == 2
+    assert "***" not in prepared.record.body_html
+
+
+def test_cli_same_masked_ids_are_recovered_before_duplicate_check(
+    monkeypatch,
+    mock_collect_db,
+) -> None:
+    monkeypatch.setenv("NOWON_NOTICE_API_KEY", "private-key")
+    source, original, ids = collision_input()
+    with (
+        patch("pipeline.cli.collect_one", return_value=source),
+        patch("pipeline.cli.fetch_notice_page", return_value=(source.url, original)),
+        patch("pipeline.cli.save_notice_with_files", return_value=42) as save,
+    ):
+        assert main(["collect-one", "--source", "nowon"]) == 0
+    assert {file.file_id for file in save.call_args.args[2]} == ids
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [
+        "javascript:location.href='/component/file/ND_fileDownload.do?q_fileSn=310123'",
+        "javascript:location.href='/component/file/ND_fileDownload.do?q_fileSn=310123&q_fileId=21***'",
+        "mailto:person@example.org?q_fileSn=310123",
+        "data:text/plain,/component/file/ND_fileDownload.do?q_fileSn=310123",
+        "tel:123?q_fileSn=310123",
+    ],
+)
+def test_non_http_links_do_not_require_file_identity_or_modify_body(reference: str) -> None:
+    source = notice(html=f'<a href="{reference}">link</a>')
+    assert extract_files(source) == []
+    assert recover_masked_body_urls(source, "no original needed") is source
+    with patch("pipeline.collect_nowon.fetch_notice_page", return_value=(source.url, page())):
+        prepared = _prepare_notice(source, SETTINGS)
+    assert prepared.failure is None and prepared.files == []
+    assert prepared.record.body_html == source.body_html
+
+
+def test_equivalent_candidate_queries_are_deduplicated_and_order_independent() -> None:
+    reversed_url = f"/component/file/ND_fileDownload.do?q_fileId={FILE_ID}&amp;q_fileSn=310123"
+    outcomes = []
+    for refs in ((file_url(), reversed_url), (reversed_url, file_url())):
+        repaired = recover_masked_body_urls(
+            notice(),
+            page(html="".join(f'<img src="{ref}">' for ref in refs)),
+        )
+        files = extract_files(repaired)
+        assert len(files) == 1 and files[0].file_id == FILE_ID
+        outcomes.append(repaired.body_html)
+    assert outcomes[0] == outcomes[1]
+
+
+def test_different_query_values_are_not_silently_merged() -> None:
+    html = f'<img src="{file_url()}&amp;variant=one"><img src="{file_url()}&amp;variant=two">'
+    with pytest.raises(AttachmentError) as caught:
+        recover_masked_body_urls(notice(), page(html=html))
+    assert caught.value.code == "masked_file_ambiguous"
+
+
 def test_one_missing_image_does_not_allow_partial_repair_to_be_saved() -> None:
     source = notice(html=notice().body_html + f'<img src="{file_url("22***-other", "other")}">')
     with patch("pipeline.collect_nowon.fetch_notice_page", return_value=(source.url, page())):
@@ -207,17 +289,22 @@ def test_cli_failed_repair_does_not_save(monkeypatch, mock_collect_db) -> None:
     save.assert_not_called()
 
 
-def test_repaired_notice_repeat_storage_keeps_one_file_and_not_modified() -> None:
+@pytest.mark.parametrize("collision", [False, True])
+def test_repaired_notice_repeat_storage_keeps_files_and_not_modified(collision: bool) -> None:
     dsn = os.getenv("PIPELINE_TEST_DATABASE_URL")
     if not dsn:
         pytest.skip("PIPELINE_TEST_DATABASE_URL is required for recovery storage integration")
     with psycopg.connect(dsn, autocommit=True) as conn:
         assert conn.info.host == "127.0.0.1"
         assert conn.info.dbname.startswith("pipeline_schema_test_")
-        source = notice(str(uuid4().int))
+        post_sn = str(uuid4().int)
+        if collision:
+            source, original, expected_ids = collision_input(post_sn)
+        else:
+            source, original, expected_ids = notice(post_sn), page(post_sn), {FILE_ID}
         with patch(
             "pipeline.collect_nowon.fetch_notice_page",
-            return_value=(source.url, page(source.post_sn)),
+            return_value=(source.url, original),
         ):
             prepared = _prepare_notice(source, SETTINGS)
         assert prepared.failure is None
@@ -229,6 +316,8 @@ def test_repaired_notice_repeat_storage_keeps_one_file_and_not_modified() -> Non
                 "select body_html,is_modified from notices where id=%s", (first,)
             ).fetchone()
             assert "***" not in row[0] and row[1] is False
-            assert conn.execute(
+            stored_ids = conn.execute(
                 "select file_id from notice_files where notice_id=%s", (first,)
-            ).fetchall() == [(FILE_ID,)]
+            ).fetchall()
+            assert len(stored_ids) == len(expected_ids)
+            assert {item[0] for item in stored_ids} == expected_ids

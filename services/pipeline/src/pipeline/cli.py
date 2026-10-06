@@ -352,7 +352,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         try:
             notice = collect_one(settings)
-            body_files = extract_files(notice)
             page_url, page_html = fetch_notice_page(notice, settings)
             notice = recover_masked_body_urls(notice, page_html)
             body_files = extract_files(notice)

@@ -105,12 +105,6 @@ def _prepare_notice(
 ) -> PreparedNotice:
     record = transform_nowon_notice(notice)
     try:
-        body_files = extract_files(notice)
-    except AttachmentError as error:
-        return PreparedNotice(
-            record, [], NoticeFailure(notice.post_sn, "attachments", error.code),
-        )
-    try:
         page_url, page_html = _fetch_page_with_retry(notice, settings)
     except NowonPageMissing:
         return PreparedNotice(
