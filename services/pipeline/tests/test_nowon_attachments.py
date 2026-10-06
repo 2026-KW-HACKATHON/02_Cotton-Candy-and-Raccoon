@@ -182,6 +182,9 @@ def test_cli_identifier_conflict_fails_without_partial_summary(
         '<img src="/file?q_fileSn=2&amp;q_fileId=abc">'
     )
     monkeypatch.setattr("pipeline.cli.collect_one", lambda settings: source)
+    monkeypatch.setattr("pipeline.cli.fetch_notice_page", lambda notice, settings: (
+        notice.url, "",
+    ))
     assert main(["collect-one", "--source", "nowon"]) == 1
     output = capsys.readouterr()
     assert output.out == ""

@@ -7,6 +7,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from pipeline.transform.gemini_client import DEFAULT_MODEL, GeminiRequestError
+from pipeline.transform.gemini_input import GeminiInputError
 from pipeline.transform.gemini_prompt import GeminiConfigurationError
 from pipeline.transform.notice_input import NoticeInput
 from pipeline.transform.summarize import summarize_notice
@@ -30,7 +31,12 @@ def main() -> int:
         fields = sorted({".".join(map(str, error["loc"])) or "root" for error in exc.errors()})
         print(f"Invalid notice input at: {', '.join(fields)}", file=sys.stderr)
         return 2
-    except (GeminiConfigurationError, GeminiRequestError, SummaryValidationError) as exc:
+    except (
+        GeminiConfigurationError,
+        GeminiRequestError,
+        GeminiInputError,
+        SummaryValidationError,
+    ) as exc:
         print(f"Summary failed: {exc}", file=sys.stderr)
         return 1
     except OSError as exc:
