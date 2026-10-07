@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Pressable, View } from "react-native";
+import { Pressable, View, useWindowDimensions } from "react-native";
+import { FloatingSettingsButton } from "@/shared/ui/FloatingSettingsButton";
 import { Header } from "@/shared/ui/Header";
 import { Screen } from "@/shared/ui/Screen";
 import { AppText } from "@/shared/ui/AppText";
@@ -21,6 +22,11 @@ export function SavedScreen() {
 }
 function StandardSavedScreen() {
   const query = useNotices();
+  const { width } = useWindowDimensions();
+  const fontScale = useDisplayPreferences((state) => state.fontScale);
+  // 좁은 화면과 큰 글자에서는 날짜·제공처와 북마크가 겹치지 않도록 한 열을 쓴다.
+  const singleColumn =
+    (Math.min(width, 600) - 31.384) * 0.483 < 150 * fontScale;
   const ids = useBookmarkStore((state) => state.savedIds);
   const [recentFirst, setRecentFirst] = useState(true);
   // savedIds의 추가 순서를 보관 시점으로 사용한다. 공문 게시일 정렬과는 별개다.
@@ -33,7 +39,14 @@ function StandardSavedScreen() {
     );
   return (
     <Screen
-      header={<Header title="다시 볼 소식" />}
+      headerBehavior="reveal"
+      overlay={<FloatingSettingsButton />}
+      header={
+        <Header
+          title="다시 볼 소식"
+          right={<View style={{ width: 44.308 }} />}
+        />
+      }
       floating
       contentStyle={{ paddingHorizontal: 15.692 }}
     >
@@ -76,7 +89,12 @@ function StandardSavedScreen() {
           }}
         >
           {saved.map((notice) => (
-            <NoticeCard key={notice.id} notice={notice} grid />
+            <NoticeCard
+              key={notice.id}
+              notice={notice}
+              grid
+              fullWidth={singleColumn}
+            />
           ))}
         </View>
       )}

@@ -50,6 +50,7 @@ function StandardNoticeDetailScreen() {
     : [];
   return (
     <Screen
+      headerBehavior="scroll"
       header={
         <Header
           title=""

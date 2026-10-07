@@ -52,3 +52,13 @@ export const EASY = {
   expired: "#855B1E",
   brandPoint: "#F26454",
 };
+
+// 내비게이션과 플로팅 설정의 공통 표면이다.
+export const FLOATING_SURFACE = {
+  backgroundColor: "rgba(254,253,251,0.96)",
+  shadowColor: COLORS.text,
+  shadowOpacity: 0.12,
+  shadowOffset: { width: 0, height: 6 },
+  shadowRadius: 6,
+  elevation: 6,
+};

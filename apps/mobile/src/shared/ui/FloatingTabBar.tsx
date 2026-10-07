@@ -3,7 +3,7 @@ import { Image } from "expo-image";
 import { type ComponentProps } from "react";
 import { Tabs } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { COLORS } from "@/shared/theme/tokens";
+import { COLORS, FLOATING_SURFACE } from "@/shared/theme/tokens";
 
 const TABS = [
   {
@@ -64,6 +64,7 @@ export function FloatingTabBar({ state, navigation }: TabBarProps) {
               <View style={[styles.selection, selected && styles.selected]}>
                 <Image
                   source={tab.image}
+                  tintColor={selected ? COLORS.primary : COLORS.secondary}
                   style={styles.icon}
                   contentFit="contain"
                 />
@@ -83,18 +84,19 @@ const styles = StyleSheet.create({
     padding: 7.385,
     borderRadius: 999,
     flexDirection: "row",
-    backgroundColor: "rgba(254,253,251,0.96)",
-    shadowColor: COLORS.text,
-    shadowOpacity: 0.12,
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 6,
-    elevation: 6,
+    ...FLOATING_SURFACE,
   },
-  tab: { flex: 1, alignItems: "center", justifyContent: "center" },
+  tab: {
+    flex: 1,
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   selection: {
     width: 44.308,
     height: 44.308,
-    borderRadius: 999,
+    borderRadius: 22.154,
+    flexShrink: 0,
     alignItems: "center",
     justifyContent: "center",
   },

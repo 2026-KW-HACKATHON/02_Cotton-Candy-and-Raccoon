@@ -6,10 +6,11 @@ import {
   View,
 } from "react-native";
 import { Search } from "lucide-react-native";
+import { FloatingSettingsButton } from "@/shared/ui/FloatingSettingsButton";
 import { Header } from "@/shared/ui/Header";
 import { Screen } from "@/shared/ui/Screen";
 import { AppText } from "@/shared/ui/AppText";
-import { COLORS, FONTS, RADIUS } from "@/shared/theme/tokens";
+import { COLORS, FONTS, RADIUS, SPACE } from "@/shared/theme/tokens";
 import { useDisplayPreferences } from "@/shared/accessibility/displayPreferences";
 import { NoticeCard } from "../components/NoticeCard";
 import { NoticeState } from "../components/NoticeState";
@@ -31,46 +32,65 @@ function StandardNoticeListScreen() {
   const vm = useNoticeListViewModel();
   const fontScale = useDisplayPreferences((state) => state.fontScale);
   return (
-    <Screen header={<Header title="우리 동네 공문" />} floating>
-      <AppText secondary>필요한 소식을 한곳에서 찾아보세요.</AppText>
-      <View style={styles.search}>
-        <Search color={COLORS.secondary} size={20} strokeWidth={1.5} />
-        <TextInput
-          accessibilityLabel="공문 제목이나 내용 검색"
-          placeholder="공문 제목이나 내용을 검색해요"
-          placeholderTextColor={COLORS.secondary}
-          value={vm.search}
-          onChangeText={vm.setSearch}
-          returnKeyType="search"
-          style={[styles.input, { fontSize: 12.92 * fontScale }]}
-        />
-      </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 7.385 }}
-      >
-        {CATEGORIES.map((category) => (
-          <Pressable
-            key={category}
-            accessibilityRole="button"
-            accessibilityState={{ selected: vm.category === category }}
-            aria-pressed={vm.category === category}
-            onPress={() => vm.setCategory(category)}
-            style={[styles.chip, vm.category === category && styles.selected]}
-          >
-            <AppText
-              size={12.92}
-              style={{
-                color:
-                  vm.category === category ? COLORS.surface : COLORS.secondary,
-              }}
+    <Screen
+      headerBehavior="reveal"
+      overlay={<FloatingSettingsButton />}
+      header={
+        <View>
+          <Header
+            title="우리 동네 공문"
+            right={<View style={{ width: 44.308 }} />}
+          />
+          <View style={styles.filters}>
+            <View style={styles.search}>
+              <Search color={COLORS.secondary} size={20} strokeWidth={1.5} />
+              <TextInput
+                accessibilityLabel="공문 제목이나 내용 검색"
+                placeholder="공문 제목이나 내용을 검색해요"
+                placeholderTextColor={COLORS.secondary}
+                value={vm.search}
+                onChangeText={vm.setSearch}
+                returnKeyType="search"
+                style={[styles.input, { fontSize: 12.92 * fontScale }]}
+              />
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 7.385 }}
             >
-              {category}
-            </AppText>
-          </Pressable>
-        ))}
-      </ScrollView>
+              {CATEGORIES.map((category) => (
+                <Pressable
+                  key={category}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: vm.category === category }}
+                  aria-pressed={vm.category === category}
+                  onPress={() => vm.setCategory(category)}
+                  style={[
+                    styles.chip,
+                    vm.category === category && styles.selected,
+                  ]}
+                >
+                  <AppText
+                    size={12.92}
+                    style={{
+                      color:
+                        vm.category === category
+                          ? COLORS.surface
+                          : COLORS.secondary,
+                    }}
+                  >
+                    {category}
+                  </AppText>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      }
+      floating
+    >
+      <AppText secondary>필요한 소식을 한곳에서 찾아보세요.</AppText>
       <View style={styles.count}>
         <AppText secondary size={12.923}>
           전체 {vm.notices.length}건
@@ -112,6 +132,11 @@ function StandardNoticeListScreen() {
   );
 }
 const styles = StyleSheet.create({
+  filters: {
+    paddingHorizontal: SPACE.xl,
+    paddingBottom: SPACE.lg,
+    gap: SPACE.lg,
+  },
   search: {
     minHeight: 48,
     backgroundColor: COLORS.soft,

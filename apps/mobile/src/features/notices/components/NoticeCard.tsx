@@ -19,14 +19,18 @@ const BOTTOM_STRIPES = [
 export function NoticeCard({
   notice,
   grid = false,
+  fullWidth = false,
 }: {
   notice: Notice;
   grid?: boolean;
+  fullWidth?: boolean;
 }) {
   const saved = useBookmarkStore((state) => state.savedIds.includes(notice.id));
   const toggleBookmark = useBookmarkStore((state) => state.toggleBookmark);
   return (
-    <View style={[styles.card, grid && styles.grid]}>
+    <View
+      style={[styles.card, grid && styles.grid, fullWidth && styles.fullWidth]}
+    >
       <View pointerEvents="none" style={StyleSheet.absoluteFill}>
         {Array.from({ length: 9 }, (_, index) => (
           <Image
@@ -132,15 +136,30 @@ const styles = StyleSheet.create({
     ...CARD_SHADOW,
   },
   content: {
+    flexGrow: 1,
     paddingLeft: 29.538,
     paddingRight: SPACE.xl,
     paddingVertical: SPACE.xl,
     gap: SPACE.md,
   },
   grid: { width: "48.3%", minHeight: 212.308 },
-  gridContent: { padding: SPACE.xl, paddingBottom: 59, gap: SPACE.md },
-  footer: { flexDirection: "row", alignItems: "center", gap: 8 },
-  gridFooter: { flexDirection: "column", alignItems: "flex-start", gap: 0 },
+  gridContent: { paddingLeft: SPACE.xl, paddingRight: SPACE.xl, gap: SPACE.md },
+  // 제목 길이와 관계없이 하단 정보를 맞추고 북마크 터치 영역을 비운다.
+  fullWidth: { width: "100%" },
+  footer: {
+    marginTop: "auto",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  gridFooter: {
+    flexDirection: "column",
+    alignItems: "flex-start",
+    paddingRight: 40,
+    minHeight: 44,
+    justifyContent: "flex-end",
+    gap: 0,
+  },
   stamp: {
     position: "absolute",
     top: SPACE.xl,
