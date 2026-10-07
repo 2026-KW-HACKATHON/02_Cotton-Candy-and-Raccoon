@@ -47,7 +47,7 @@ def lookup_result(query):
 
 def run(monkeypatch, *arguments):
     monkeypatch.setattr("sys.argv", ["notice-glossary", *(str(argument) for argument in arguments)])
-    return module.main()
+    return module._dictionary_main()
 
 
 @pytest.fixture
@@ -238,7 +238,7 @@ def test_resume_of_old_rules_rebuilds_before_current_condition_validation(
     resume_path.write_text(json.dumps(payload), encoding="utf-8")
     assert run(monkeypatch, "--input", path, "--resume", resume_path) == 0
     returned = parsed_stdout(capsys)
-    assert returned.rules_version == "dictionary-replacement-v4"
+    assert returned.rules_version == "dictionary-replacement-v6"
     assert returned.easy_text == "다음 날 공람"
     assert [call.args[0] for call in offline.query.call_args_list] == ["익일", "공람"]
 

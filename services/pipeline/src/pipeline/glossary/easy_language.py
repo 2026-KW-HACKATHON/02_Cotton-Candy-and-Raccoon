@@ -1,0 +1,329 @@
+"""Generate contextual term swaps while retaining the exact original notice."""
+
+import re
+import unicodedata
+from collections.abc import Callable
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Self
+
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError, model_validator
+
+from pipeline.glossary.source import MAX_SOURCE_CHARACTERS, NoticeGlossaryInput, source_hash
+
+DEFAULT_MODEL = "gemini-3.5-flash-lite"
+PROMPT_VERSION = "easy-language-v4"
+PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "gemini_easy_language.md"
+MAX_TERM_CHARACTERS = 100
+
+# These recognize literal data formats, rather than guessing a Korean sentence's meaning.
+_PROTECTED_PATTERNS = (
+    re.compile(r"(?:https?://|www\.)[^\s<>]+", re.IGNORECASE),
+    re.compile(r"[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+"),
+    re.compile(r"\d+(?:[.,:/~\-–]\d+)*(?:\s*[년월일시분초])?"),
+    re.compile(r"[월화수목금토일]요일"),
+)
+
+
+class EasyLanguageConfigurationError(ValueError):
+    """The local source, prompt or Gemini settings cannot be used."""
+
+
+class EasyLanguageAPIError(RuntimeError):
+    """Gemini failed; remote details and credentials are deliberately excluded."""
+
+
+class EasyLanguageValidationError(ValueError):
+    """Gemini failed JSON or literal source validation on both attempts."""
+
+
+def _validate_term(original: str, replacement: str) -> None:
+    if not original.strip() or not replacement.strip():
+        raise ValueError("용어와 바꿀 말은 비어 있을 수 없습니다.")
+    if original != original.strip() or replacement != replacement.strip():
+        raise ValueError("용어 바깥의 공백을 바꿀 수 없습니다.")
+    if original == replacement:
+        raise ValueError("바꿀 말은 원래 용어와 달라야 합니다.")
+    if any(character.isnumeric() for character in original + replacement):
+        raise ValueError("숫자를 포함한 표기는 바꿀 수 없습니다.")
+    if any(
+        character != " " and unicodedata.category(character)[0] not in {"L", "M"}
+        for character in original + replacement
+    ):
+        # Term spans contain letters/combining marks and ordinary spaces only.
+        # Punctuation, controls, hidden formats and every other space remain
+        # outside replacement spans, where source segments preserve them exactly.
+        raise ValueError("용어에는 글자와 일반 공백만 사용할 수 있습니다.")
+    if any(pattern.search(replacement) for pattern in _PROTECTED_PATTERNS):
+        raise ValueError("날짜나 연락처를 새로 넣을 수 없습니다.")
+
+
+class ProposedChange(BaseModel):
+    """One model-proposed term and an exact original context; no model offsets."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+    original: str = Field(min_length=1, max_length=MAX_TERM_CHARACTERS, strict=True)
+    replacement: str = Field(min_length=1, max_length=MAX_TERM_CHARACTERS, strict=True)
+    context: str = Field(min_length=1, max_length=MAX_SOURCE_CHARACTERS, strict=True)
+
+    @model_validator(mode="after")
+    def validate_term(self) -> Self:
+        _validate_term(self.original, self.replacement)
+        return self
+
+
+class EasyLanguageResponse(BaseModel):
+    """Required changes may be empty when no confident equivalent exists."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+    changes: tuple[ProposedChange, ...]
+
+
+class AppliedChange(BaseModel):
+    """A validated replacement at half-open original Unicode code-point offsets."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+    start: int = Field(ge=0, strict=True)
+    end: int = Field(gt=0, strict=True)
+    original: str = Field(min_length=1, max_length=MAX_TERM_CHARACTERS, strict=True)
+    replacement: str = Field(min_length=1, max_length=MAX_TERM_CHARACTERS, strict=True)
+    context: str = Field(min_length=1, max_length=MAX_SOURCE_CHARACTERS, strict=True)
+
+    @model_validator(mode="after")
+    def validate_interval(self) -> Self:
+        _validate_term(self.original, self.replacement)
+        if self.start >= self.end or self.end - self.start != len(self.original):
+            raise ValueError("용어의 원문 위치가 올바르지 않습니다.")
+        return self
+
+
+def _unique_start(text: str, excerpt: str) -> int:
+    start = text.find(excerpt)
+    if start == -1 or text.find(excerpt, start + 1) != -1:
+        raise ValueError("원문과 문맥에 하나의 정확한 용어 위치가 필요합니다.")
+    return start
+
+
+def _is_word_character(character: str) -> bool:
+    return unicodedata.category(character)[0] in {"L", "M", "N"} or (
+        unicodedata.category(character) == "Pc"
+    )
+
+
+def _locate_change(
+    text: str, proposed: ProposedChange, protected: tuple[tuple[int, int], ...]
+) -> AppliedChange:
+    context_start = _unique_start(text, proposed.context)
+    start = context_start + _unique_start(proposed.context, proposed.original)
+    end = start + len(proposed.original)
+    if (
+        start > 0
+        and _is_word_character(proposed.original[0])
+        and _is_word_character(text[start - 1])
+        or end < len(text)
+        and _is_word_character(proposed.original[-1])
+        and _is_word_character(text[end])
+    ):
+        raise ValueError("단어의 일부만 떼어 바꿀 수 없습니다.")
+    if any(
+        start < protected_end and protected_start < end
+        for protected_start, protected_end in protected
+    ):
+        raise ValueError("숫자·날짜·주소·연락처는 바꿀 수 없습니다.")
+    return AppliedChange(
+        start=start,
+        end=end,
+        original=proposed.original,
+        replacement=proposed.replacement,
+        context=proposed.context,
+    )
+
+
+def _protected_spans(text: str) -> tuple[tuple[int, int], ...]:
+    return tuple(
+        match.span() for pattern in _PROTECTED_PATTERNS for match in pattern.finditer(text)
+    )
+
+
+def _validate_change_order(changes: tuple[AppliedChange, ...]) -> None:
+    for previous, current in zip(changes, changes[1:], strict=False):
+        if previous.end > current.start:
+            raise ValueError("중복되거나 겹치는 용어 위치를 바꿀 수 없습니다.")
+
+
+def apply_easy_language_changes(original_text: str, changes: tuple[AppliedChange, ...]) -> str:
+    """Apply only attested source slices; unchanged code points are copied exactly."""
+    _validate_change_order(changes)
+    segments: list[str] = []
+    cursor = 0
+    for change in changes:
+        if original_text[change.start : change.end] != change.original:
+            raise ValueError("바꿀 용어와 원문이 일치하지 않습니다.")
+        segments.extend((original_text[cursor : change.start], change.replacement))
+        cursor = change.end
+    segments.append(original_text[cursor:])
+    return "".join(segments)
+
+
+def _resolve_changes(text: str, response: EasyLanguageResponse) -> tuple[AppliedChange, ...]:
+    protected = _protected_spans(text)
+    changes = tuple(
+        sorted(
+            (_locate_change(text, proposed, protected) for proposed in response.changes),
+            key=lambda change: change.start,
+        )
+    )
+    _validate_change_order(changes)
+    return changes
+
+
+class EasyLanguageResult(BaseModel):
+    """A self-validating result that always keeps the complete, exact original."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+    notice_id: int | None = Field(default=None, gt=0, strict=True)
+    notice_revision: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$", strict=True)
+    original_text: str = Field(min_length=1, max_length=MAX_SOURCE_CHARACTERS, strict=True)
+    easy_text: str = Field(min_length=1, strict=True)
+    source_hash: str = Field(pattern=r"^[0-9a-f]{64}$", strict=True)
+    model: str = Field(min_length=1, strict=True)
+    prompt_version: str = Field(min_length=1, strict=True)
+    generated_at: AwareDatetime
+    changes: tuple[AppliedChange, ...]
+    attempt_count: int = Field(ge=1, le=2, strict=True)
+
+    @model_validator(mode="after")
+    def validate_original_and_changes(self) -> Self:
+        source = NoticeGlossaryInput(
+            notice_id=self.notice_id, notice_revision=self.notice_revision, text=self.original_text
+        )
+        if not self.model.strip() or not self.prompt_version.strip():
+            raise ValueError("모델과 프롬프트 버전이 필요합니다.")
+        if self.source_hash != source_hash(source):
+            raise ValueError("보관한 원문과 원문 해시가 일치하지 않습니다.")
+        resolved = _resolve_changes(
+            source.text,
+            EasyLanguageResponse(
+                changes=tuple(
+                    ProposedChange(
+                        original=change.original,
+                        replacement=change.replacement,
+                        context=change.context,
+                    )
+                    for change in self.changes
+                )
+            ),
+        )
+        if (
+            self.changes != resolved
+            or apply_easy_language_changes(source.text, resolved) != self.easy_text
+        ):
+            raise ValueError("보관한 변경 목록으로 쉬운 공지를 재현할 수 없습니다.")
+        return self
+
+
+def load_easy_language_prompt() -> str:
+    """Load the versioned instructions without altering their contents."""
+    try:
+        prompt = PROMPT_PATH.read_text(encoding="utf-8-sig")
+    except OSError:
+        raise EasyLanguageConfigurationError(
+            "Gemini easy-language prompt cannot be loaded."
+        ) from None
+    if not prompt.strip():
+        raise EasyLanguageConfigurationError("Gemini easy-language prompt is empty.")
+    return prompt
+
+
+def simplify_notice(
+    source: NoticeGlossaryInput,
+    *,
+    api_key: str,
+    model: str = DEFAULT_MODEL,
+    request: Callable[..., str] | None = None,
+    clock: Callable[[], datetime] | None = None,
+) -> EasyLanguageResult:
+    """Retry invalid JSON/spans once; API failures never become successful empty work.
+
+    Both attempts send the same complete original as ``notice_text``. The model
+    chooses contextual equivalents; local validation checks literal spans and
+    protected formats, but cannot prove that two Korean expressions mean the same.
+    """
+    if not isinstance(source, NoticeGlossaryInput):
+        raise EasyLanguageConfigurationError("A validated notice source is required.")
+    if not isinstance(api_key, str) or not api_key.strip():
+        raise EasyLanguageConfigurationError("GEMINI_API_KEY is required.")
+    if not isinstance(model, str) or not model.strip():
+        raise EasyLanguageConfigurationError("Gemini model is required.")
+    if request is None:
+        from pipeline.glossary.easy_language_client import generate_easy_language_json
+
+        request = generate_easy_language_json
+    prompt = load_easy_language_prompt()
+    for attempt in (1, 2):
+        try:
+            output = request(prompt=prompt, notice_text=source.text, api_key=api_key, model=model)
+        except EasyLanguageConfigurationError:
+            raise EasyLanguageConfigurationError(
+                "Gemini easy-language configuration failed."
+            ) from None
+        except Exception:
+            # This is an external request boundary, including injected SDK/network clients.
+            # No arbitrary exception strings, response bodies or keys enter public errors.
+            raise EasyLanguageAPIError("Gemini easy-language request failed.") from None
+        try:
+            if not isinstance(output, str):
+                raise ValueError("Gemini JSON must be text.")
+            response = EasyLanguageResponse.model_validate_json(output)
+            changes = _resolve_changes(source.text, response)
+        except (ValidationError, ValueError) as error:
+            if attempt == 2:
+                raise EasyLanguageValidationError(
+                    "Gemini easy-language JSON or source validation failed after two attempts."
+                ) from None
+            unchanged_term = isinstance(error, ValidationError) and any(
+                str(detail.get("ctx", {}).get("error", ""))
+                == "바꿀 말은 원래 용어와 달라야 합니다."
+                for detail in error.errors(include_input=False)
+            )
+            prompt += (
+                "\n\n이전 응답은 JSON 형식 또는 원문 위치 검사에 실패했습니다. "
+                "같은 전체 원문을 다시 읽고, 정확히 복사한 문맥과 용어만 반환하세요. "
+                "확신할 수 없는 변경은 제외하세요."
+            )
+            if unchanged_term:
+                # Send a fixed local hint, never model output or exception details.
+                prompt += (
+                    " original과 replacement가 같은 항목이 있어 실패했습니다. "
+                    "같은 말은 변경 목록에서 제외하고, 실제로 바꿀 다른 용어는 유지하세요."
+                )
+            if not isinstance(error, ValidationError):
+                # Explain a known local source failure without echoing its payload.
+                prompt += {
+                    "단어의 일부만 떼어 바꿀 수 없습니다.": (
+                        " 이전 응답의 original이 원문 단어의 일부만 포함해 실패했습니다. "
+                        "원문에 붙어 있는 조사·어미·복합어 전체를 original에 포함하세요. "
+                        "예를 들어 원문이 공종을이면 original은 공종을, "
+                        "replacement는 공사 종류를입니다. 공종만 반환하지 마세요."
+                    ),
+                    "원문과 문맥에 하나의 정확한 용어 위치가 필요합니다.": (
+                        " 이전 응답의 original 또는 context를 원문에서 한 곳으로 "
+                        "확정하지 못했습니다. 실제 입력에서 공백과 줄바꿈까지 그대로 "
+                        "복사하고, 원문에 없는 말이나 예시의 용어는 제외하세요. "
+                        "context 안에는 original이 정확히 한 번 있어야 합니다."
+                    ),
+                }.get(str(error), "")
+            continue
+        return EasyLanguageResult(
+            notice_id=source.notice_id,
+            notice_revision=source.notice_revision,
+            original_text=source.text,
+            easy_text=apply_easy_language_changes(source.text, changes),
+            source_hash=source_hash(source),
+            model=model,
+            prompt_version=PROMPT_VERSION,
+            generated_at=clock() if clock else datetime.now(UTC),
+            changes=changes,
+            attempt_count=attempt,
+        )
+    raise AssertionError("Unreachable easy-language attempt state.")

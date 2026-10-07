@@ -1,4 +1,4 @@
-"""Run dictionary-only notice processing; no Gemini calls or source updates."""
+"""Default to Gemini conversion and cached Ourmalsam word definitions."""
 
 import argparse
 import json
@@ -38,7 +38,8 @@ def _resume_result(path: Path) -> NoticeGlossaryResult | None:
     return NoticeGlossaryResult.model_validate(payload)
 
 
-def main() -> int:
+def _dictionary_main() -> int:
+    """Retain the earlier dictionary-only implementation outside the default CLI."""
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
@@ -109,6 +110,13 @@ def main() -> int:
         return 2
     print(rendered)
     return 0 if result.status == "completed" else 3
+
+
+def main() -> int:
+    """Use the Gemini + Ourmalsam route for normal CLI invocations."""
+    from pipeline.glossary.easy_language_cli import main as easy_language_main
+
+    return easy_language_main()
 
 
 if __name__ == "__main__":

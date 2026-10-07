@@ -19,6 +19,7 @@ dependencies = [
 [project.scripts]
 pipeline = "pipeline.cli:main"
 summarize-notice = "pipeline.transform.summary_cli:main"
+notice-glossary = "pipeline.glossary.cli:main"
 
 [dependency-groups]
 dev = [
