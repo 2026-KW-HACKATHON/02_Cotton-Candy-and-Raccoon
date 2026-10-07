@@ -38,9 +38,15 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
           NOWON_NOTICE_API_KEY: ${{ secrets.NOWON_NOTICE_API_KEY }}
+          EASY_TEXT_ENABLED: ${{ vars.PIPELINE_EASY_TEXT_ENABLED }}
+          GEMINI_API_KEY: ${{ vars.PIPELINE_EASY_TEXT_ENABLED == 'true' && secrets.GEMINI_API_KEY || '' }}
         run: |
           if [ -z "$DATABASE_URL" ] || [ -z "$NOWON_NOTICE_API_KEY" ]; then
             echo "Required pipeline secrets are missing." >&2
+            exit 1
+          fi
+          if [ "$EASY_TEXT_ENABLED" = "true" ] && [ -z "$GEMINI_API_KEY" ]; then
+            echo "GEMINI_API_KEY is required when easy-text processing is enabled." >&2
             exit 1
           fi
       - run: uv sync --no-dev --frozen
@@ -50,6 +56,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           SCHEDULE: ${{ github.event.schedule }}
           REQUESTED_MODE: ${{ inputs.mode }}
+          EASY_TEXT_ENABLED: ${{ vars.PIPELINE_EASY_TEXT_ENABLED }}
         run: |
           if [ "$EVENT_NAME" = "schedule" ] && [ "$SCHEDULE" = "0 8 * * *" ]; then
             mode=refresh
@@ -59,19 +66,28 @@ jobs:
             mode="$REQUESTED_MODE"
           fi
           echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          if [ "$EASY_TEXT_ENABLED" = "true" ]; then
+            echo "easy_text_flag=--easy-text" >> "$GITHUB_OUTPUT"
+          fi
       - name: Collect Nowon notices
         id: nowon
         continue-on-error: true
         env:
           DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
           NOWON_NOTICE_API_KEY: ${{ secrets.NOWON_NOTICE_API_KEY }}
-        run: uv run --no-dev --frozen pipeline collect --source nowon --mode "${{ steps.mode.outputs.mode }}"
+          GEMINI_API_KEY: ${{ vars.PIPELINE_EASY_TEXT_ENABLED == 'true' && secrets.GEMINI_API_KEY || '' }}
+        run: >-
+          uv run --no-dev --frozen pipeline collect --source nowon
+          --mode "${{ steps.mode.outputs.mode }}" ${{ steps.mode.outputs.easy_text_flag }}
       - name: Collect Wolgye 1-dong notices
         id: wolgye1
         continue-on-error: true
         env:
           DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
-        run: uv run --no-dev --frozen pipeline collect --source wolgye1 --mode "${{ steps.mode.outputs.mode }}"
+          GEMINI_API_KEY: ${{ vars.PIPELINE_EASY_TEXT_ENABLED == 'true' && secrets.GEMINI_API_KEY || '' }}
+        run: >-
+          uv run --no-dev --frozen pipeline collect --source wolgye1
+          --mode "${{ steps.mode.outputs.mode }}" ${{ steps.mode.outputs.easy_text_flag }}
       - name: Report collection failures
         if: always()
         env:
@@ -79,6 +95,6 @@ jobs:
           WOLGYE1_OUTCOME: ${{ steps.wolgye1.outcome }}
         run: |
           if [ "$NOWON_OUTCOME" != "success" ] || [ "$WOLGYE1_OUTCOME" != "success" ]; then
-            echo "At least one source was incomplete. Review the per-source JSON above." >&2
+            echo "Collection or easy-text processing was incomplete. Review the per-source JSON above." >&2
             exit 1
           fi

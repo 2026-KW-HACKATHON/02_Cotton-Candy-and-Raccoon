@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pipeline.attachments.nowon_html import AttachmentError, extract_files
+from pipeline.attachments.nowon_html import AttachmentError, extract_files, extract_page_files
 from pipeline.cli import main
 from pipeline.models import RawNotice
 
@@ -39,13 +39,14 @@ def test_repeated_inline_image_is_one_file() -> None:
     )
 
 
-@pytest.mark.parametrize("reference", [
-    "/component/file/ND_fileDownload.do?q_fileSn=1&amp;q_fileId=image-a",
-    "http://www.nowon.kr:80/component/file/ND_fileDownload.do"
-    "?q_fileSn=1&amp;q_fileId=image-a",
-    "//www.nowon.kr:80/component/file/ND_fileDownload.do"
-    "?q_fileSn=1&amp;q_fileId=image-a",
-])
+@pytest.mark.parametrize(
+    "reference",
+    [
+        "/component/file/ND_fileDownload.do?q_fileSn=1&amp;q_fileId=image-a",
+        "http://www.nowon.kr:80/component/file/ND_fileDownload.do?q_fileSn=1&amp;q_fileId=image-a",
+        "//www.nowon.kr:80/component/file/ND_fileDownload.do?q_fileSn=1&amp;q_fileId=image-a",
+    ],
+)
 def test_api_http_link_produces_https_inline_image(reference: str) -> None:
     raw = replace(
         notice(f'<img src="{reference}">'),
@@ -55,8 +56,7 @@ def test_api_http_link_produces_https_inline_image(reference: str) -> None:
     files = extract_files(raw)
     assert len(files) == 1
     assert files[0].url == (
-        "https://www.nowon.kr/component/file/ND_fileDownload.do"
-        "?q_fileSn=1&q_fileId=image-a"
+        "https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=1&q_fileId=image-a"
     )
 
 
@@ -66,8 +66,7 @@ def test_relative_and_absolute_nowon_image_references_deduplicate() -> None:
             '<img src="/file?q_fileSn=1&amp;q_fileId=image-a">'
             '<img src="http://www.nowon.kr:80/file?q_fileSn=1&amp;q_fileId=image-a">'
         ),
-        url="http://www.nowon.kr:80/www/user/bbs/BD_selectBbs.do"
-        "?q_bbsCode=1001&q_bbscttSn=001234",
+        url="http://www.nowon.kr:80/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=001234",
     )
     files = extract_files(raw)
     assert len(files) == 1
@@ -96,47 +95,86 @@ def test_attachment_and_inline_image_keep_both_roles(anchor_first: bool) -> None
 
 
 def test_anchor_text_is_file_name_when_download_attribute_missing() -> None:
-    files = extract_files(notice(
-        '<a href="../file?q_fileSn=2&amp;q_fileId=xyz"><span>공지</span> 자료.pdf</a>'
-    ))
+    files = extract_files(
+        notice('<a href="../file?q_fileSn=2&amp;q_fileId=xyz"><span>공지</span> 자료.pdf</a>')
+    )
     assert files[0].file_name == "공지 자료.pdf"
     assert files[0].url == "https://www.nowon.kr/www/user/file?q_fileSn=2&q_fileId=xyz"
 
 
 def test_same_file_sn_with_different_file_ids_is_allowed() -> None:
-    html = ('<img src="/file?q_fileSn=7&amp;q_fileId=first">'
-            '<a href="/file?q_fileSn=7&amp;q_fileId=second">PDF</a>')
+    html = (
+        '<img src="/file?q_fileSn=7&amp;q_fileId=first">'
+        '<a href="/file?q_fileSn=7&amp;q_fileId=second">PDF</a>'
+    )
     files = extract_files(notice(html))
     assert {(file.file_sn, file.file_id, file.kind) for file in files} == {
-        ("7", "first", "inline_image"), ("7", "second", "attachment"),
+        ("7", "first", "inline_image"),
+        ("7", "second", "attachment"),
     }
 
 
 def test_same_file_id_and_kind_with_different_urls_is_error() -> None:
-    html = ('<img src="/file?q_fileSn=7&amp;q_fileId=same">'
-            '<img src="/file?q_fileSn=8&amp;q_fileId=same">')
-    with pytest.raises(AttachmentError, match="file_id") as caught:
+    html = (
+        '<img src="/file?q_fileSn=7&amp;q_fileId=same">'
+        '<img src="/file?q_fileSn=8&amp;q_fileId=same">'
+    )
+    with pytest.raises(AttachmentError, match="file_key") as caught:
         extract_files(notice(html))
     assert "same" not in str(caught.value)
 
 
 def test_decorative_images_and_unidentified_links_are_excluded() -> None:
-    files = extract_files(notice(
-        '<img src="/logo.png"><img src="data:image/png;base64,AAAA">'
-        '<a href="https://other.example/info">안내</a>'
-        '<a href="javascript:void(0)">버튼</a>'
-    ))
+    files = extract_files(
+        notice(
+            '<img src="/logo.png"><img src="data:image/png;base64,AAAA">'
+            '<a href="https://other.example/info">안내</a>'
+            '<a href="javascript:void(0)">버튼</a>'
+        )
+    )
     assert files == []
 
 
-@pytest.mark.parametrize("url", [
-    "/file?q_fileSn=1", "/file?q_fileId=abc", "/file?q_fileSn=&q_fileId=abc",
-    "/file?q_fileSn=1&q_fileId=", "/file?q_fileSn=1&q_fileSn=2&q_fileId=abc",
-    "/file?q_fileSn=1&q_fileId=abc&q_fileId=other",
-])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "/file?q_fileSn=1",
+        "/file?q_fileId=abc",
+        "/file?q_fileSn=&q_fileId=abc",
+        "/file?q_fileSn=1&q_fileId=",
+        "/file?q_fileSn=1&q_fileSn=2&q_fileId=abc",
+        "/file?q_fileSn=1&q_fileId=abc&q_fileId=other",
+    ],
+)
 def test_partial_or_ambiguous_identifier_is_error(url: str) -> None:
     with pytest.raises(AttachmentError):
         extract_files(notice(f'<img src="{url.replace("&", "&amp;")}">'))
+
+
+@pytest.mark.parametrize("page", [False, True])
+@pytest.mark.parametrize(
+    "query",
+    [
+        "q_fileSn=%201&q_fileId=abc",
+        "q_fileSn=1%20&q_fileId=abc",
+        "q_fileSn=1&q_fileId=%20abc",
+        "q_fileSn=1&q_fileId=abc%20",
+    ],
+)
+def test_padded_identifier_uses_attachment_error(query: str, page: bool) -> None:
+    reference = f"/file?{query.replace('&', '&amp;')}"
+    raw = notice(f'<img src="{reference}">')
+    with pytest.raises(AttachmentError) as caught:
+        if page:
+            html = (
+                '<tr><th>첨부파일</th><td><ul class="file-list">'
+                f'<li><a href="{reference}">report.pdf</a></li></ul></td></tr>'
+            )
+            extract_page_files(raw, html, raw.url)
+        else:
+            extract_files(raw)
+    assert caught.value.code == "invalid_file_identity"
+    assert "abc" not in str(caught.value)
 
 
 def test_invalid_url_is_safe_error() -> None:
@@ -152,18 +190,26 @@ def test_empty_body_and_wrong_source() -> None:
 
 
 def test_cli_reports_counts_without_exposing_file_metadata(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], mock_collect_db: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    mock_collect_db: MagicMock,
 ) -> None:
     monkeypatch.setenv("NOWON_NOTICE_API_KEY", "sample")
-    source = replace(notice(
-        '<img src="/file?q_fileSn=1&amp;q_fileId=abc">'
-        '<a href="/file?q_fileSn=2&amp;q_fileId=def">private.pdf</a>'
-    ), url=("https://www.nowon.kr/www/user/bbs/BD_selectBbs.do"
-            "?q_bbsCode=1001&q_bbscttSn=001234"))
+    source = replace(
+        notice(
+            '<img src="/file?q_fileSn=1&amp;q_fileId=abc">'
+            '<a href="/file?q_fileSn=2&amp;q_fileId=def">private.pdf</a>'
+        ),
+        url=("https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=001234"),
+    )
     monkeypatch.setattr("pipeline.cli.collect_one", lambda settings: source)
-    monkeypatch.setattr("pipeline.cli.fetch_notice_page", lambda notice, settings: (
-        notice.url, '<tr><th>첨부파일</th><td>첨부파일이 없습니다.</td></tr>',
-    ))
+    monkeypatch.setattr(
+        "pipeline.cli.fetch_notice_page",
+        lambda notice, settings: (
+            notice.url,
+            "<tr><th>첨부파일</th><td>첨부파일이 없습니다.</td></tr>",
+        ),
+    )
     assert main(["collect-one", "--source", "nowon"]) == 0
     output = capsys.readouterr()
     summary = json.loads(output.out)
@@ -174,12 +220,13 @@ def test_cli_reports_counts_without_exposing_file_metadata(
 
 
 def test_cli_identifier_conflict_fails_without_partial_summary(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], mock_collect_db: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    mock_collect_db: MagicMock,
 ) -> None:
     monkeypatch.setenv("NOWON_NOTICE_API_KEY", "sample")
     source = notice(
-        '<img src="/file?q_fileSn=1&amp;q_fileId=abc">'
-        '<img src="/file?q_fileSn=2&amp;q_fileId=abc">'
+        '<img src="/file?q_fileSn=1&amp;q_fileId=abc"><img src="/file?q_fileSn=2&amp;q_fileId=abc">'
     )
     monkeypatch.setattr("pipeline.cli.collect_one", lambda settings: source)
     monkeypatch.setattr("pipeline.cli.fetch_notice_page", lambda notice, settings: (
@@ -188,5 +235,5 @@ def test_cli_identifier_conflict_fails_without_partial_summary(
     assert main(["collect-one", "--source", "nowon"]) == 1
     output = capsys.readouterr()
     assert output.out == ""
-    assert "file_id" in output.err
+    assert "file_key" in output.err
     assert "abc" not in output.err

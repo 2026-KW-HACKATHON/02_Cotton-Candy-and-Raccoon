@@ -11,12 +11,15 @@ StoredFile = tuple[str | None, str | None, str | None, str]
 
 
 def _new_files(
-    notice: NoticeRecord, files: Sequence[FileRecord],
+    notice: NoticeRecord,
+    files: Sequence[FileRecord],
 ) -> dict[tuple[str, str], FileRecord]:
     result: dict[tuple[str, str], FileRecord] = {}
     for file in files:
         if (file.category, file.source_board, file.post_sn) != (
-            notice.category, notice.source_board, notice.post_sn,
+            notice.category,
+            notice.source_board,
+            notice.post_sn,
         ):
             raise ValueError("파일의 출처·게시물 번호가 공지와 일치하지 않습니다.")
         key = (file.file_key, file.kind)
@@ -31,7 +34,8 @@ def _stored_files(conn: Connection, notice_id: int) -> dict[tuple[str, str], Sto
     with conn.cursor() as cursor:
         cursor.execute(
             "select file_key, kind, file_sn, file_id, file_name, url "
-            "from notice_files where notice_id = %s", (notice_id,),
+            "from notice_files where notice_id = %s",
+            (notice_id,),
         )
         return {
             (file_key, kind): (file_sn, file_id, file_name, url)
@@ -45,13 +49,22 @@ def _insert_file(conn: Connection, notice_id: int, file: FileRecord) -> None:
             "insert into notice_files "
             "(notice_id, kind, file_sn, file_id, file_key, file_name, url) "
             "values (%s, %s, %s, %s, %s, %s, %s)",
-            (notice_id, file.kind, file.file_sn, file.file_id,
-             file.file_key, file.file_name, file.url),
+            (
+                notice_id,
+                file.kind,
+                file.file_sn,
+                file.file_id,
+                file.file_key,
+                file.file_name,
+                file.url,
+            ),
         )
 
 
 def save_notice_with_files(
-    conn: Connection, notice: NoticeRecord, files: Sequence[FileRecord],
+    conn: Connection,
+    notice: NoticeRecord,
+    files: Sequence[FileRecord],
 ) -> int:
     """Save a complete notice and file list; a failure rolls back this unit.
 

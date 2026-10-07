@@ -1,5 +1,6 @@
 """Collect verified Wolgye 1-dong notices and save them independently."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from time import sleep
 from typing import Literal
@@ -57,7 +58,9 @@ class CollectWolgyeResult:
     @property
     def complete(self) -> bool:
         return (
-            self.listing_complete and not self.limited and not self.failures
+            self.listing_complete
+            and not self.limited
+            and not self.failures
             and self.saved_count == self.listed_count
         )
 
@@ -78,8 +81,7 @@ class ScheduledWolgyeResult:
     def complete(self) -> bool:
         """Whether this run's scheduled scope succeeded, not the whole board."""
         return (
-            self.listing_complete and not self.failures
-            and self.saved_count == self.selected_count
+            self.listing_complete and not self.failures and self.saved_count == self.selected_count
         )
 
 
@@ -90,7 +92,7 @@ def _fetch_list_with_retry(settings: WolgyeSettings, page: int) -> BoardPage:
         except WolgyeSourceError as error:
             if not error.retryable or attempt == 2:
                 raise
-            sleep(0.2 * 2 ** attempt)
+            sleep(0.2 * 2**attempt)
     raise AssertionError("retry loop must return or raise")
 
 
@@ -101,12 +103,14 @@ def _fetch_detail_with_retry(entry: BoardEntry, settings: WolgyeSettings) -> str
         except WolgyeSourceError as error:
             if not error.retryable or attempt == 2:
                 raise
-            sleep(0.2 * 2 ** attempt)
+            sleep(0.2 * 2**attempt)
     raise AssertionError("retry loop must return or raise")
 
 
 def collect_wolgye_listing(
-    settings: WolgyeSettings, *, limit: int | None = None,
+    settings: WolgyeSettings,
+    *,
+    limit: int | None = None,
 ) -> WolgyeListing:
     """Read visible list pages; a moving or missing range is never complete."""
     if limit is not None and (type(limit) is not int or limit < 1):
@@ -128,7 +132,8 @@ def collect_wolgye_listing(
             failed_pages.append(page_number)
             continue
         if (
-            page.total_count != first.total_count or page.total_pages != first.total_pages
+            page.total_count != first.total_count
+            or page.total_pages != first.total_pages
             or page.page_size != first.page_size
         ):
             failed_pages.append(page_number)
@@ -138,13 +143,18 @@ def collect_wolgye_listing(
             previous = entries.get(entry.post_sn)
             if previous is not None:
                 duplicate_count += 1
-                if (
-                    previous.title, previous.department, previous.registered_on
-                ) != (entry.title, entry.department, entry.registered_on):
+                if (previous.title, previous.department, previous.registered_on) != (
+                    entry.title,
+                    entry.department,
+                    entry.registered_on,
+                ):
                     conflicts.add(entry.post_sn)
                 entry = BoardEntry(
-                    entry.post_sn, entry.title, entry.department,
-                    entry.registered_on, previous.is_pinned or entry.is_pinned,
+                    entry.post_sn,
+                    entry.title,
+                    entry.department,
+                    entry.registered_on,
+                    previous.is_pinned or entry.is_pinned,
                 )
             entries[entry.post_sn] = entry
         if limit is not None and len(entries) >= limit:
@@ -165,17 +175,28 @@ def collect_wolgye_listing(
         except WolgyeSourceError:
             failed_pages.append(1)
     complete = (
-        not limited and not failed_pages and snapshot_stable and not conflicts
+        not limited
+        and not failed_pages
+        and snapshot_stable
+        and not conflicts
         and len(regular_post_sns) == first.total_count
     )
     return WolgyeListing(
-        first.total_count, tuple(entries.values()), tuple(failed_pages),
-        duplicate_count, tuple(sorted(conflicts)), limited, complete,
+        first.total_count,
+        tuple(entries.values()),
+        tuple(failed_pages),
+        duplicate_count,
+        tuple(sorted(conflicts)),
+        limited,
+        complete,
     )
 
 
 def collect_one_wolgye1(
-    settings: WolgyeSettings, *, post_sn: str | None = None, page: int = 1,
+    settings: WolgyeSettings,
+    *,
+    post_sn: str | None = None,
+    page: int = 1,
 ) -> tuple[NoticeRecord, list[FileRecord]]:
     """Verify the post on a selected list page before saving its detail."""
     if type(page) is not int or page < 1:
@@ -189,13 +210,12 @@ def collect_one_wolgye1(
         entry = next((item for item in entries if item.post_sn == post_sn), None)
         if entry is None:
             page_name = "첫 페이지" if page == 1 else f"{page}페이지"
-            raise WolgyeSourceError(
-                f"--post-sn 게시물이 월계1동 목록 {page_name}에 없습니다."
-            )
+            raise WolgyeSourceError(f"--post-sn 게시물이 월계1동 목록 {page_name}에 없습니다.")
     else:
         entry = next(
             (
-                item for item in entries
+                item
+                for item in entries
                 if not item.is_pinned and item.department.startswith("월계1동")
             ),
             None,
@@ -211,18 +231,27 @@ def collect_one_wolgye1(
 
 
 def _save_entries(
-    conn: psycopg.Connection[tuple], selected: tuple[BoardEntry, ...],
-    settings: WolgyeSettings, database_url: str, *,
-    conflicts: tuple[str, ...] = (), paced: bool = False,
+    conn: psycopg.Connection[tuple],
+    selected: tuple[BoardEntry, ...],
+    settings: WolgyeSettings,
+    database_url: str,
+    *,
+    conflicts: tuple[str, ...] = (),
+    paced: bool = False,
+    after_save: Callable[[int], None] | None = None,
 ) -> tuple[int, tuple[WolgyeFailure, ...]]:
     failures: list[WolgyeFailure] = []
     saved_count = 0
     try:
         for index, entry in enumerate(selected):
             if entry.post_sn in conflicts:
-                failures.append(WolgyeFailure(
-                    entry.post_sn, "listing_conflict", "listing_conflict",
-                ))
+                failures.append(
+                    WolgyeFailure(
+                        entry.post_sn,
+                        "listing_conflict",
+                        "listing_conflict",
+                    )
+                )
                 continue
             if paced and index:
                 sleep(1)
@@ -235,7 +264,7 @@ def _save_entries(
                 if error.rate_limited:
                     failures.extend(
                         WolgyeFailure(rest.post_sn, "detail", "rate_limited_not_attempted")
-                        for rest in selected[index + 1:]
+                        for rest in selected[index + 1 :]
                     )
                     break
                 continue
@@ -252,7 +281,9 @@ def _save_entries(
             if conn.closed:
                 try:
                     conn = psycopg.connect(
-                        database_url, connect_timeout=5, autocommit=True,
+                        database_url,
+                        connect_timeout=5,
+                        autocommit=True,
                     )
                 except psycopg.Error:
                     failures.extend(
@@ -264,46 +295,70 @@ def _save_entries(
                     )
                     break
             try:
-                save_notice_with_files(conn, record, files)
+                notice_id = save_notice_with_files(conn, record, files)
             except (psycopg.Error, ValueError):
                 failures.append(WolgyeFailure(entry.post_sn, "storage", "db_save_failed"))
                 continue
             saved_count += 1
+            if after_save is not None:
+                after_save(notice_id)
     finally:
         conn.close()
     return saved_count, tuple(failures)
 
 
 def collect_and_save_wolgye1(
-    settings: WolgyeSettings, database: DatabaseSettings, *, limit: int | None = None,
+    settings: WolgyeSettings,
+    database: DatabaseSettings,
+    *,
+    limit: int | None = None,
+    after_save: Callable[[int], None] | None = None,
 ) -> CollectWolgyeResult:
     """Save complete notices independently without any bulk visibility changes."""
     listing = collect_wolgye_listing(settings, limit=limit)
     selected = listing.entries[:limit] if limit is not None else listing.entries
     if not selected:
         return CollectWolgyeResult(
-            listing.total_count, len(listing.entries), 0, 0, listing.complete,
-            listing.limited, listing.failed_pages, listing.duplicate_count, (),
+            listing.total_count,
+            len(listing.entries),
+            0,
+            0,
+            listing.complete,
+            listing.limited,
+            listing.failed_pages,
+            listing.duplicate_count,
+            (),
         )
 
     conn = psycopg.connect(database.database_url, connect_timeout=5, autocommit=True)
     saved_count, failures = _save_entries(
-        conn, selected, settings, database.database_url,
+        conn,
+        selected,
+        settings,
+        database.database_url,
         conflicts=listing.conflicting_post_sns,
+        after_save=after_save,
     )
     skipped = {
         failure.post_sn for failure in failures
         if failure.stage == "listing_conflict" or failure.reason_code.endswith("_not_attempted")
     }
     return CollectWolgyeResult(
-        listing.total_count, len(listing.entries), len(selected) - len(skipped), saved_count,
-        listing.complete, listing.limited, listing.failed_pages,
-        listing.duplicate_count, failures,
+        listing.total_count,
+        len(listing.entries),
+        len(selected) - len(skipped),
+        saved_count,
+        listing.complete,
+        listing.limited,
+        listing.failed_pages,
+        listing.duplicate_count,
+        failures,
     )
 
 
 def _known_post_sns(
-    conn: psycopg.Connection[tuple], entries: tuple[BoardEntry, ...],
+    conn: psycopg.Connection[tuple],
+    entries: tuple[BoardEntry, ...],
 ) -> set[str]:
     if not entries:
         return set()
@@ -316,19 +371,25 @@ def _known_post_sns(
 
 
 def collect_and_save_wolgye1_scheduled(
-    settings: WolgyeSettings, database: DatabaseSettings, *,
+    settings: WolgyeSettings,
+    database: DatabaseSettings,
+    *,
     mode: Literal["new", "refresh"],
+    after_save: Callable[[int], None] | None = None,
 ) -> ScheduledWolgyeResult:
     """Check new regular posts or refresh five regular posts and all pinned posts."""
     if mode not in ("new", "refresh"):
         raise ValueError("mode must be 'new' or 'refresh'")
     conn = psycopg.connect(database.database_url, connect_timeout=5, autocommit=True)
     try:
-        initial_baseline = mode == "new" and not conn.execute(
-            "SELECT EXISTS (SELECT 1 FROM notices WHERE category = 'dong' "
-            "AND source_board = '1042' "
-            "AND dong_group = 'wolgye1' AND NOT is_pinned)",
-        ).fetchone()[0]
+        initial_baseline = (
+            mode == "new"
+            and not conn.execute(
+                "SELECT EXISTS (SELECT 1 FROM notices WHERE category = 'dong' "
+                "AND source_board = '1042' "
+                "AND dong_group = 'wolgye1' AND NOT is_pinned)",
+            ).fetchone()[0]
+        )
         first = _fetch_list_with_retry(settings, 1)
         selected: list[BoardEntry] = []
         pinned_sns: set[str] = set()
@@ -349,8 +410,13 @@ def collect_and_save_wolgye1_scheduled(
             if page_number > 1:
                 sleep(1)
             try:
-                page = first if page_number == 1 else _fetch_list_with_retry(
-                    settings, page_number,
+                page = (
+                    first
+                    if page_number == 1
+                    else _fetch_list_with_retry(
+                        settings,
+                        page_number,
+                    )
                 )
             except WolgyeSourceError as error:
                 if error.rate_limited:
@@ -414,13 +480,29 @@ def collect_and_save_wolgye1_scheduled(
     except (psycopg.Error, WolgyeSourceError):
         conn.close()
         raise
-    saved_count, failures = _save_entries(
-        conn, chosen, settings, database.database_url,
-        conflicts=tuple(conflicts), paced=True,
-    ) if chosen else (0, ())
+    saved_count, failures = (
+        _save_entries(
+            conn,
+            chosen,
+            settings,
+            database.database_url,
+            conflicts=tuple(conflicts),
+            paced=True,
+            after_save=after_save,
+        )
+        if chosen
+        else (0, ())
+    )
     if not chosen:
         conn.close()
     return ScheduledWolgyeResult(
-        mode, first.total_count, len(chosen), saved_count, pages_read,
-        initial_baseline, listing_complete, tuple(failed_pages), failures,
+        mode,
+        first.total_count,
+        len(chosen),
+        saved_count,
+        pages_read,
+        initial_baseline,
+        listing_complete,
+        tuple(failed_pages),
+        failures,
     )

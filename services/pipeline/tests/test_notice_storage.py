@@ -21,7 +21,8 @@ def record() -> NoticeRecord:
         category="nowon", dong_group=None, is_pinned=False, post_sn=post_sn,
         title="안내", department="교육지원과", registered_on=date(2026, 9, 25),
         url=f"https://www.nowon.kr/notice?q_bbscttSn={post_sn}",
-        body_html="<p>원문</p>", license_type="KOGL-4",
+        body_html="<p>원문</p>",
+        license_type="KOGL-4",
     )
 
 
@@ -114,15 +115,20 @@ def test_insert_repeat_department_visibility_and_timestamps(db_conn, record: Not
         assert changed_at > datetime(2000, 1, 1, tzinfo=UTC)
 
 
-@pytest.mark.parametrize("changes", [
-    {"title": "수정된 제목"},
-    {"body_html": None},
-    {"registered_on": date(2026, 9, 26)},
-    {"url": "https://www.nowon.kr/changed"},
-    {"license_type": "KOGL-3"},
-])
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"title": "수정된 제목"},
+        {"body_html": None},
+        {"registered_on": date(2026, 9, 26)},
+        {"url": "https://www.nowon.kr/changed"},
+        {"license_type": "KOGL-3"},
+    ],
+)
 def test_five_fields_mark_modified_and_true_stays_true(
-    db_conn, record: NoticeRecord, changes: dict[str, object],
+    db_conn,
+    record: NoticeRecord,
+    changes: dict[str, object],
 ) -> None:
     notice_id = save_notice(db_conn, record)
     old_timestamp = datetime(2000, 1, 1, tzinfo=UTC)
@@ -168,3 +174,19 @@ def test_caller_rollback_removes_uncommitted_notice(db_conn, record: NoticeRecor
             (record.category, record.post_sn),
         )
         assert cursor.fetchone() is None
+
+
+def test_nowon_and_dong_with_same_post_id_have_separate_board_keys(db_conn, record) -> None:
+    nowon_id = save_notice(db_conn, record)
+    dong = replace(
+        record, category="dong", source_board="1042", dong_group="wolgye1", license_type=None,
+    )
+    dong_id = save_notice(db_conn, dong)
+    assert nowon_id != dong_id
+    assert save_notice(db_conn, record) == nowon_id
+    assert save_notice(db_conn, dong) == dong_id
+    rows = db_conn.execute(
+        "select category, source_board, post_sn from notices where post_sn = %s order by category",
+        (record.post_sn,),
+    ).fetchall()
+    assert rows == [("dong", "1042", record.post_sn), ("nowon", "1001", record.post_sn)]

@@ -46,9 +46,17 @@ returning id
 
 def _values(record: NoticeRecord) -> tuple[object, ...]:
     return (
-        record.category, record.source_board, record.dong_group, record.is_pinned, record.post_sn,
-        record.title, record.department, record.registered_on, record.url,
-        record.body_html, record.license_type,
+        record.category,
+        record.source_board,
+        record.dong_group,
+        record.is_pinned,
+        record.post_sn,
+        record.title,
+        record.department,
+        record.registered_on,
+        record.url,
+        record.body_html,
+        record.license_type,
     )
 
 
