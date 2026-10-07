@@ -7,8 +7,10 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { type ReactNode } from "react";
-import { COLORS, SPACE } from "@/shared/theme/tokens";
+import { COLORS, EASY, SPACE } from "@/shared/theme/tokens";
 import { useDisplayPreferences } from "@/shared/accessibility/displayPreferences";
+import { usePreferenceStorageStatus } from "@/shared/accessibility/safePreferenceStorage";
+import { AppText } from "./AppText";
 
 /** 공통 safe area·최대 너비·스크롤을 제공하고, 떠 있는 탭바가 있으면 하단 여백을 확보한다. */
 export function Screen({
@@ -27,6 +29,7 @@ export function Screen({
   bottomSafe?: boolean;
 }) {
   const easy = useDisplayPreferences((state) => state.mode === "easy");
+  const storageAvailable = usePreferenceStorageStatus((state) => state.available);
   return (
     <SafeAreaView
       edges={
@@ -53,6 +56,14 @@ export function Screen({
             contentStyle,
           ]}
         >
+          {!storageAvailable && (
+            <AppText
+              size={easy ? EASY.body : 14.77}
+              accessibilityLiveRegion="polite"
+            >
+              이 기기에 설정을 저장하지 못했습니다. 설정은 이번 실행 동안만 유지됩니다.
+            </AppText>
+          )}
           {children}
         </ScrollView>
       </View>
