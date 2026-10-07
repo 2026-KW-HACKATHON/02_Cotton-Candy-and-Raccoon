@@ -38,6 +38,7 @@ def database() -> Iterator[psycopg.Connection]:
             "20260923044500_holidays.sql",
             "20261005000000_glossary.sql",
             "20261006000000_notice_glossary.sql",
+            "20261007000000_notice_easy_text.sql",
         ]
         for path in files:
             conn.execute(path.read_text(encoding="utf-8"))
@@ -245,7 +246,9 @@ def test_seoul_visible_notice_and_files_allowed_hidden_ones_filtered(
 
 
 @pytest.mark.parametrize("role", ["anon", "authenticated"])
-@pytest.mark.parametrize("table", ["notices", "notice_files", "notice_glossary_results"])
+@pytest.mark.parametrize(
+    "table", ["notices", "notice_files", "notice_glossary_results", "notice_easy_texts"],
+)
 def test_app_table_privileges_are_read_only(db: psycopg.Connection, role: str, table: str) -> None:
     for privilege in ("INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"):
         assert (
