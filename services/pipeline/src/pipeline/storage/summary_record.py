@@ -230,8 +230,9 @@ def build_summary_record(
 
     File-only, unchecked, unknown/uncertain, or incompletely read results become
     needs_review. Both completed states retain the generated summary for display;
-    review content must carry "원문 확인 요함" and has no sorting deadline.
-    Only text-matched results can be recorded as summarized without that warning.
+    review content has no sorting deadline. The public view returns review
+    guidance separately, leaving its display to the caller. Only text-matched
+    results can be recorded as summarized.
     Preparation warnings alone do not change status.
     """
     if not isinstance(result, PreparedSummaryResult):

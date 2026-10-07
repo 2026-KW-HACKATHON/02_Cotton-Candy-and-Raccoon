@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 
 PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "gemini_notice_summary.md"
-SUMMARY_PROMPT_VERSION = "notice-summary-v5-card-polite"
+SUMMARY_PROMPT_VERSION = "notice-summary-v6-card-grounding"
 DEFAULT_ENV_PATH = Path(__file__).resolve().parents[3] / ".env"
 
 

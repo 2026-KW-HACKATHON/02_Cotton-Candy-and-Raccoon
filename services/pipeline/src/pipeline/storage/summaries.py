@@ -1,6 +1,6 @@
 """Write issue #14's summary rows using the caller's PostgreSQL transaction."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 
 from psycopg import Connection, Error
@@ -8,6 +8,7 @@ from psycopg.rows import tuple_row
 from psycopg.types.json import Jsonb
 
 from pipeline.storage.summary_record import (
+    FAILURE_CODES,
     SummaryMetadata,
     SummaryRecord,
     SummaryRecordError,
@@ -86,6 +87,49 @@ on conflict (notice_id) do update set
 returning execution_token
 """
 
+UPSERT_SUMMARY_EXECUTION_FAILURE = """
+insert into public.notice_summaries (
+    notice_id, status, result, category, category_code, deadline_on, attachment_status,
+    source_hash, model, prompt_version, attempt_count, last_error_code, generated_at
+) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+on conflict (notice_id) do update set
+    last_error_code = excluded.last_error_code,
+    attempt_count = notice_summaries.attempt_count + excluded.attempt_count,
+    updated_at = now()
+returning notice_id
+"""
+
+
+def _correction_fallback_statement(*, guarded: bool) -> str:
+    # Execution revisions are authoritative. Legacy callers only supply a hash.
+    preserve = "notice_summaries.result is not null"
+    if not guarded:
+        preserve += " and notice_summaries.source_hash = excluded.source_hash"
+    content_columns = (
+        "status", "result", "category", "category_code", "deadline_on", "attachment_status",
+        "source_hash", "model", "prompt_version", "generated_at",
+    )
+    assignments = ",\n".join(
+        f"    {name} = case when {preserve} then notice_summaries.{name} "
+        f"else excluded.{name} end"
+        for name in content_columns
+    )
+    return (
+        "insert into public.notice_summaries (\n"
+        "    notice_id, status, result, category, category_code, deadline_on, attachment_status,\n"
+        "    source_hash, model, prompt_version, attempt_count, last_error_code, generated_at\n"
+        ") values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)\n"
+        "on conflict (notice_id) do update set\n"
+        + assignments
+        + ",\n    last_error_code = excluded.last_error_code,\n"
+        "    attempt_count = notice_summaries.attempt_count + excluded.attempt_count,\n"
+        "    updated_at = now()\n"
+        "returning notice_id, status, deadline_on, generated_at\n"
+    )
+
+
+UPSERT_SUMMARY_CORRECTION_FALLBACK = _correction_fallback_statement(guarded=False)
+
 REGISTER_SUMMARY_EXECUTION_AT_REVISION = REGISTER_SUMMARY_EXECUTION.replace(
     "where id = %s for share", "where id = %s and content_revision = %s for share", 1
 )
@@ -109,8 +153,11 @@ def _guarded_statement(statement: str) -> str:
 
 
 GUARDED_UPSERT_SUMMARY = _guarded_statement(UPSERT_SUMMARY)
-GUARDED_UPSERT_SUMMARY_FAILURE = _guarded_statement(UPSERT_SUMMARY_FAILURE)
+GUARDED_UPSERT_SUMMARY_FAILURE = _guarded_statement(UPSERT_SUMMARY_EXECUTION_FAILURE)
 GUARDED_UPSERT_SUMMARY_PENDING = _guarded_statement(UPSERT_SUMMARY_PENDING)
+GUARDED_UPSERT_SUMMARY_CORRECTION_FALLBACK = _guarded_statement(
+    _correction_fallback_statement(guarded=True)
+)
 
 
 class SummaryExecutionSuperseded(RuntimeError):
@@ -136,9 +183,10 @@ class StoredPreparedSummary:
 
     The caller must commit before reporting durable storage. Warnings are only
     retained as data; no message, log, or separate database field is produced.
-    result is a caller snapshot. Both completed states store the summary JSON;
-    use the public view to attach the review warning rather than exposing this
-    snapshot directly as an app response.
+    result is the generated candidate snapshot. A failed correction can preserve
+    an older stored summary, so that snapshot may differ from the persisted JSON.
+    status, deadline_on, and generated_at describe the actual stored row. The app
+    must read committed storage through the public view, which adds review warnings.
     """
 
     notice_id: int
@@ -196,9 +244,12 @@ def save_notice_summary(conn: Connection, record: SummaryRecord) -> int:
 
     Database exceptions produce no success result. The caller must roll back an
     aborted transaction. Row status never claims that uncommitted data is durable.
-    Same-source failures update only the code, count, and update time. Changed-source
-    failures also clear an old public summary and mark it needs_review (#24).
-    Previous input/version metadata survive for retry selection.
+    Guarded failures update only the code, count, and update time. An incomplete
+    retry input can have a different hash without changing the notice; that is
+    never evidence for clearing its valid public result. Actual source changes
+    are invalidated by the source-revision DB trigger. Legacy unguarded failures
+    retain #24's hash comparison/invalidation, without that version guarantee.
+    Previous input/version metadata survive for retry selection in either path.
     A first failure inserts a failed row without summary data.
     Starting pending never removes an existing public summary or successful hash.
     Concurrent callers register before their API request and pass execution_token.
@@ -280,6 +331,10 @@ def save_prepared_summary(
     needs_review preserves the generated result JSON for display with an original-
     notice warning. Its sorting deadline remains NULL; warnings and media_sources
     remain caller data rather than separate database fields.
+    A failed correction preserves any existing result for the same source and
+    records only the failure code/count/time. Without an existing result, its
+    usable candidate is stored as needs_review. Returned row metadata describes
+    storage, while result remains the caller's generated candidate snapshot.
     """
     record = build_summary_record(
         result,
@@ -289,20 +344,93 @@ def save_prepared_summary(
         attempt_increment=attempt_increment,
         execution_token=execution_token,
     )
-    snapshot = PreparedSummaryResult(
+    snapshot = replace(
+        result,
         notice_id=record.notice_id,
         summary=NoticeSummary.model_validate(result.summary.model_dump(mode="json")),
         warnings=tuple(result.warnings),
         media_sources=tuple(result.media_sources),
     )
-    notice_id = save_notice_summary(conn, record)
+    reason_code = result.correction_failure_code
+    if reason_code is not None:
+        record = replace(record, status="needs_review", deadline_on=None)
+        notice_id, status, stored_deadline, stored_generated_at = _save_summary_correction_fallback(
+            conn, record, reason_code=reason_code,
+        )
+    else:
+        notice_id = save_notice_summary(conn, record)
+        status, stored_deadline, stored_generated_at = (
+            record.status, record.deadline_on, generated_at,
+        )
     return StoredPreparedSummary(
         notice_id=notice_id,
-        status=record.status,
+        status=status,
         result=snapshot,
-        generated_at=generated_at,
-        deadline_on=record.deadline_on,
+        generated_at=stored_generated_at,
+        deadline_on=stored_deadline,
     )
+
+
+def _save_summary_correction_fallback(
+    conn: Connection, record: SummaryRecord, *, reason_code: str,
+) -> tuple[int, SummaryStatus, date | None, datetime]:
+    """Atomically retain an existing result or publish the first usable fallback.
+
+    A guarded write checks source revision and execution order before deciding
+    whether to preserve a row; hashes are not source-change evidence there.
+    Legacy writes preserve an existing result only when their source hashes match.
+    The caller keeps transaction ownership. Failure details stay in a typed code.
+    """
+    if not isinstance(reason_code, str) or reason_code not in FAILURE_CODES:
+        raise SummaryRecordError("invalid_error_code")
+    if not isinstance(record, SummaryRecord):
+        raise SummaryRecordError("invalid_summary_record")
+    checked = replace(record, status="needs_review", deadline_on=None)
+    if checked.result is None:
+        raise SummaryRecordError("summary_result_required")
+    summary = checked.result
+    values = (
+        checked.notice_id,
+        checked.status,
+        Jsonb(summary.model_dump(mode="json")),
+        summary.category if summary.category != "unknown" else None,
+        summary.category_code,
+        None,
+        checked.metadata.attachment_status,
+        checked.metadata.source_hash,
+        checked.metadata.model,
+        checked.metadata.prompt_version,
+        checked.attempt_increment,
+        reason_code,
+        checked.generated_at,
+    )
+    sql = UPSERT_SUMMARY_CORRECTION_FALLBACK
+    if checked.execution_token is not None:
+        sql = GUARDED_UPSERT_SUMMARY_CORRECTION_FALLBACK
+        values = (checked.notice_id, checked.execution_token, *values)
+    try:
+        with conn.cursor(row_factory=tuple_row) as cursor:
+            cursor.execute(sql, values)
+            row = cursor.fetchone()
+    except Error:
+        raise SummaryStorageError() from None
+    if row is None and checked.execution_token is not None:
+        raise SummaryExecutionSuperseded()
+    if (
+        not isinstance(row, (tuple, list))
+        or len(row) != 4
+        or type(row[0]) is not int
+        or row[0] != checked.notice_id
+        or not isinstance(row[1], str)
+        or row[1] not in {"summarized", "needs_review"}
+        or (row[2] is not None and type(row[2]) is not date)
+        or (row[1] == "needs_review" and row[2] is not None)
+        or not isinstance(row[3], datetime)
+        or row[3].tzinfo is None
+        or row[3].utcoffset() is None
+    ):
+        raise SummaryStorageError("summary_storage_invalid_outcome")
+    return row[0], row[1], row[2], row[3]
 
 
 def record_summary_failure(
@@ -314,7 +442,11 @@ def record_summary_failure(
     attempt_increment: int = 1,
     execution_token: int | None = None,
 ) -> int:
-    """Record a failure; preserve same-source summaries and withhold stale ones."""
+    """Record an execution failure; guarded writes preserve existing public content.
+
+    Source revisions/DB triggers decide real invalidation. Only legacy callers
+    without an execution token still infer source changes from differing hashes.
+    """
     return save_notice_summary(
         conn,
         SummaryRecord(

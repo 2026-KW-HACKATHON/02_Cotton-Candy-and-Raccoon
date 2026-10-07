@@ -10,6 +10,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    PrivateAttr,
     ValidationError,
     field_validator,
     model_validator,
@@ -212,6 +213,9 @@ class NoticeSummary(BaseModel):
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
+    # Local execution outcome, never a Gemini field or resident-facing JSON.
+    _correction_failure_code: str | None = PrivateAttr(default=None)
+
     category: Category
     category_code: CategoryCode | None
     summary: SingleLineText = Field(max_length=FIELD_TEXT_LIMITS["summary"])
@@ -254,7 +258,13 @@ class NoticeSummary(BaseModel):
 
 
 class GeminiNoticeSummary(NoticeSummary):
-    """Require fresh prose for known card facts while retaining truly missing slots."""
+    """Require fresh prose for known card facts while retaining truly missing slots.
+
+    A news summary can use policy-default action_requirement='none' without an
+    explicit source statement. That classification alone never requires new
+    prose claiming there is no action. A cited no-action statement does require
+    prose; grounding checks whether the citation belongs to the supplied source.
+    """
 
     card_summaries: GeminiCardSummaries
 
@@ -263,8 +273,21 @@ class GeminiNoticeSummary(NoticeSummary):
         required = {
             "audience": self.audience is not None,
             "deadline": bool(self.dates),
-            "action": self.action is not None,
-            "notes": bool(self.notes),
+            "action": (
+                self.action is not None
+                or self.location is not None
+                or (
+                    self.action_requirement == "none"
+                    and any(item.field == "action_requirement" for item in self.evidence)
+                )
+            ),
+            "notes": (
+                bool(self.notes)
+                or self.changed_details is not None
+                or self.status_detail is not None
+                or self.notice_update in {"modified", "extended", "cancelled"}
+                or self.status == "cancelled"
+            ),
         }
         errors = [
             {

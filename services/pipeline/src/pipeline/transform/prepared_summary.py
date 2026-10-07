@@ -39,12 +39,17 @@ class PreparedSummaryLike(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class PreparedSummaryResult:
-    """A summary plus the preparation warnings and references needed by its caller."""
+    """Summary and private execution metadata needed by the storage caller.
+
+    A correction failure retains a usable candidate, but must not replace an
+    existing summary as though generation completed without a processing error.
+    """
 
     notice_id: int
     summary: NoticeSummary = field(repr=False)
     warnings: tuple[PreparationIssueLike, ...]
     media_sources: tuple[MediaSource, ...] = ()
+    correction_failure_code: str | None = None
 
 
 class SummaryPreparationError(ValueError):

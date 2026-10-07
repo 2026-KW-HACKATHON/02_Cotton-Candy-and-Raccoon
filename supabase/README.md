@@ -6,7 +6,7 @@
 
 ## SQL 파일별 역할과 적용 순서
 
-마이그레이션은 아래 7개를 파일명 순서대로 적용한다. 수집 원문·파일 제약은 init에서 생성하며, #14의 요약과 내용 변경 시각을 추가한 뒤 후속 마이그레이션으로 검토 결과 공개 계약, 조회용 카드 컬럼과 비공개 실행 순서 레지스트리를 추가한다. 이미 요약 테이블을 생성한 DB에는 아직 적용하지 않은 후속 마이그레이션을 순서대로 적용한다. 기존 마이그레이션은 수정하지 않는다.
+마이그레이션 8개를 파일명 순서대로 적용한다. 기존 DB에는 미적용 파일만 순서대로 적용하며, 이미 적용한 마이그레이션은 수정하지 않는다.
 
 | 파일 | 역할 |
 | --- | --- |
@@ -14,10 +14,10 @@
 | [20260922053901_rls.sql](migrations/20260922053901_rls.sql) | 공개 공지·파일의 앱 조회 정책과 허용 파일 컬럼 설정 |
 | [20260923044500_holidays.sql](migrations/20260923044500_holidays.sql) | 공휴일 판단·캐시용 holidays 테이블과 앱 접근 제한 설정 |
 | [20261006120000_notice_summaries.sql](migrations/20261006120000_notice_summaries.sql) | notice_summaries, 내용 변경 시각, 요약의 제약·인덱스·읽기 권한 추가 |
-| [20261007120000_notice_summaries_review_content.sql](migrations/20261007120000_notice_summaries_review_content.sql) | 검토 결과 JSON·분류 공개 허용, 미확인 마감 정렬 차단, 기존 NULL 검토 행 호환 |
-| [20261007123000_notice_summary_card_summaries.sql](migrations/20261007123000_notice_summary_card_summaries.sql) | 원본 result의 카드 JSON에서 조회용 generated 컬럼 생성, 네 키·문자열 제약과 앱 읽기 권한 추가 |
-| [20261007130000_notice_summary_executions.sql](migrations/20261007130000_notice_summary_executions.sql) | 앱 비공개 최신 실행 토큰·sequence와 백엔드 전용 RLS·권한 추가, 공지 삭제 시 cascade |
-| [20261007133000_notice_summary_source_revisions.sql](migrations/20261007133000_notice_summary_source_revisions.sql) | 원문 버전 카운터·본문/파일 변경 시 기존 공개 요약 무효화·실행의 원문 버전 보호 추가 |
+| [20261007120000_notice_summaries_review_content.sql](migrations/20261007120000_notice_summaries_review_content.sql) | 검토 내용 보존·공개, 검토 마감 정렬 차단 |
+| [20261007123000_notice_summary_card_summaries.sql](migrations/20261007123000_notice_summary_card_summaries.sql) | 조회용 generated 카드 컬럼·제약·읽기 권한 |
+| [20261007130000_notice_summary_executions.sql](migrations/20261007130000_notice_summary_executions.sql) | 비공개 실행 토큰·백엔드 권한 |
+| [20261007133000_notice_summary_source_revisions.sql](migrations/20261007133000_notice_summary_source_revisions.sql) | 원문 버전·변경 시 요약 무효화·오래된 결과 저장 차단 |
 | [seed.sql](seed.sql) | 테스트용 공지·파일, 요약 상태 4종·부분 읽기·숨김 공지 데이터. 스키마 변경 SQL이 아님 |
 
 init부터 공지 고유 키는 `(category, source_board, post_sn)`, 파일 고유 키는 `(notice_id, file_key, kind)`다. 별도의 새 init 파일을 추가한 것이 아니라 기존 init에 공지 변경을 합쳤다.
@@ -52,38 +52,36 @@ URL 해시는 파일 내용 해시가 아니다. URL이 바뀌면 다른 참조�
 
 ## 요약 저장 계약 — 이슈 #14
 
-`notice_summaries`는 `notice_id`를 PK·FK로 사용해 공지 한 건당 한 행을 저장한다. 공지를 삭제하면 요약도 함께 삭제된다. `category`는 공지 유형(`application`, `event`, `living`, `obligation`, `news`, `mixed`)이며, 수집 출처를 뜻하는 `notices.category`와 구분한다. `needs_review`도 생성된 유형을 보존한다. 유형이 `unknown`이면 JSON에는 그대로 보존하고 DB `category`는 NULL로 저장한다.
+`notice_summaries`는 공지당 한 행을 저장하며 공지 삭제 시 함께 삭제된다. `category`는 공지 유형(`application`, `event`, `living`, `obligation`, `news`, `mixed`)이다. `unknown`은 JSON에 보존하고 DB 컬럼은 NULL로 저장한다.
 
-분야는 별도 정수 `category_code`로 저장한다. `21=교통`, `22=안전`, `23=주택`, `24=경제`, `25=환경`, `26=문화`, `27=복지`, `30=행정`만 허용한다. 서울시 게시판의 `source_board`는 수집 식별용 문자열이며 Gemini가 내용으로 분류하는 `category_code`와 별개다. `summarized`의 JSON은 객체여야 하고, JSON의 공지 유형·정수 분야 코드가 두 DB 컬럼과 각각 일치해야 한다. JSON 문자열 `"27"`, 소수 `27.0`, 허용 목록 밖 코드, 누락·NULL은 거부한다. `needs_review`의 JSON도 객체이고 두 분류 필드를 명시해야 한다. 알려진 분류는 DB 컬럼과 일치시키며, `category="unknown"`은 DB NULL, JSON `category_code=null`은 DB NULL을 허용한다. 검토 상태에서도 누락 필드·잘못된 JSON 타입·분류 불일치는 거부한다. 세부 요약 스키마와 원문 근거 검증은 파이프라인에서 수행한다.
+분야 `category_code`는 정수 `21=교통`, `22=안전`, `23=주택`, `24=경제`, `25=환경`, `26=문화`, `27=복지`, `30=행정`이다. 수집 출처인 `notices.category`, 게시판 식별자인 `source_board`와 별개다. 결과 JSON의 분류는 DB 컬럼과 일치해야 하며, 검토 결과의 미확인 분류는 NULL을 허용한다.
 
 | status | 공개 결과 |
 | --- | --- |
 | `pending` | 공개 요약이 없는 대기 상태 |
 | `summarized` | 검증을 통과한 전체 `NoticeSummary`와 evidence |
-| `needs_review` | 생성된 `NoticeSummary`·유형·분야를 앱에 제공하고 네 카드에 **“(원문 확인 요함)”** 안내 |
+| `needs_review` | AI 요약·카드를 보존하며 검토 안내는 별도 `message`로 반환 |
 | `failed` | 기존 저장 행이 없던 최초 실행 실패 |
 
-`pending`, `failed`의 `result`, `category`, `category_code`, `deadline_on`은 모두 NULL이다. 파일 참조만 확인했거나 일부 첨부를 읽지 못해 `needs_review`가 되어도 생성된 요약과 네 카드·분류는 제공하고 원문 확인 안내를 표시한다. 검토 상태의 `deadline_on`은 항상 NULL로 두어 미확인 마감일이 정렬에 사용되지 않도록 한다. 보존할 생성 결과가 없는 기존 검토 행이나 원문 변경 후 재요약 실패 행은 `result`, `category`, `category_code`, `deadline_on`이 모두 NULL인 형태를 계속 허용한다.
+`pending`, `failed`의 결과·분류·마감일은 NULL이다. 파일 근거만 확인되거나 첨부를 일부 읽지 못한 결과는 `needs_review`로 보존하며 `deadline_on=NULL`로 둔다. 원문 변경으로 무효화되거나 기존에 내용이 없던 검토 행은 `result=NULL`일 수 있다.
 
-새 Gemini 응답에는 기존 `NoticeSummary` 필드를 모두 유지하면서 `card_summaries` 객체를 추가한다. 키는 `audience`, `deadline`, `action`, `notes` 네 개로 고정하고, 각각 비어 있지 않은 한 줄 문자열 또는 JSON `null`을 담는다. 추가 키·빠진 키·문자열 외 값·공백만 있는 문자열·CR/LF 줄바꿈은 DB CHECK에서도 거부한다. 문자열은 표시 길이로 자르거나 변환하지 않고 원본 `result.card_summaries` 안에 보존한다. 새 응답에는 이 객체가 필수지만, 기존 저장 JSON의 누락·명시적 `null`과 결과 없는 행은 계속 허용한다.
+`result.card_summaries`는 `audience`, `deadline`, `action`, `notes` 네 키의 한 줄 문자열 또는 NULL이다. 새 응답에는 객체가 필수이며 기존 JSON의 누락·NULL은 호환한다. 기존 필드와 `evidence`는 원문 근거 보기용으로 유지하고, 직접 인용은 `evidence.excerpt`로 구분한다.
 
-조회 편의용 `notice_summaries.card_summaries`는 `GENERATED ALWAYS AS (NULLIF(result -> 'card_summaries', 'null'::jsonb)) STORED` 컬럼이다. 백엔드는 전체 `result`만 기존 INSERT/upsert로 저장하며 별도로 카드 컬럼을 쓰지 않는다. 카드 컬럼은 원본과 항상 일치하고, 레거시 누락·JSON `null`·`result=NULL`은 SQL NULL로 조회된다. 동일 입력의 재요약 실패로 `result`를 유지하면 카드도 유지되며, 원문 변경 후 실패로 `result`를 비우면 카드 컬럼도 자동으로 NULL이 된다. 카드 문장의 원문 근거 검증과 `needs_review`의 원문 확인 경고는 파이프라인의 공개 뷰 계약을 따른다.
+조회용 `notice_summaries.card_summaries`는 `result.card_summaries`에서 자동 생성되는 STORED 컬럼이다. 백엔드는 `result`만 저장하며 카드 컬럼에 직접 쓰지 않는다.
 
-기존 필드를 유지하는 핵심 목적은 앱의 **“원문 근거 보기”**다. `card_summaries`와 공개 카드의 `text`는 읽기 편한 카드 문구이며, 기존 필드값·`items`·`metadata`·`source_path`·`evidence`와 파일의 `source_id`, `page`, `verification`은 근거 확인에 사용한다. AI가 추출한 필드값을 원문 직접 인용처럼 표시하지 않고 실제 원문 발췌인 `evidence.excerpt`와 구분한다. 파일 참조만 확인한 경우 내용을 검증했다고 표시하지 않는다. 새 카드 문구에 독립된 근거가 추가된 것은 아니며 네 문구 전체의 의미가 완전히 검증되었다고 약속하지 않는다. 기존 근거는 필드 단위로 연결되므로 배열의 개별 항목까지 검증한 것으로 표시하지 않는다.
+job의 실패는 원문 버전·실행 토큰이 유효하면 `last_error_code`, `attempt_count`, `updated_at`만 갱신한다. 첨부 재처리 실패로 해시가 달라져도 기존 요약을 지우지 않는다. 실제 원문 변경은 DB trigger가 별도로 무효화한다. 토큰 없는 저수준 저장은 기존 해시 비교·무효화 계약을 유지한다.
 
-동일한 입력으로 다시 실행하다 실패하면 기존 상태·결과·분류·기한·첨부 상태·입력 해시·모델·프롬프트 버전·생성 시각을 유지하고 `last_error_code`, `attempt_count`, `updated_at`만 갱신한다. #24의 변경된 원문에 대한 재요약 실패는 기존 `summarized`를 `needs_review`로 바꾸고 공개 4컬럼을 비운다. 이전 성공의 `source_hash`와 생성 메타데이터는 유지해 새 입력을 성공 처리한 것으로 표시하지 않는다. 이 경우와 기존 요약의 실패 기록도 재시도 대상으로 조회하도록 `notice_summaries_retry_idx`는 `pending/failed` 또는 `last_error_code IS NOT NULL` 행을 포함한다.
+보정 재요청이 실패해도 형식 검사를 통과한 첫 요약은 보존한다. 기존 공개 결과가 있으면 그대로 유지하고 실패만 기록하며, 없으면 첫 결과를 `needs_review`, `deadline_on=NULL`로 저장한다. 실패 코드가 있는 행은 재시도 조회 대상이다.
 
-`source_hash`는 본문 평문과 읽은 첨부 텍스트를 `file_key` 순으로 구성한 입력의 SHA-256 소문자 64자리다. PDF·이미지 바이트를 포함하는 확장은 후속 작업이다. 모델·프롬프트 버전은 안전한 식별자만, 오류는 코드 목록만 저장한다. `attempt_count`는 기록된 실행의 누적 횟수이며 성공 후 초기화 정책은 추가하지 않는다. 기본 job의 종료 저장만 사용할 때 `superseded` 종료는 요약 행과 카운터를 갱신하지 않는다. 대체된 실행까지 포함한 모든 시작을 세려면 외부 `pending=1`, public job 완료 `attempt_increment=0` 계약을 사용한다.
+`source_hash`는 본문 평문과 읽은 첨부 텍스트를 `file_key` 순으로 구성한 입력의 SHA-256 소문자 64자리다. PDF·이미지 바이트를 포함하는 확장은 후속 작업이다. 모델·프롬프트 버전은 안전한 식별자만, 오류는 코드 목록만 저장한다. `attempt_count`는 누적 실행 횟수이며 성공 후 초기화 정책은 추가하지 않는다.
 
 마감일은 검증된 `dates` 중 `application`, `submission`, `payment`의 `end_date` 최댓값이다. 해당 날짜가 없으면 NULL이며, 검토 상태에서는 마감일 계산을 호출하지 않는다. Gemini가 마감일 DB 컬럼을 직접 정하지 않는다.
 
-비공개 `notice_summary_executions`는 공지별 최신 시작 토큰과 등록 당시 `source_revision`을 저장한다. `begin_summary_execution()`으로 Gemini 호출 전에 등록하고 그 토큰을 종료 저장에 전달하면, 공지 원문 행과 레지스트리를 같은 순서로 잠근 뒤 최신 토큰·원문 버전이 모두 일치하는 결과·실패만 적용한다. 늦거나 원문이 바뀐 실행은 `summary_execution_superseded`로 구분하며 현재 결과·카드·마감일·실패 코드를 덮거나 새 행을 삽입하지 않는다. 기존 토큰 없는 저수준 저장 호출은 호환을 유지하지만 실행 순서·원문 버전 보호를 제공하지 않는다. 앱은 이 테이블과 sequence에 접근할 수 없으며 `service_role`만 등록·조회·쓰기를 할 수 있다.
+`notices.content_revision`은 본문·첨부 메타데이터가 바뀔 때 증가한다. 변경 시 기존 공개 결과·분류·마감일을 즉시 비우고 `summarized`를 `needs_review`로 바꾸며 성공 메타데이터와 시도 횟수는 유지한다. 원문이 같은 재수집은 버전을 올리지 않는다.
 
-등록도 호출자 트랜잭션을 사용한다. API 호출 사이 DB 트랜잭션을 열어 두지 않으려면 autocommit 연결을 사용하거나 저수준 등록을 명시적으로 commit한 뒤 호출한다. 기본 트랜잭션에서는 commit/rollback까지 같은 공지의 원문 SHARE·레지스트리 잠금이 유지되어 원문 수정과 다른 실행 등록이 기다린다. 파이프라인이 호출자 데이터를 임의로 commit하지 않는다. 원문·파일을 읽은 동일한 DB snapshot의 `notices.content_revision`을 `begin_summary_execution()` 또는 public job의 `expected_source_revision`으로 전달하면 등록 전에 이미 바뀐 입력을 API 호출 없이 거부한다. 이 값을 생략하는 호환 경로는 등록 이후 변경만 보호하며 이미 오래된 prepared 입력을 식별하지 못한다. #13 준비/조회 연동에서는 이 버전을 반드시 함께 전달해야 한다.
+job 연동에서는 원문·파일과 같은 DB snapshot에서 읽은 `content_revision`을 `expected_source_revision`으로 **반드시 전달한다**. 비공개 실행 토큰과 원문 버전이 맞는 결과만 저장하며 오래된 실행은 `summary_execution_superseded`로 반환한다. 버전을 생략하는 호환 경로는 등록 전 원문 변경을 보호하지 못한다. API 호출 중 잠금을 유지하지 않으려면 autocommit 연결을 사용하며 commit은 호출자 책임이다.
 
-`notices.content_revision`은 1부터 시작한다. 본문·제목·담당 부서·게시일·URL·공공누리·출처 식별 정보 변경과 `notice_files`의 실제 INSERT/UPDATE/DELETE 때 DB trigger가 증가시킨다. 같은 트랜잭션에서 `content_updated_at`이 같아도 서로 다른 버전을 구별한다. 변경되지 않은 원문·파일과 표시 여부·단순 수집 시각 갱신은 버전을 올리지 않는다. 원문 변경 시 기존 공개 `result`·유형·분야·마감일을 즉시 비우고 `summarized`를 `needs_review`로 바꾼다. 성공 입력·생성 메타데이터와 시도 횟수는 유지하며 재요약 실패로 집계하지 않는다. 수집 트랜잭션이 롤백되면 버전과 요약 무효화도 함께 롤백된다. 파일 URL·참조 메타데이터가 그대로인 상태에서 원격 파일의 바이트만 바뀐 경우는 여전히 감지하지 못한다.
-
-앱 역할 `anon`, `authenticated`는 보이는 공지의 다음 **9개 컬럼만** 읽는다: `notice_id`, `status`, `category`, `category_code`, `deadline_on`, `result`, `card_summaries`, `attachment_status`, `generated_at`. 내부 메타데이터와 `updated_at`은 차단되므로 `select('*')`도 실패한다. 앱의 쓰기 권한·쓰기 policy는 없다. 기존 RLS는 그대로 유지하며 새 카드 컬럼에도 SELECT만 추가한다. `service_role`에는 백엔드 조회·쓰기 권한과 전용 policy를 명시하지만 generated 카드 컬럼은 직접 쓸 수 없다.
+앱 역할 `anon`, `authenticated`는 보이는 공지의 **9개 컬럼만** 읽는다: `notice_id`, `status`, `category`, `category_code`, `deadline_on`, `result`, `card_summaries`, `attachment_status`, `generated_at`. 내부 메타데이터·실행 레지스트리와 앱 쓰기는 차단하며 `service_role`에는 백엔드 조회·쓰기를 허용한다.
 
 `notices.content_updated_at`은 기존 공지에는 `created_at`으로 채우고 신규 공지에는 현재 시각을 넣는다. 이후 파이프라인이 실제 본문·제목 등의 내용 또는 파일 목록 변경 시에만 갱신한다. 단순 재수집 시간인 `updated_at`, 수정 이력 표시인 `is_modified`와 역할이 다르다. 앱은 기존 공지 읽기 권한으로 이 새 컬럼을 조회한다.
 
@@ -104,7 +102,7 @@ URL 해시는 파일 내용 해시가 아니다. URL이 바뀌면 다른 참조�
 
 2026-10-04 임시 PostgreSQL17.11에서 **39 passed, 0 skipped**, Ruff와 diff 검사 통과. 기존5개 SQL과 통합3개 SQL의 컬럼28개·제약15개·인덱스·RLS정책2개·RLS활성 상태를 비교해 동일함을 확인했다(컬럼의 물리적 순서는 비교하지 않음). 앱의 테이블 쓰기 권한은 명시적으로 회수했다. Holidays·seed는 diff가 없다. 검증용 임시 서버·DB·로그는 종료/삭제했으며 실제 Supabase 프로젝트 키 조회는 수행하지 않았다.
 
-`supabase/tests/test_source_identity.py`는 수집 스키마를, `test_notice_summary_schema.py`는 실제 요약 테이블과 RLS·컬럼 권한을 검증한다. 공통 fixture가 마이그레이션 8개와 seed를 비어 있는 임시 PostgreSQL에 적용하고, 기존 공지의 변경 시각·카드 generated 컬럼 backfill과 이미 등록된 실행의 버전 backfill·토큰 갱신도 확인한다. `test_notice_summary_execution_schema.py`는 비공개 레지스트리·sequence의 앱 접근 차단, backend 등록·RLS·cascade를 확인한다. `test_notice_summary_source_revision_schema.py`는 버전 제약·trigger 활성화·앱의 버전 쓰기 차단·service 전용 정책을 확인한다. 별도 pipeline `test_threepass_database_audit.py`는 두 연결의 경쟁·원문 변경 직후 공개 요약 무효화·파일 변경·롤백·등록 전에 오래된 입력·실제 job/SQL/앱 역할 공개 뷰를 검증한다. 기존 seed의 카드 없는 요약과 NULL 검토 행은 레거시 호환 사례다. 실제 Supabase Data API 검증은 아니다. 테스트 역할이 이미 있으면 높은 권한과 상속이 없는 NOLOGIN 역할인지 검사한 뒤 재사용하며, 검증 변경은 전용 빈 DB에서 롤백한다.
+`supabase/tests/`의 `test_source_identity.py`, `test_notice_summary_schema.py`, `test_notice_summary_execution_schema.py`, `test_notice_summary_source_revision_schema.py`가 수집·요약·실행·원문 버전 계약을 검증한다. 마이그레이션 8개와 seed를 빈 임시 DB에 적용하며 검증 후 롤백한다.
 
 services/pipeline 폴더에서 PowerShell로 실행한다.
 

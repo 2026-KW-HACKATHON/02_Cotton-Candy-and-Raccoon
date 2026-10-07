@@ -10,10 +10,10 @@ from pipeline.storage.summary_view import build_notice_summary_view
 from pipeline.transform import summarize as summarize_module
 from pipeline.transform.grounding import unknown_summary
 from pipeline.transform.notice_input import NoticeInput
-from pipeline.transform.summary_schema import SummaryValidationError
 
 FACT = "월계1동은 식료품 꾸러미를 홀몸어르신에게 전달했다"
 NOTE = "지원품 : 식료품 꾸러미"
+NO_APPLICATION = "별도의 신청은 필요 없습니다."
 UNSUPPORTED = "월계1동, 어르신께 식료품 꾸러미 전달"
 
 
@@ -21,7 +21,7 @@ def _notice() -> NoticeInput:
     return NoticeInput.model_validate(
         {
             "title": "식료품 꾸러미 지원 소식",
-            "body_text": FACT + ".\n" + NOTE,
+            "body_text": FACT + ".\n" + NOTE + "\n" + NO_APPLICATION,
             "reference_datetime": "2026-10-06T12:00:00+09:00",
             "publisher": "월계1동",
         }
@@ -40,13 +40,14 @@ def _response(headline: str = UNSUPPORTED) -> dict:
         notes=[NOTE],
         uncertainties=[],
         card_summaries={
-            "audience": None, "deadline": None, "action": None,
+            "audience": None, "deadline": None, "action": "별도의 신청은 필요 없어요.",
             "notes": "지원품은 식료품 꾸러미예요.",
         },
         evidence=[
             {"field": "category", "excerpt": FACT},
             {"field": "category_code", "excerpt": FACT},
             {"field": "summary", "excerpt": FACT},
+            {"field": "action_requirement", "excerpt": NO_APPLICATION},
             {"field": "notes", "excerpt": NOTE},
         ],
     )
@@ -97,6 +98,10 @@ def test_headline_retry_preserves_first_verified_facts_and_quotes(monkeypatch) -
         action_requirement="required",
         status="open",
         notes=[],
+        card_summaries={
+            "audience": "모든 주민이 대상이에요.", "deadline": None,
+            "action": "방문 신청해 주세요.", "notes": None,
+        },
     )
     calls = _generate(monkeypatch, [first, retry])
 
@@ -168,12 +173,16 @@ def test_notes_retry_and_headline_retry_share_two_request_budget(monkeypatch) ->
     assert summary_requires_review(result, attachment_status="none")
 
 
-def test_malformed_headline_retry_remains_a_failure(monkeypatch) -> None:
-    calls = _generate(monkeypatch, [_response(), "{broken-json"])
+def test_malformed_headline_retry_preserves_first_summary_for_review(monkeypatch) -> None:
+    first = _response()
+    calls = _generate(monkeypatch, [first, "{broken-json"])
+    result = summarize_module.summarize_notice(_notice(), api_key="test")
 
-    with pytest.raises(SummaryValidationError, match="after one retry"):
-        summarize_module.summarize_notice(_notice(), api_key="test")
-
+    assert result.summary == first["summary"]
+    assert result.notes == first["notes"]
+    assert result.card_summaries.model_dump() == first["card_summaries"]
+    assert result.uncertainties == ["원문 확인 필요"]
+    assert summary_requires_review(result, attachment_status="none")
     assert len(calls) == 2
 
 

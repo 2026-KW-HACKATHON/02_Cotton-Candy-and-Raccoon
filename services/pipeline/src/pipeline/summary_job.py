@@ -100,8 +100,9 @@ def summarize_and_save_prepared_notice(
     pending start uses increment=1; finish that execution here with increment=0.
     A known processing failure returns status=failed/result=None after recording it,
     so raising the API exception does not accidentally roll back the failure row.
-    Same-source summary rows retain their public data and status on failure.
-    Changed-source failures withhold stale public data and mark needs_review.
+    Guarded execution failures retain existing public data and status even when
+    incomplete preparation changes the caller's hash. Actual source changes are
+    invalidated independently by the DB source-revision trigger.
     needs_review retains generated content for display with a warning and never
     calls the sorting deadline resolver.
     The caller commits both outcome types before reporting durable storage; DB or

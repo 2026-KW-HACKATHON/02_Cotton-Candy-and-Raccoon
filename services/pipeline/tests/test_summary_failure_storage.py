@@ -195,7 +195,7 @@ def test_file_only_prepared_summary_preserves_content_through_database_and_publi
     )
     expected = build_summary_cards(result.summary)
     assert view.message == "원문 확인 요함"
-    assert view.content.headline.text == f"{expected.headline.text} (원문 확인 요함)"
+    assert view.content.headline.text == expected.headline.text
     assert view.content.headline.value == expected.headline.value
     assert view.content.cards == expected.cards
     assert view.content.metadata == expected.metadata

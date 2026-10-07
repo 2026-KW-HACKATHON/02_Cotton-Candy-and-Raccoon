@@ -195,7 +195,7 @@ def test_unrecoverable_retry_remains_failure_without_exposing_source_text(
 
 
 @pytest.mark.parametrize("bad_retry", ("invalid-json", "missing-required-field"))
-def test_unrecoverable_coverage_retry_does_not_return_the_first_incomplete_summary(
+def test_unrecoverable_coverage_retry_preserves_first_summary_with_review(
     monkeypatch: pytest.MonkeyPatch, bad_retry: str
 ) -> None:
     notice = _notice(COST, PRIVATE_MARKER)
@@ -204,19 +204,21 @@ def test_unrecoverable_coverage_retry_does_not_return_the_first_incomplete_summa
     else:
         retry = _output(notice, COST)
         del retry["action"]
-    requests = _mock_responses(monkeypatch, _output(notice), retry)
+    first = _output(notice)
+    requests = _mock_responses(monkeypatch, first, retry)
+    result = summarize_module.summarize_notice(notice, api_key="test-key")
 
-    with pytest.raises(SummaryValidationError) as failure:
-        summarize_module.summarize_notice(notice, api_key="test-key")
-
+    assert result.summary == first["summary"]
+    assert result.audience == first["audience"]
+    assert result.card_summaries.model_dump() == first["card_summaries"]
+    assert result.uncertainties == [REVIEW_NOTE]
+    assert PRIVATE_MARKER not in result.model_dump_json()
+    assert COST not in result.notes
     assert len(requests) == 2
-    assert failure.value.reason_code == "response_validation_failed"
-    assert PRIVATE_MARKER not in str(failure.value)
-    assert COST not in str(failure.value)
 
 
 @pytest.mark.parametrize("reason_code", ("api_error", "input_too_large"))
-def test_api_failure_during_coverage_retry_does_not_return_partial_success(
+def test_api_failure_during_coverage_retry_preserves_first_summary_for_review(
     monkeypatch: pytest.MonkeyPatch, reason_code: str
 ) -> None:
     notice = _notice(COST)
@@ -231,12 +233,12 @@ def test_api_failure_during_coverage_retry_does_not_return_partial_success(
 
     monkeypatch.setattr(summarize_module, "generate_summary_json", generate)
 
-    with pytest.raises(GeminiRequestError) as caught:
-        summarize_module.summarize_notice(notice, api_key="test-key")
+    result = summarize_module.summarize_notice(notice, api_key="test-key")
 
+    assert result.summary == TITLE
+    assert result.audience == "노원구 거주 초등학생"
+    assert result.uncertainties == [REVIEW_NOTE]
     assert len(requests) == 2
-    assert caught.value is failure
-    assert caught.value.reason_code == reason_code
 
 
 def test_coverage_retry_preserves_all_original_pdf_and_image_blocks(

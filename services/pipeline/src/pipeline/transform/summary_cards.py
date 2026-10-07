@@ -230,8 +230,8 @@ def build_summary_cards(summary: NoticeSummary) -> SummaryCards:
     fields do not mean everybody/free/no action. Empty slots contain only system
     guidance. Date kinds, notes and topics keep their input ordering and full
     values. No topic-to-claim relationships or screen order are inferred.
-    Unverified evidence is preserved. The persisted-status view adds review
-    guidance to display text without changing these cards or source values.
+    Unverified evidence is preserved. The persisted-status view returns review
+    guidance separately without changing the headline, cards, or source values.
     """
     checked = summary_snapshot(summary)
     card_text = checked.card_summaries

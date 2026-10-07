@@ -240,8 +240,19 @@ def _deadline_reasons(
 
 def _schedule_markers(text: str, entries: list[DateEntry]) -> list[tuple[int, int, str]]:
     """Use explicit subjects/labels; an unlabelled date phrase is left unassigned."""
+    role_subject = re.compile(_SCHEDULE_ROLE.pattern + r"(?=[^가-힣]|$)")
     markers = [(match.start(), match.end(), match.lastgroup)
-               for match in _SCHEDULE_ROLE.finditer(text)]
+               for match in role_subject.finditer(text)]
+    endpoint_role = re.compile(
+        "(?:" + "|".join(f"(?P<{kind}>{words})" for kind, words in _SCHEDULE_ROLES.items())
+        + r")\s*(?:기간|기한|일정|일시|시간|일)?\s*"
+        + r"(?:시작|개시|오픈|마감|종료)(?:일시|시간|일)?\s*(?:은|는|이|가|[:：])\s*"
+        + r"(?=[^가-힣]|$)"
+    )
+    markers.extend(
+        (match.start(), match.end(), match.lastgroup)
+        for match in endpoint_role.finditer(text)
+    )
     labels: dict[str, set[str]] = {}
     for entry in entries:
         if entry.label and entry.label not in {"일정", "기간", "기한", "시간", "일시", "일"}:
@@ -250,7 +261,9 @@ def _schedule_markers(text: str, entries: list[DateEntry]) -> list[tuple[int, in
         if len(kinds) != 1:
             continue
         pattern = r"\s*".join(re.escape(part) for part in label.split())
-        for match in re.finditer(pattern + r"\s*(?:은|는|이|가|[:：])\s*", text):
+        for match in re.finditer(
+            pattern + r"\s*(?:은|는|이|가|[:：])\s*(?=[^가-힣]|$)", text,
+        ):
             markers.append((match.start(), match.end(), next(iter(kinds))))
     selected = []
     # A source's complete label takes precedence over a generic word inside it.
@@ -267,38 +280,292 @@ def _period_matches(tokens: list[re.Match[str]], entry: DateEntry, *, reversed_o
     dates = [entry.start_date, entry.end_date]
     if reversed_order:
         dates.reverse()
-    return all(
+    return all(_token_matches_date(token, day) for token, day in zip(tokens, dates, strict=True))
+
+
+def _token_matches_date(token: re.Match[str], day: str | None) -> bool:
+    return day is not None and (
         (int(token["month"]), int(token["day"])) == (int(day[5:7]), int(day[8:10]))
         and (token["year"] is None or int(token["year"]) == int(day[:4]))
-        for token, day in zip(tokens, dates, strict=True)
     )
 
 
-def _deadline_relation_reasons(text: str, entries: list[DateEntry]) -> list[str]:
-    """Compare explicit role-labelled ranges, without assigning ambiguous prose."""
+def _single_date_endpoint(
+    subject: str, segment: str, token: re.Match[str], kind: str,
+) -> str | None:
+    """Read a directly adjacent explicit start/end word, never an inferred role."""
+    before = segment[:token.start()]
+    if re.search(r"[.!?;；\n]", _TIME.sub("", _DATE.sub("", before))):
+        return None  # The labelled subject belongs to an earlier sentence.
+    prefix = subject + before
+    prefix_match = re.search(
+        r"(?P<word>시작|개시|오픈|마감|종료)(?:일시|시간|일)?\s*"
+        r"(?:은|는|이|가|[:：])?\s*$", prefix,
+    )
+    suffix = _TIME.sub("", segment[token.end():])
+    suffix = re.sub(r"^\s*\.?\s*(?:\([월화수목금토일](?:요일)?\)\s*)?", "", suffix)
+    if re.match(r"(?:이|가)?\s*(?:아니|아닌|아님)", suffix):
+        return None
+    suffix_match = re.match(
+        r"(?:에\s*)?(?P<word>부터|에서|시작|개시|오픈|까지|마감|종료)", suffix,
+    )
+    if suffix_match and re.match(
+        r"(?:이|가)?\s*(?:아니|하지\s*않|되지\s*않|하지\s*못|되지\s*못)",
+        suffix[suffix_match.end():],
+    ):
+        return None
+    if suffix_match:
+        following = suffix[suffix_match.end():]
+        if re.match(r"(?:하는|되는|한|된|할|될)\s*(?:" + "|".join(
+            _SCHEDULE_ROLES.values()
+        ) + ")", following):
+            return None  # A relative clause can describe another schedule's date.
+        if suffix_match["word"] in {"부터", "에서", "까지"} and any(
+            other_kind != kind and re.match(r"\s*(?:" + words + ")", following)
+            for other_kind, words in _SCHEDULE_ROLES.items()
+        ):
+            return None  # 'The event can be applied for from DATE' is not its start.
+    meanings = {"시작": "start_date", "개시": "start_date", "오픈": "start_date",
+                "부터": "start_date", "에서": "start_date", "마감": "end_date",
+                "종료": "end_date", "까지": "end_date"}
+    endpoints = {meanings[match["word"]] for match in (prefix_match, suffix_match) if match}
+    return endpoints.pop() if len(endpoints) == 1 else None
+
+
+def _endpoint_mismatch_reason(
+    token: re.Match[str], endpoint: str, entry: DateEntry, entries: list[DateEntry],
+) -> str | None:
+    expected = getattr(entry, endpoint)
+    if expected is None or _token_matches_date(token, expected):
+        return None
+    opposite = "end_date" if endpoint == "start_date" else "start_date"
+    if _token_matches_date(token, getattr(entry, opposite)):
+        return "card_deadline_endpoint_changed"
+    if any(
+        _token_matches_date(token, day)
+        for other in entries if other.kind != entry.kind
+        for day in (other.start_date, other.end_date)
+    ):
+        return "card_deadline_role_changed"
+    return None  # Entirely new numeric dates are checked by _deadline_reasons.
+
+
+def _clock_date_token(
+    segment: str, clock: re.Match[str],
+) -> re.Match[str] | None:
+    """Bind only a date immediately before a clock, allowing a weekday/particle."""
+    dates = [token for token in _DATE.finditer(segment) if token.end() <= clock.start()]
+    if not dates:
+        return None
+    token = dates[-1]
+    if re.fullmatch(
+        r"\s*\.?\s*(?:\([월화수목금토일](?:요일)?\)\s*)?(?:에\s*)?",
+        segment[token.end():clock.start()],
+    ):
+        return token
+    return None
+
+
+def _clock_mismatch_reason(
+    token: re.Match[str], endpoint: str, day: re.Match[str] | None,
+    entry: DateEntry, entries: list[DateEntry],
+) -> str | None:
+    expected = getattr(entry, endpoint)
+    if expected is None:
+        return None
+    expected_day = getattr(entry, endpoint.replace("_time", "_date"))
+    if day is not None and expected_day is not None and not _token_matches_date(day, expected_day):
+        return None  # A date reassignment is handled by the date relation guard.
+    value = _time_values(token[0])
+    if value == _time_values(expected):
+        return None
+    opposite = "end_time" if endpoint == "start_time" else "start_time"
+    if getattr(entry, opposite) and value == _time_values(getattr(entry, opposite)):
+        return "card_deadline_time_endpoint_changed"
+    if any(
+        value == _time_values(clock)
+        for other in entries if other.kind != entry.kind
+        for clock in (other.start_time, other.end_time) if clock is not None
+    ):
+        return "card_deadline_time_role_changed"
+    return None  # Entirely new clocks are checked by _deadline_reasons.
+
+
+def _clock_endpoint_negated(suffix: str) -> bool:
+    return bool(re.match(
+        r"\s*(?:에\s*)?(?:부터|에서|까지|시작|개시|오픈|마감|종료)?\s*"
+        r"(?:은|는|이|가)?\s*(?:아니|아닌|아님|하지\s*않|되지\s*않|"
+        r"(?:(?:시작|종료|마감|운영|진행|신청|접수|가능)\s*)"
+        r"(?:하지\s*않|되지\s*않|하지\s*못|되지\s*못|할\s*수\s*없|"
+        r"(?:이|은|는)?\s*안\s*(?:되|돼)))", suffix,
+    ))
+
+
+def _clock_ranges(
+    segment: str, clocks: list[re.Match[str]],
+) -> list[tuple[int, int]]:
+    ranges = []
+    for index in range(len(clocks) - 1):
+        between = _DATE.sub("", segment[clocks[index].end():clocks[index + 1].start()])
+        between = re.sub(r"\([월화수목금토일](?:요일)?\)", "", between)
+        if re.fullmatch(r"\s*(?:부터|에서|[~～〜–-])\s*\.?\s*(?:에\s*)?", between):
+            ranges.append((index, index + 1))
+    return ranges
+
+
+def _negated_clock_date_positions(segment: str, remainder: str) -> set[int]:
+    """Exclude only dates directly attached to the endpoints of a denied range."""
+    clocks = list(_TIME.finditer(segment))
+    positions = set()
+    for first, last in _clock_ranges(segment, clocks):
+        if _clock_endpoint_negated(remainder[clocks[last].end():]):
+            for index in (first, last):
+                if day := _clock_date_token(segment, clocks[index]):
+                    positions.add(day.start())
+    return positions
+
+
+def _deadline_clock_relation_reasons(text: str, entries: list[DateEntry]) -> list[str]:
+    """Compare explicit role/endpoint clocks; never infer days or ambiguous ranges."""
     reasons = []
     markers = _schedule_markers(text, entries)
-    for index, (_, end, kind) in enumerate(markers):
+    for index, (start, end, kind) in enumerate(markers):
+        same_role = [entry for entry in entries if entry.kind == kind]
+        if len(same_role) != 1:
+            continue
         stop = markers[index + 1][0] if index + 1 < len(markers) else len(text)
         segment = text[end:stop]
-        tokens = list(_DATE.finditer(segment))
-        if len(tokens) != 2:
+        clocks = list(_TIME.finditer(segment))
+        if not clocks:
             continue
-        between = _TIME.sub("", segment[tokens[0].end():tokens[1].start()])
-        if not re.match(r"\s*(?:부터|에서|[~～〜–-])", between):
-            continue
-        same_role = [entry for entry in entries if entry.kind == kind]
-        if not same_role or any(_period_matches(tokens, entry) for entry in same_role):
-            continue
-        if any(_period_matches(tokens, entry) for entry in entries if entry.kind != kind):
-            reasons.append("card_deadline_role_changed")
-        elif any(
-            entry.start_date != entry.end_date
-            and _period_matches(tokens, entry, reversed_order=True)
-            for entry in same_role
+        # '신청은 문의센터가 CLOCK에 마감할 때...' does not assign that clock
+        # to the application. Keep only a directly labelled date/time clause.
+        prefix = _DATE.sub("", segment[:clocks[0].start()])
+        if not re.fullmatch(
+            r"\s*\.?\s*(?:\([월화수목금토일](?:요일)?\)\s*)?(?:에\s*)?"
+            r"(?:(?:시작|개시|오픈|마감|종료)(?:일시|시간|일)?\s*"
+            r"(?:은|는|이|가|[:：])?\s*)?", prefix,
         ):
-            reasons.append("card_deadline_range_reversed")
+            continue
+        dates = [_clock_date_token(segment, clock) for clock in clocks]
+        date_free = _DATE.sub("", segment)
+        bare_clocks = list(_TIME.finditer(date_free))
+        ranges = _clock_ranges(segment, clocks)
+        range_clocks = {index for pair in ranges for index in pair}
+        for first, last in ranges:
+            if any(sum(index in pair for pair in ranges) != 1 for index in (first, last)):
+                continue  # CLOCK~CLOCK~CLOCK has no unique pair of endpoints.
+            if _clock_endpoint_negated(text[end + clocks[last].end():]):
+                continue
+            if first:
+                preceding = re.sub(
+                    _DATE.pattern + r"\.?", "",
+                    segment[clocks[first - 1].end():clocks[first].start()],
+                )
+                preceding = re.sub(r"\([월화수목금토일](?:요일)?\)", "", preceding)
+                if not re.fullmatch(
+                    r"\s*(?:까지)?\s*(?:이|가)?\s*(?:아니라|아니고)\s*", preceding,
+                ):
+                    continue  # A later unlabelled range may belong to another clause.
+            subject = text[start:end]
+            if re.search(r"시작|개시|오픈|마감|종료", subject) and (
+                _single_date_endpoint(subject, date_free, bare_clocks[first], kind)
+                != "start_date"
+            ):
+                continue
+            pair_dates = [dates[first], dates[last]]
+            if pair_dates[0] is not None and pair_dates[1] is None:
+                # One date before an explicit two-clock range means one day.
+                # Do not reinterpret it as an overnight range.
+                pair_dates[1] = pair_dates[0]
+            for clock, day, endpoint in zip(
+                (clocks[first], clocks[last]), pair_dates, ("start_time", "end_time"), strict=True,
+            ):
+                if reason := _clock_mismatch_reason(
+                    clock, endpoint, day, same_role[0], entries,
+                ):
+                    reasons.append(reason)
+        # Reuse the explicit start/end and negation rules on a date-free copy;
+        # removing dates preserves clock order and permits '마감은 DATE CLOCK'.
+        for clock_index, (clock, day, bare_clock) in enumerate(
+            zip(clocks, dates, bare_clocks, strict=True),
+        ):
+            if clock_index in range_clocks:
+                continue  # A denied range must not become two standalone claims.
+            # A following '신청이 안 돼요' is itself another role marker;
+            # include that immediate predicate when checking this clock's denial.
+            if _clock_endpoint_negated(text[end + clock.end():]):
+                continue
+            endpoint = _single_date_endpoint(text[start:end], date_free, bare_clock, kind)
+            if endpoint is None and clock_index:
+                previous = clocks[clock_index - 1]
+                between = _DATE.sub("", segment[previous.end():clock.start()])
+                contrast = re.fullmatch(
+                    r"\s*(?P<endpoint>부터|에서|까지|시작|개시|오픈|마감|종료)?\s*"
+                    r"(?:이|가)?\s*(?:아니라|아니고)\s*", between,
+                )
+                if contrast:
+                    # '마감은 14시가 아니라 20시' retains its explicit closing
+                    # predicate for the affirmed clock, not the denied clock.
+                    affirmed = (
+                        date_free[:bare_clocks[clock_index - 1].start()]
+                        + clock[0] + (contrast["endpoint"] or "")
+                    )
+                    endpoint = _single_date_endpoint(
+                        text[start:end], affirmed, list(_TIME.finditer(affirmed))[-1], kind,
+                    )
+            if endpoint and (reason := _clock_mismatch_reason(
+                clock, endpoint.replace("_date", "_time"), day, same_role[0], entries,
+            )):
+                reasons.append(reason)
     return reasons
+
+
+def _deadline_relation_reasons(text: str, entries: list[DateEntry]) -> list[str]:
+    """Compare explicit ranges/endpoints, without assigning ambiguous prose."""
+    reasons = []
+    markers = _schedule_markers(text, entries)
+    for index, (start, end, kind) in enumerate(markers):
+        stop = markers[index + 1][0] if index + 1 < len(markers) else len(text)
+        segment = text[end:stop]
+        denied_dates = _negated_clock_date_positions(segment, text[end:])
+        tokens = [token for token in _DATE.finditer(segment) if token.start() not in denied_dates]
+        same_role = [entry for entry in entries if entry.kind == kind]
+        if len(tokens) == 2:
+            between = _TIME.sub("", segment[tokens[0].end():tokens[1].start()])
+            if re.fullmatch(r"\s*\.?\s*(?:부터|에서|[~～〜–-])\s*", between):
+                suffix = _TIME.sub("", segment[tokens[-1].end():])
+                if re.match(
+                    r"\s*\.?\s*(?:까지)?\s*(?:이|가|는)?\s*(?:아니|아닌|아님)", suffix,
+                ):
+                    continue
+                if not same_role or any(_period_matches(tokens, entry) for entry in same_role):
+                    continue
+                if any(_period_matches(tokens, entry) for entry in entries if entry.kind != kind):
+                    reasons.append("card_deadline_role_changed")
+                elif any(
+                    entry.start_date != entry.end_date
+                    and _period_matches(tokens, entry, reversed_order=True)
+                    for entry in same_role
+                ):
+                    reasons.append("card_deadline_range_reversed")
+                if len(same_role) == 1:
+                    for token, endpoint in zip(tokens, ("start_date", "end_date"), strict=True):
+                        if reason := _endpoint_mismatch_reason(
+                            token, endpoint, same_role[0], entries,
+                        ):
+                            reasons.append(reason)
+                continue
+        if len(same_role) != 1:
+            continue
+        for token in tokens:
+            endpoint = _single_date_endpoint(text[start:end], segment, token, kind)
+            if endpoint and (
+                reason := _endpoint_mismatch_reason(token, endpoint, same_role[0], entries)
+            ):
+                reasons.append(reason)
+    reasons.extend(_deadline_clock_relation_reasons(text, entries))
+    return list(dict.fromkeys(reasons))
 
 
 def _group_amounts(text: str) -> dict[tuple[str, str], set[Decimal]]:
@@ -333,17 +600,70 @@ def _group_amount_changed(text: str, source: str) -> bool:
     return False
 
 
+def _current_money_source(source: str) -> str:
+    """Exclude an explicitly replaced fee only from current-amount comparison.
+
+    An adjacent 'OLD에서 NEW으로 변경' relation identifies the former amount;
+    ranges, possible/negated changes, and unrelated fees retain their amounts.
+    Remove occurrences rather than numeric values, so the same amount charged
+    for another fee still has to appear. Original claims/quotes stay untouched.
+    """
+    tokens = list(_MONEY.finditer(source))
+    replaced = []
+    for old, new in zip(tokens, tokens[1:], strict=False):
+        if not re.fullmatch(r"\s*(?:에서|→|->|⇒)\s*", source[old.end():new.start()]):
+            continue
+        prefix = re.split(
+            r"[\n!?;；]|(?<!\d)\.(?=\s|$)", source[max(0, old.start() - 100):old.start()],
+        )[-1]
+        if not _FEE_WORD.search(prefix) or re.search(
+            r"예정(?:된|인|임)|계획(?:된|인|중)|검토\s*중|(?:예정|계획|검토)\s*[:：]"
+            r"|가정(?:한다면|하면|하고|한|할|하에)|가정\s*[:：]"
+            r"|향후|내년|내달|앞으로|다음\s*(?:달|월|해|연도)", prefix,
+        ):
+            continue
+        change = re.match(
+            r"\s*(?:으)?로\s*(?:변경|정정|조정|인하|인상)", source[new.end():],
+        )
+        if change is None:
+            continue
+        after = re.split(
+            r"[\n!?;；,，]|(?<!\d)\.(?=\s|$)", source[new.end() + change.end():], maxsplit=1,
+        )[0].strip()
+        # Only a short change heading or an affirmative completed/present
+        # statement establishes the new price. Unknown grammar stays intact;
+        # a list of negative suffixes would miss future/conditional variants.
+        if not re.fullmatch(
+            r"(?:(?:(?:되|하)었|됐|했|하였)(?:습니다|어요|다|음)?"
+            r"|되었습니다|하였습니다|됩니다|합니다|돼요|해요|됨|함"
+            r"|(?:완료|확정)(?:되었습니다|됐습니다|됐어요|됐음|됨)?)?", after,
+        ):
+            continue
+        replaced.append((old.start(), old.end()))
+    # The remaining relation words keep separate amounts from running together.
+    for start, end in reversed(replaced):
+        source = source[:start] + source[end:]
+    return source
+
+
 def _notes_reasons(text: str, source: str) -> list[str]:
     reasons = []
     source_amounts = _money_values(source)
     card_amounts = _money_values(text)
+    current_source = _current_money_source(source)
+    current_amounts = _money_values(current_source)
+    # Explicit zero cost and a free-cost paraphrase mean the same thing.
+    if 0 in current_amounts and _FREE.search(text):
+        card_amounts.add(Decimal(0))
     if _FEE_WORD.search(source):
-        if source_amounts - card_amounts:
+        if current_amounts - card_amounts:
             reasons.append("card_notes_amount_omitted")
         if card_amounts - source_amounts:
             reasons.append("card_notes_amount_added")
-        if any(amount > 0 for amount in source_amounts) and _FREE.search(text):
-            if not _WAIVER.search(source) or _conditional_free_weakened(text, source):
+        if any(amount > 0 for amount in current_amounts) and _FREE.search(text):
+            if not _WAIVER.search(current_source) or _conditional_free_weakened(
+                text, current_source,
+            ):
                 reasons.append("card_notes_false_free")
     elif card_amounts and _FEE_WORD.search(text):
         reasons.append("card_notes_amount_added")
@@ -450,6 +770,31 @@ def card_claim_review_reasons(summary: NoticeSummary, notice: NoticeInput) -> tu
     if cards is None:
         return ()
     reasons = []
+    # New display prose must have source-facing facts to link to. Empty source
+    # slots remain valid when their card is also empty. Legacy rendering does
+    # not call this generated-response boundary and still retains its content.
+    backed = {
+        "audience": summary.audience is not None,
+        "deadline": bool(summary.dates) or (
+            not _DATE.search(cards.deadline or "")
+            and not _TIME.search(cards.deadline or "")
+            and (summary.status == "cancelled" or summary.notice_update == "cancelled")
+        ),
+        "action": summary.action is not None or summary.location is not None or (
+            summary.action_requirement == "none"
+            and bool(_field_facts(summary, notice, "action_requirement"))
+        ),
+        "notes": (
+            bool(summary.notes)
+            or summary.changed_details is not None
+            or summary.status_detail is not None
+            or summary.notice_update in {"modified", "extended", "cancelled"}
+            or summary.status == "cancelled"
+        ),
+    }
+    for slot, has_facts in backed.items():
+        if getattr(cards, slot) is not None and not has_facts:
+            reasons.append(f"card_{slot}_source_missing")
     audience = _field_facts(summary, notice, "audience")
     if cards.audience is not None and audience:
         reasons.extend(_audience_reasons(
@@ -477,12 +822,27 @@ def card_claim_review_reasons(summary: NoticeSummary, notice: NoticeInput) -> tu
         ))
         reasons.extend(_deadline_relation_reasons(cards.deadline, summary.dates))
     action = _field_facts(summary, notice, "action")
+    if cards.action is not None:
+        action_sources = "\n".join([
+            *action,
+            *_field_facts(summary, notice, "location"),
+            *_field_facts(summary, notice, "notes"),
+        ])
+        if _money_values(cards.action) - _money_values(action_sources):
+            reasons.append("card_action_amount_added")
     if cards.action is not None and action and (
         summary.action_requirement == "required" or _REQUIRED.search("\n".join(action))
     ):
         if _required_action_weakened(cards.action, "\n".join(action)):
             reasons.append("card_action_required_weakened")
-    notes = _field_facts(summary, notice, "notes")
+    # The notes card also presents change/cancellation metadata. Its numeric
+    # claims must be checked against every source field rendered in that card,
+    # even when the original notes list is empty.
+    notes = [
+        fact
+        for field in ("notes", "changed_details", "status_detail", "notice_update", "status")
+        for fact in _field_facts(summary, notice, field)
+    ]
     if cards.notes is not None and notes:
         reasons.extend(_notes_reasons(cards.notes, "\n".join(notes)))
     return tuple(dict.fromkeys(reasons))

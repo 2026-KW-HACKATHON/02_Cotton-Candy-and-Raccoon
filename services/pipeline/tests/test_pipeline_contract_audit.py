@@ -133,7 +133,7 @@ def test_job_shape_retry_preserves_source_payload_facts_and_persisted_v5_cards(m
     assert guarded_values[:2] == (17, 17)  # Notice ID and the mocked registration token.
     values = guarded_values[2:]
     persisted = values[2].obj
-    assert values[9] == SUMMARY_PROMPT_VERSION == "notice-summary-v5-card-polite"
+    assert values[9] == SUMMARY_PROMPT_VERSION == "notice-summary-v6-card-grounding"
     assert persisted["audience"] == first["audience"]
     assert persisted["action"] == first["action"]
     assert persisted["card_summaries"] == retry["card_summaries"]
@@ -221,7 +221,7 @@ def test_notes_retry_preserves_uncertain_card_with_review_and_no_sorting_deadlin
     assert view.content.cards.notes.text == first["card_summaries"]["notes"]
     assert view.status == "needs_review"
     assert view.message == "원문 확인 요함"
-    assert view.content.headline.text == f"{summary.summary} (원문 확인 요함)"
+    assert view.content.headline.text == summary.summary
     metadata = build_summary_metadata(
         body_text=notice.body_text, total_file_count=0, read_file_count=0,
         model="gemini-3.5-flash-lite",

@@ -319,212 +319,92 @@ GitHub 저장소의 Settings → Secrets and variables → Actions에서 아래�
 
 ## Gemini 요약 저장 계약
 
-`summary_job.summarize_and_save_prepared_notice()`는 준비된 입력의 요약 결과와 실행 실패를
-`notice_summaries`에 전달합니다. DB 연결·트랜잭션 확정은 호출자가 담당합니다.
-새 요약 테이블·권한과 내용 변경 시각, 검토 결과 공개와 카드 조회 컬럼을 포함한
-비공개 실행 토큰·원문 버전 레지스트리를 포함한 마이그레이션 8개를 먼저 적용해야 합니다.
-기본 마감일 함수 `storage.summary_deadline.compute_deadline_on()`은 `application`,
-`submission`, `payment`의 종료일 중 가장 늦은 날짜를 사용하며, 해당 날짜가 없으면 NULL입니다.
-분야 코드나 행사 종료일로 마감일을 추정하지 않습니다.
+`summary_job.summarize_and_save_prepared_notice()`는 준비된 입력을 Gemini로 요약하고
+`notice_summaries`에 결과 또는 실패를 저장합니다. 입력 준비·DB 연결·commit은 호출자가 담당합니다.
+SQL 적용 순서와 앱 조회 권한은 [DB README](../../supabase/README.md)를 참고하세요.
 
-기존 `NoticeSummary.category`는 공지 유형입니다. 새 `category_code`는 정수 분야 코드
-`21=교통`, `22=안전`, `23=주택`, `24=경제`, `25=환경`, `26=문화`, `27=복지`, `30=행정`입니다.
-유형·수집 출처·분야는 서로 구분하며, 분야 근거는 `evidence.field='category_code'`로 연결합니다.
-문자열·실수·bool·허용 목록 밖 코드는 거부하고, 확인 불가는 NULL로 검토 처리합니다.
-한 줄 요약은 기존 40자 `summary`를 사용합니다.
+연동 시 다음 값을 준비합니다.
 
-새 Gemini 응답은 기존 필드를 모두 유지하고 `card_summaries` 객체를 반드시 반환합니다.
-키는 `audience`, `deadline`, `action`, `notes` 네 개로 고정하며 각 값은 비어 있지 않은
-한 줄 문자열 또는 JSON `null`입니다. 원문에 없는 내용을 카드에 추정해 넣지 않으며,
-카드의 근거·검토 상태 판정도 기존 공개 경고 정책을 따릅니다. 기존 저장 결과의 호환을 위해
-`NoticeSummary.card_summaries`는 기본값 `None`을 허용하지만 새 API 응답에서는 필수입니다.
-응답의 카드 문장은 전체 `result.card_summaries` 안에 그대로 저장합니다.
-새로 생성하는 네 카드의 모든 문장은 `대상이에요`, `신청할 수 있어요`, `제출해 주세요`처럼
-자연스러운 해요체로 작성하며 `요`로 끝납니다. 마침표·물음표·느낌표는 허용합니다.
-새 응답은 카드의 요체 끝맺음과 명백한 다체 문장 혼용을 확인하고 기존 1회 재요청 안에서
-교정합니다. 재요청 병합 후에도 같은 계약을 확인하며 접미사를 기계적으로 붙이지 않습니다.
-원문 근거 보기용 기존 필드·`evidence.excerpt`, 한 줄 요약·검토 경고는 바꾸지 않습니다.
-저장된 이전 카드의 읽기 호환과 정보 없는 카드의 `null`은 유지합니다. 형식 검사는 전체
-한국어 문법이나 합성 문구의 의미 검증을 대신하지 않습니다.
-새 응답에 원래 대상·일정·할 일·유의사항 값이 있으면 해당 카드 문구도 필요합니다.
-그 값이 있는데 카드만 `null`이면 기존 한 번의 보정 기회를 사용합니다. `action=null`,
-`action_requirement='none'`인 뉴스에는 카드 문구를 강제하지 않습니다.
+| 값 | 기준 |
+| --- | --- |
+| `metadata` | `storage.summary_metadata.build_summary_metadata()`로 생성 |
+| `source_hash` | 본문 평문과 `SummaryAttachmentText(file_key, text)`를 파일 키 순으로 정렬한 JSON의 SHA-256 |
+| 첨부 상태 | 원래 파일 수와 읽은 파일 수로 계산. 추출된 텍스트 목록만으로 판단하지 않음 |
+| `model` | 실제 호출 모델을 명시. Gemini 기본 모델은 `transform.gemini_client.DEFAULT_MODEL` (`gemini-3.5-flash-lite`) |
+| `prompt_version` | `transform.gemini_prompt.SUMMARY_PROMPT_VERSION` (`notice-summary-v6-card-grounding`) |
+| `expected_source_revision` | 원문·파일 목록과 같은 스냅샷에서 조회한 `notices.content_revision` |
 
-생성·재요청 병합의 마지막 경계에서는 `transform.card_claims.card_claim_review_reasons()`가
-텍스트 근거와 카드의 명백한 조건 차이를 추가로 확인합니다. 원문에 없는 연령·날짜·시각·
-금액, 주요 연령·금액의 누락, 제한 대상의 무조건 확대, 필수 행동의 선택화와 명시적인
-환불 예외 누락 등을 유한한 규칙으로 검사합니다. 금액 단위나 시간 표기 차이는 허용합니다.
-명시 거주 지역의 교체·누락, 다른 필수 서류로 가린 선택화, 조건부 무료의 전체 확대,
-마감 시각의 누락, 명확한 대상별 요금·일정 종류의 교환도 검사합니다. 여러 요금·일정이
-있다는 이유만으로 검토 상태로 바꾸지는 않습니다. 대상명이나 일정 역할이 생략·의역돼
-관계를 확정하지 못하는 경우까지 의미 검증을 완료했다는 뜻은 아닙니다.
-문제가 있으면 원본 필드와 AI 카드 문구를 보존하고 검토 표시를 추가하며 정렬용 마감일은
-NULL입니다. 새 규칙이 모든 한국어 의미·조건·부정·필드별 대응을 검증하는 것은 아닙니다.
-파일 내용을 읽어 대조하거나 이미 저장된 결과를 자동으로 재검사하지도 않습니다.
+마감일은 기본 함수 `storage.summary_deadline.compute_deadline_on()`이 `application`,
+`submission`, `payment`의 종료일 중 가장 늦은 날짜로 계산합니다. 해당 날짜가 없거나
+`needs_review`이면 `deadline_on=NULL`입니다.
 
-`notice_summaries.card_summaries`는 원본 `result`에서 자동 생성하는 STORED jsonb 컬럼입니다.
-기존 저장 코드는 전체 `result`만 INSERT/upsert하며 카드 컬럼을 별도로 쓰지 않습니다.
-카드 객체는 조회 편의용 컬럼과 원본 JSON에서 항상 일치하고, 이전 JSON의 카드 누락·명시적
-`null`·`result=NULL`은 SQL NULL로 조회됩니다. DB CHECK는 정확한 네 키와 각 값의 타입,
-빈 문자열·공백만 있는 문자열·CR/LF 줄바꿈을 검증합니다. 앱에는 새 컬럼의 SELECT만 추가하고
-보이는 공지만 허용하는 RLS와 내부 메타데이터·쓰기 차단을 유지합니다. 동일 입력 실패 시
-원본을 보존하면 카드도 보존되고, 원문 변경 후 실패로 `result`를 비우면 카드도 자동으로
-NULL이 됩니다.
+### 결과와 실패 처리
 
-현재 `notice-summary-v5-card-polite`는 카드 문장·요체 계약과 기존 원문 근거 정책을 함께
-적용합니다. 제목의 원문 인용을 한 줄 요약·공지 유형·분야 근거에만
-허용합니다. 대상·행동·일정·비용의 근거로 제목을 대신 쓰거나 본문의 부정을 제목으로
-덮어쓰지 않습니다. 뉴스의 직접 행동 없음(`action=null`, `action_requirement=none`)은
-검증된 뉴스에서 유지합니다. 다른 정보가 검증된 뉴스의 요약·분류 인용만 원문과 맞지
-않으면 기존 스키마·조건 보정과 공유하는 최대 2회 논리 호출 안에서 교정 기회를 줍니다.
-현재 잠긴 SDK의 공개 `HttpRetryOptions(attempts=1)` 설정은 논리 호출마다 HTTP 전송을
-최대 2회 수행할 수 있습니다. 스키마 보정까지 포함한 HTTP 전송 상한은 4회입니다.
-논리 호출 횟수·실행 횟수·HTTP 전송 횟수는 서로 다른 지표입니다.
-기존 분류 값과 다른 확인된 정보는 유지하고, 교정 내용에도 같은 근거 검증을 적용합니다.
-파일 근거나 확인되지 않은 내용은 계속 `needs_review`로 구분하며, 생성된 결과는
-아래 정책에 따라 원문 확인 경고와 함께 제공합니다.
+- `summarized`: 필요한 근거가 텍스트와 대조된 요약을 저장합니다.
+- `needs_review`: 파일 참조만 확인된 근거, 미확인 내용, 불확실성 또는 읽지 못한 첨부가
+  있으면 AI 요약과 네 카드를 보존하며, 검토 안내는 별도 `message`로 반환합니다.
+  정렬용 `deadline_on`은 비웁니다.
+- 실행 실패: job의 원문 버전과 실행 토큰이 유효하면 `last_error_code`, `attempt_count`,
+  `updated_at`만 갱신하고 기존 요약·상태·마감일·메타데이터를 유지합니다.
+  파일을 다시 읽지 못해 입력 해시가 달라져도 기존 요약을 지우지 않습니다.
+  최초 실패만 `failed`, `result=NULL`로 저장합니다.
+- 보정 실패: 첫 응답이 형식 검사를 통과했다면 버리지 않습니다. 기존 공개 요약이
+  있으면 유지하고, 없으면 첫 요약과 네 카드를 `needs_review`로 저장합니다.
+- `superseded`: 더 최신 실행 또는 원문 변경으로 저장이 거절된 실행 결과입니다.
+  현재 DB 행을 다시 조회하거나 최신 원문으로 입력을 준비해야 합니다.
 
-- `summarized`: 필요한 근거가 모두 텍스트와 대조된 결과를 `result`에 저장하고,
-  앱에 한 줄 요약과 네 카드를 제공합니다.
-- `needs_review`: 파일 참조만 확인한 근거, 미확인 근거, 불확실한 결과나 읽지 못한 첨부가
-  있으면 이 상태로 저장합니다. 새로 생성한 `result`와 그 `category`, `category_code`를
-  보존하고 앱에 한 줄 요약과 네 카드를 제공합니다. 결과의 `category='unknown'`은 DB의
-  `category=NULL`로 매핑하며, 확인하지 못한 `category_code=None`도 SQL NULL로 유지합니다.
-  표시용 `headline.text` 뒤에 **“(원문 확인 요함)”**을 붙이고 `message`에도
-  **“원문 확인 요함”**을 제공합니다. 원본 `result.summary`와 `headline.value`는 기존
-  40자 제한과 값을 유지합니다. 이 내용은 원문과 대조하여 확인하지 못한 AI 생성 요약이며,
-  사실 정확성이나 중요 조건의 완전성을 보증하지 않습니다. 텍스트와 파일 근거가 섞인
-  일정도 검토 대상입니다. `dates`의 기한 카드 내용은 보존하지만 정렬용 `deadline_on`은
-  NULL이며 마감일 계산 함수를 호출하지 않습니다. 레거시 검토 행이나 원문 변경 후 실패로
-  `result=NULL`인 검토 행은 경고 안내만 제공합니다.
-- 실행 실패: 원문 해시가 같으면 `last_error_code`, `attempt_count`, `updated_at`만 갱신해
-  기존 요약·상태·분류·마감일과 메타데이터를 유지합니다. 해시가 바뀐 경우에는 #24에 따라
-  기존 `result`, `category`, `category_code`, `deadline_on`을 NULL로 비우고, 옛 `summarized`는
-  `needs_review`로 바꿉니다. 무효화한 이전 내용은 새 검토 결과처럼 다시 표시하지 않습니다.
-  이전 성공 해시·모델·버전·첨부 상태·생성 시각은 유지합니다. 재시도 인덱스는 대기·최초
-  실패와 실패 기록이 있는 행을 포함합니다.
-  기존 행이 없을 때만 `status='failed'`로 삽입합니다. 반환된 실패 상태는 이번 실행의 결과입니다.
-- `pending` 시작 기록은 새 행만 생성합니다. 기존 행에는 실행 횟수와 갱신 시각만 반영하며
-  요약을 먼저 지우지 않습니다. 시작 때 `attempt_increment=1`, 같은 실행의 종료 때 0을 사용합니다.
-  기본 job은 종료 결과만 기록하며 내부 Gemini 재요청도 한 실행으로 셉니다.
+job은 Gemini 호출 전에 실행 토큰을 등록하고, 완료 시 토큰과 원문 버전이 일치할 때만
+저장합니다. 준비 전 `content_revision`을 함께 조회해 `expected_source_revision`으로
+전달해야 등록 전 변경도 차단합니다. 원문·파일이 바뀌면 기존 공개 결과·카드·분류·
+마감일은 즉시 비워지고, 기존 `summarized`는 결과 없는 `needs_review`로 바뀝니다.
+반복 수집이나 공개 여부만 바뀌는 경우에는 버전이 증가하지 않습니다.
+실행 토큰 없는 저수준 저장은 기존 해시 비교 방식을 유지하므로 job 연동을 사용하세요.
 
-`summarize_and_save_prepared_notice()`는 Gemini 호출 전에 비공개 실행 토큰을 자동 등록합니다.
-종료 저장은 원문과 최신 토큰 행을 순서대로 잠그고 토큰·원문 버전이 모두 일치할 때만 적용해
-진행 중인 원문 변경이나 늦은 이전 결과·실패가
-최신 결과·카드·마감일을 덮거나 지우지 못합니다. 대신 `StoredSummarySuperseded`의
-`status='superseded'`, `reason_code='summary_execution_superseded'`, `result=None`을 반환합니다.
-이 상태는 API 실패나 DB의 공지 요약 상태가 아니며, 앱은 현재 DB 행을 다시 조회해야 합니다.
-기존 저수준 저장 호출은 토큰을 생략할 수 있으나 동시 실행 보호는 없습니다.
-동시 worker는 public job을 사용하거나 `begin_summary_execution()`으로 호출 전에 등록한
-토큰을 `SummaryRecord`, `save_prepared_summary()`, `record_summary_failure()`에 전달해야 합니다.
+API 호출 중 DB 잠금을 유지하지 않도록 autocommit 연결을 권장합니다.
+`attempt_count`는 저장이 적용된 요약 실행의 누적 횟수이며 성공 후 초기화하지 않습니다.
+내부 재요청·HTTP 전송 횟수와 다르며 기본 job의 `superseded` 종료는 세지 않습니다.
+외부에서 같은 실행의 `pending`을 `attempt_increment=1`로 기록했다면 job에는 `attempt_increment=0`을 전달합니다.
 
-등록은 호출자의 연결을 사용하며 임의로 commit하지 않습니다. API 호출 사이에는 autocommit
-연결을 권장합니다. 저수준 호출자는 등록을 명시적으로 commit한 뒤 API를 호출할 수도 있습니다.
-기본 트랜잭션 연결에서는 호출자의 commit/rollback까지 같은 공지의 레지스트리 잠금이 유지돼
-원문 변경과 다른 worker의 등록이 기다립니다. 원문·파일의 실제 변경은 `content_revision`을
-증가시키고 기존 공개 결과·카드·분류·마감일을 즉시 비웁니다. 이전 성공 메타데이터와 실행
-횟수는 유지하며, 기존 `summarized`는 결과 없는 `needs_review`로 바뀝니다. 수집만 반복하거나
-공개 여부만 바뀌는 경우에는 이 버전이 증가하지 않습니다. 동일 트랜잭션의 여러 변경도 구분합니다.
-준비 전에 원문과 함께 조회한 `content_revision`을 job의 `expected_source_revision`에
-전달해야 등록 이전의 원문 변경도 Gemini 호출 없이 거절합니다. 이를 생략하는 호환 경로는
-등록 이후 변경만 보호하며, 이미 오래된 prepared 입력을 자동 식별하지 못합니다. #13의
-조회·준비 연결이 같은 버전을 전달하는 일은 아직 남아 있습니다. 외부에서 같은 실행의 `pending`을
-`attempt_increment=1`로 이미 기록했다면 public job에 `attempt_increment=0`을 전달해 완료합니다.
-기본 job의 종료 저장만 사용하는 카운터에는 저장이 적용된 종료만 포함됩니다. `superseded`
-종료는 현재 요약 행을 갱신하지 않으므로 카운터에도 더하지 않습니다. 대체된 실행까지 포함한
-전체 시작 횟수가 필요하면 외부에서 `pending=1`을 기록하고 public job의 완료를 0으로 전달합니다.
+### 분야 코드
 
-`storage.summary_metadata.build_summary_metadata()`는 본문 평문과
-`SummaryAttachmentText(file_key, text)`를 받아 SHA-256을 계산합니다. 파일 키 순으로 정렬한
-JSON 구조를 사용해 입력 순서와 같은 파일의 중복 역할은 해시에 영향을 주지 않습니다.
-본문·추출 텍스트·파일 키 변경은 해시에 반영합니다. 첨부 상태는 원래 파일 수와 성공적으로
-읽은 파일 수로 결정합니다. 성공한 추출 텍스트 목록만으로 미처리 파일을 없다고 판단하지 않습니다.
-PDF·이미지 바이트와 제목은 현재 본문·추출 텍스트 해시 계약에 포함하지 않습니다.
+기존 `category`는 공지 유형이며, `category_code`는 아래 분야의 **정수**입니다.
+분야 근거는 `evidence.field='category_code'`로 연결합니다. 확인 불가는 NULL입니다.
 
-프롬프트 버전은 `transform.gemini_prompt.SUMMARY_PROMPT_VERSION`입니다. 저장 job은 전달된
-버전이 실제 사용하는 프롬프트와 일치하는지 호출 전에 검사합니다. #13의 실제 준비 코드는 아직
-develop에 병합되지 않았으므로 파일 키와 원래/읽은 파일 수를 제공하는 연동은 그 입력 소유자가
-완성해야 합니다. 수집 CLI·자동 실행은 이 저장 함수에 연결하지 않습니다.
-
-`StoredPreparedSummary.result`에는 파이프라인 호출자를 위한 원본의 메모리 스냅샷이 있습니다.
-새로 생성한 AI 결과는 `summarized`와 `needs_review` 모두 DB의 `result`에 보존합니다.
-앱은 저장된 행을 아래 공개 뷰에 전달해 검토 경고를 적용합니다. 호출자의 메모리 스냅샷을
-그대로 앱 응답에 사용하지 않습니다. `result.evidence`의 파일 참조는 보존하지만 준비 단계의
-`warnings`와 `media_sources` 등 실행 감사 정보는 별도 DB 필드로 영구 보존하지 않습니다.
-이 감사 정보를 저장할 별도 테이블·접근 제한은
-후속 설계 대상이며, AI 생성 결과 자체를 보존하기 위해 별도 검토 테이블이 필요한 것은 아닙니다.
-
-`attempt_count`는 위 시작/종료 기록 계약에 따른 누적 횟수입니다. 성공 후 재시도 횟수 초기화와 PDF·이미지 내용을
-포함하는 `source_hash` 계약은 후속 설계 대상입니다.
-
-2026-10-06 검증: 새 마이그레이션 4개를 적용한 임시 PostgreSQL 17.11에서 전체 pipeline
-테스트 **1,747 passed, 0 skipped**, 별도 빈 DB의 실제 마이그레이션·seed·RLS 스키마 테스트
-**153 passed, 0 skipped**, Ruff와 diff 검사를 통과했습니다. Pipeline 회귀는 seed 없는 전용 DB,
-seed와 권한 검증은 별도 rollback 전용 DB로 분리했습니다. 실제 Gemini 호출과 공식 DB 접근은
-수행하지 않았습니다. `npx supabase db reset --local`은 Docker 엔진 연결 실패로 실행하지 못했으며,
-임시 PostgreSQL 검증을 Supabase reset 또는 Data API 검증으로 취급하지 않습니다.
+| 코드 | 분야 | 코드 | 분야 |
+| --- | --- | --- | --- |
+| 21 | 교통 | 25 | 환경 |
+| 22 | 안전 | 26 | 문화 |
+| 23 | 주택 | 27 | 복지 |
+| 24 | 경제 | 30 | 행정 |
 
 ## 화면용 4개 요약 카드
 
-`transform.summary_cards.build_summary_cards(summary)`는 기존 `NoticeSummary`를
-다시 요약하지 않고 별도의 표시 데이터로 변환하는 순수 함수입니다. Gemini 호출·DB 접근·
-기존 요약 JSON 변경 없이 다음 네 슬롯을 반환합니다. **화면 표시 순서는 아직 정하지
-않았습니다.** `cards`는 배열이 아닌 이름으로 구분된 객체이며 JSON 키 순서를 화면 순서로
-해석하지 않습니다. 공지 유형과 분야 코드는 카드 종류·개수를 바꾸지 않습니다.
+Gemini는 기존 원문 근거용 필드를 유지하면서 `card_summaries`의 네 문구를 별도로
+작성합니다. 각 값은 한 줄 문자열 또는 `null`이며, 새 카드 문장은 자연스러운
+해요체로 끝납니다. 원래 `audience`·`dates`·`action`·`notes`뿐 아니라 장소와
+변경·취소·상태 안내가 있으면 관련 카드 문구도 필요합니다. 실제 빈 항목은 비워 둡니다.
+카드에만 있고 원문용 필드에 없는 주장은 내용을 보존한 채 검토 대상으로 분류합니다.
+명시된 일정 역할별 시작·마감 날짜와 시각을 비교하고, 명확히 변경된 비용은 변경 후
+금액을 기준으로 확인합니다. 일부 프로그램의 신청·접수 안내 누락은 기존 보정 1회
+예산 안에서 함께 요청합니다. 단순 문의나 신청 불필요는 의무로 추측하지 않습니다.
+소식 공지의 기본 `action_requirement='none'`만으로 할 일 문구를 요구하지 않습니다.
+파일 전용 공지의 제목은 한 줄 요약·분류에만 사용하며 대상·일정의 검증 근거로 삼지 않습니다.
+한 줄 요약은 기존 40자 `summary`를 사용하며, **화면 표시 순서는 미정**입니다.
 
-새 결과의 `card_summaries`에는 Gemini가 작성한 네 슬롯의 표시 문장을 보존하며, 원본 구조의
-세부 항목·근거와 함께 제공합니다. 레거시 결과에 이 객체가 없거나 `None`이면 기존 구조의
-필드로 네 슬롯을 구성합니다. 이 호환 처리는 새 Gemini 응답의 필수 카드 객체를 대신하지
-않습니다. DB의 같은 이름 컬럼은 원본 카드 문장 객체만 조회하며 공개 뷰의 네 슬롯 전체와
-원문 확인 경고는 `build_notice_summary_view()`에서 구성합니다.
-
-기존 필드를 유지하는 핵심 목적은 앱의 **“원문 근거 보기”**입니다. `card_summaries`와
-카드의 `text`는 읽기 편한 AI 문구 또는 빈 카드의 시스템 안내이며,
-기존 필드값·`items`·`metadata`·`source_path`·
-`evidence`와 파일의 `source_id`, `page`, `verification`은 근거 확인에 사용합니다.
-AI가 추출한 필드값은 실제 원문 발췌인 `evidence.excerpt`와 구분하고 원문 직접 인용처럼
-표시하지 않습니다. 파일 참조만 확인한 경우 내용을 검증했다고 표시하지 않습니다.
-새 카드 문구에 독립된 근거가 추가된 것은 아니므로 네 문구 전체의 의미가 완전히 검증되었다고
-약속하지 않습니다. 기존 근거가 필드 단위이고 배열 항목별 검증이 아니라는 한계도 유지합니다.
-
-| 슬롯 | 제목 | 정보 배치 |
+| 슬롯 | 제목 | 함께 정리하는 원본 정보 |
 | --- | --- | --- |
-| `audience` | 대상 | `audience`, 대상 범위 `audience_scope` |
-| `deadline` | 기한 | `dates` 전체와 실제 일정 종류·라벨·원문 표현·날짜·시간 |
-| `action` | 할 일 | `action`, 필수·선택·권장 구분, 별도의 `location` 장소 항목 |
-| `notes` | 유의사항 | `notes`, 변경·연장·취소와 `changed_details`, `status_detail` |
+| `audience` | 대상 | `audience`, `audience_scope` |
+| `deadline` | 기한 | `dates`의 일정 종류·날짜·시간 |
+| `action` | 할 일 | `action`, 필수·선택·권장 구분, `location` |
+| `notes` | 유의사항 | `notes`, `changed_details`, `status_detail` |
 
-한 줄 요약은 `headline`으로 별도 전달하고 기존 40자 `summary`를 그대로 사용합니다.
-공개 뷰가 검토 상태의 `headline.text`에 경고를 붙여도 `headline.value`와 저장된
-`result.summary`는 바꾸지 않습니다.
-`metadata`는 공지 유형·분야 코드·분야명, 발행기관·적용 지역, 공지 상태와 원래 `topics`,
-불확실성·근거를 보존합니다. 발행기관·적용 지역을 신청 자격으로 바꾸거나 혼합 공지의
-주제로 대상·행동·일정을 임의 연결하지 않습니다. 없는 대상은 누구나, 없는 비용은 무료,
-없는 행동은 행동 없음으로 추정하지 않습니다. 명시적인 `action_requirement='none'`만
-“할 일 없음”으로 표시합니다.
+`notice_summaries.card_summaries`는 `result`에서 자동 생성되는 조회용 컬럼이므로
+별도로 쓰지 않습니다. 원본 필드와 `evidence`는 카드의 **원문 근거 보기**에 사용합니다.
+이전 결과에 카드 문구가 없으면 원본 필드로 표시하고, 정보가 없는 카드는
+**“원문을 확인해 주세요”**로 안내합니다.
 
-정보가 없더라도 네 슬롯은 유지하며 `availability='not_provided'`, 빈 `items`와
-`text`·`guidance`에 **“원문을 확인해 주세요”**를 반환합니다. 이 문구는 공개 뷰의 안내이며
-저장된 `result.card_summaries`의 `null`을 바꾸거나 근거·내용이 있는 것으로 처리하지 않습니다.
-기존 필드의 `items`가 있으면 그 정보를 유지하고 빈 카드로 덮어쓰지 않습니다.
-안내 문구는 원문에서 가져온 `items`와 구분합니다.
-문장·제한·예외를 다시 쓰거나 표시 길이에 맞춰 자르지 않습니다. 날짜 항목도 합치거나
-정렬하지 않으며 `DateEntry` 원본을 `value`에 유지합니다. 표시문은 `YYYY.MM.DD HH:MM`으로
-각 시작·종료 값을 구분하고 반복·상시 표현도 그대로 보존합니다. 기한 카드에 행사·발표
-일정이 들어가도 신청 마감으로 바꾸지 않으며 DB의 `deadline_on` 계산과 구분합니다.
-
-각 항목은 `source_path`(`audience`, `dates[0]`, `notes[0]` 등)와 원문 근거를 갖습니다.
-`FieldEvidence.source_path`는 원래 `evidence` 배열 위치를 가리키며 `scope='field'`입니다.
-기존 근거는 `dates`·`notes` 배열의 개별 항목을 식별하지 못하므로 같은 필드 근거를
-연결하더라도 개별 날짜·유의사항까지 검증했다고 표시하지 않습니다. `source_type`,
-`source_id`, `page`, `verification`과 원문 발췌는 변경하지 않습니다.
-
-앱 공개 데이터는 내부 변환 함수를 바로 호출하지 않고
-`storage.summary_view.build_notice_summary_view()`를 사용합니다. 입력은 **DB에 저장된**
-`status`, 공개 `result`, `attachment_status`입니다. 재요약 실행이 실패해도 DB 행이
-`summarized` 또는 결과가 있는 `needs_review`이면 보존된 결과로 카드를 만듭니다.
-검토 상태에는 원문 확인 경고를 적용합니다. job의 일시적인 실패 반환값이나
-`StoredPreparedSummary.result`의 내부 메모리 스냅샷을 앱 응답에 사용하지 않습니다.
+앱 응답은 **저장된 DB 행**을 `storage.summary_view.build_notice_summary_view()`에
+전달해 만듭니다. job의 일시적인 실패 반환값을 저장된 상태 대신 사용하지 않습니다.
 
 ```python
 from pipeline.storage.summary_view import build_notice_summary_view
@@ -533,190 +413,27 @@ view = build_notice_summary_view(
     status=row["status"],
     result=row["result"],
     attachment_status=row["attachment_status"],
+    notice=notice_input_for_this_row,  # 텍스트 강조가 필요할 때만 전달
 )
 payload = view.model_dump(mode="json")
-
-# result가 있는 needs_review 행의 표시 예:
-# payload["message"] == "원문 확인 요함"
-# payload["content"]["headline"]["text"] == "주민 행사 참가자 모집 (원문 확인 요함)"
-# payload["content"]["headline"]["value"] == "주민 행사 참가자 모집"
-# payload["content"]["cards"]에는 대상·기한·할 일·유의사항 네 슬롯이 유지됩니다.
 ```
 
-`summarized`와 결과가 있는 `needs_review`는 `content`에 한 줄 요약·네 카드를 반환합니다.
-`summarized`를 전달했어도 저장 때와 같은 검증에서 미확인·파일 근거뿐인 내용,
-불확실성이나 미처리 첨부가 발견되면 `needs_review` 응답으로 바꾸고 경고를 붙입니다.
-검토 결과의 `headline.text`에는 “(원문 확인 요함)”, `message`에는 “원문 확인 요함”을
-제공합니다. 검토 결과의 일정과 유의사항·근거도 보존하며, 카드 반환이 원문 대조나
-사실 확인의 완료를 뜻하지는 않습니다. `result=NULL`인 검토 행은 `content=None`과
-원문 확인 안내만 반환합니다. `pending`·최초 `failed`는 기존처럼 요약이나 보조 정보를
-반환하지 않습니다.
-
-카드 구현은 반환 형식과 변환 함수이며, DB의 결과 보존은 위 저장 계약을 따릅니다.
-모바일 화면·실제 저장/조회 API 연결과 카드의 화면 표시 순서는 별도 작업입니다.
-GitHub #21에 남아 있는 가변 카드 기준보다
-이번에 합의한 네 항목 고정·화면 순서 미정 기준을 적용합니다.
+결과가 있는 `needs_review`도 한 줄 요약과 네 카드를 그대로 반환합니다.
+`headline.text`에 경고를 붙이지 않으며, 별도 `message`의 표시 여부는 앱에서 결정합니다.
+`result=NULL`인 검토 행은 원문 확인 안내만, `pending`·최초 `failed`는 요약 없이 반환합니다.
 
 ### 카드별 텍스트 원문 강조 위치
 
-`transform.summary_highlights.build_summary_text_highlights(summary, notice)`는 카드에
-연결된 기존 필드 근거의 원문 위치를 반환합니다. PDF·이미지 OCR, 페이지 좌표, 화면 렌더링은
-수행하지 않습니다. 같은 행에 대응하는 `NoticeInput`을 선택하여 공개 뷰의 `notice=` 옵션에
-전달하면 `text_highlights`가 추가됩니다. 옵션을 생략하면 기존 공개 응답 형식을 유지합니다.
+`notice=`를 전달하면 `text_highlights`에 본문·추출 첨부 텍스트(`sources`)와 카드별
+강조 범위(`ranges`)를 제공합니다. 범위는 **반환된 평문**에 대한 JavaScript UTF-16
+위치이며 종료 위치는 포함하지 않습니다. 원문 HTML에 직접 적용하지 않습니다.
+인용 위치가 여러 곳이면 자동 강조에서 제외합니다. PDF·이미지 좌표는 제공하지 않습니다.
+근거는 필드 단위이므로 개별 일정·유의사항까지 검증했다는 뜻은 아닙니다.
 
-```python
-view = build_notice_summary_view(
-    status=row["status"], result=row["result"], attachment_status=row["attachment_status"],
-    notice=notice_input_for_this_row,
-)
-```
-
-`sources`에는 변경하지 않은 본문·추출된 첨부 텍스트, 출처 키와 SHA-256을 제공합니다.
-첨부의 표시 이름은 `첨부 텍스트 1`처럼 고정된 순번 안내이며 내부 파일명을 공개하지 않습니다.
-각 카드의 `ranges`는 이 반환 텍스트의 JavaScript **UTF-16** 시작 위치·종료 위치이며 종료는
-포함하지 않습니다. `notices.body_html`이나 다른 버전의 텍스트에 적용하면 안 됩니다.
-본문의 키는 `body_text`, 추출 첨부 텍스트는 `attachments[i].text`이며 Gemini 시각 입력의
-`media_N` 식별자와 구분합니다. 렌더러는 원문을 HTML로 실행하지 말고 텍스트로 표시하며,
-겹치는 범위는 합쳐서 강조해야 합니다. 이 함수는 카드 표시 순서를 결정하지 않습니다.
-
-인용이 정확하게 일치하는 위치를 우선 찾고, 없으면 공백·줄바꿈만 정규화하여 찾습니다.
-숫자·구두점·어절 사이 공백의 삭제·유니코드 조합 등은 바꾸지 않습니다. 공백 정규화로 위치를
-찾아도 `verification`을 승격하지 않습니다. 한 근거가 여러 위치에 있으면 `ambiguous`와
-후보 목록을 반환하고 자동 강조 범위에서 제외합니다. 찾지 못한 근거·잘못된 텍스트 식별자·
-파일 근거도 별도로 유지합니다. 파일 인용과 같은 문구가 본문에 있더라도 텍스트 강조로
-전환하지 않습니다. 원문 위치는 인용의 위치일 뿐 카드 문장의 의미 검증 결과가 아닙니다.
-
-`pending`·`failed` 또는 결과가 없는 검토 행에는 원문 텍스트나 강조 데이터를 덧붙이지
-않습니다. 기존 근거의 필드 단위 범위를 유지하므로 `dates`·`notes`의 개별 항목마다 정확한
-근거가 검증되었다는 뜻도 아닙니다. 실제 앱 조회 API와 카드 선택·스크롤·강조 이벤트는
-아직 구현되지 않았습니다.
-
-2026-10-06 #21 검증: 카드 계약 61개와 실제 공지 캡처 재생 4개를 포함해, 마이그레이션
-4개가 적용된 임시 PostgreSQL 17.11에서 전체 pipeline 테스트 **1,812 passed,
-0 skipped**를 확인했습니다. Ruff와 diff 검사도 통과했습니다. 여러 일정·반복 표현·
-비용과 예외·필수/선택·변경/취소·근거 범위·깊은 복사·당시 정책의 검토 내용 비공개를 검증했으며
-테스트 중 실제 Gemini 호출은 하지 않았습니다. DB 스키마는 이번 카드 작업에서 바꾸지
-않았고, 별도 Supabase 스키마 테스트 153개의 결과는 위 #14 검증 이력입니다.
-
-2026-10-06 추가 실검증에서는 새 프롬프트로 실제 월계1동 식료품 지원 뉴스의 Gemini
-응답을 받아 `summarized` 저장과 `27=복지`, 직접 행동 없음, 네 카드 슬롯을 확인했습니다.
-실제 Supabase DB 저장 → anon/authenticated Data API 조회 → 공개 카드 구성도 통과했습니다.
-기존 캠프·영재 모집·PDF 응답의 검토 상태와 당시 정책의 공개 내용 차단을 함께 확인한 59개 검증이
-통과했습니다. 이 실제 정상 사례는 대상·일정이 없는 뉴스이며, 새 모집 응답의 대상·기한
-카드 공개 성공을 뜻하지 않습니다. 수정 후 마이그레이션이 적용된 별도 임시 PostgreSQL에서
-전체 pipeline 테스트 **1,846 passed, 0 skipped**와 Ruff를 확인했습니다.
-위 검증 횟수는 당시 실행 이력입니다. 현재 검토 정책은 생성 결과를 보존하고 경고와 함께
-제공하며, 이 이력의 내용 차단 검증을 새 정책의 검증 결과로 취급하지 않습니다.
-
-2026-10-07 방향 변경 후 적대적 검증: 원문 필드를 그대로 둔 채 카드의 대상·연령 경계·
-비용·환불 예외·필수 행동·날짜·시간을 변조한 응답, 비용 복구 재요청의 오래된 카드,
-서로 다른 실행의 역순 완료·실패와 토큰 등록 경쟁을 재현하고 회귀 검증했습니다.
-새 마이그레이션 7개가 적용된 임시 PostgreSQL 17.11에서 전체 pipeline 테스트
-**2,239 passed, 0 skipped**, 별도 빈 DB의 실제 마이그레이션·seed·RLS·실행 레지스트리와
-시퀀스 접근 권한 테스트 **491 passed, 0 skipped**를 확인했습니다. Ruff와 diff 검사도
-통과했습니다. 텍스트 위치는 실제 공지 캡처 4건 재생과 반복 인용·공백·UTF-16·파일 근거
-회귀로 확인했습니다. 최신 정상 카드 캡처에서 의미 검사 오탐을 확인하지 않았고, 이전
-화상영어 카드의 만24세 지원 상한 누락은 검토 대상으로 감지했습니다.
-이 검증은 임시 PostgreSQL 및 캡처 재생이며 앱·Supabase Data API 연결 완료를 뜻하지
-않습니다. 이번 검증에서 새 Gemini 호출·운영 DB 변경·커밋·푸시는 수행하지 않았습니다.
-
-2026-10-07 추가 3회 적대적 검증은 ① 정적 계약·권한, ② 변조·돌연변이·실패·경쟁,
-③ 실제 SDK·공지 캡처·임시 DB·공개 역할을 서로 다른 관점으로 확인했습니다.
-새 검증 파일에는 입력 41개, 카드·텍스트 위치 66개, DB 36개, 수집 횟수 6개가 있습니다.
-호환 경로의 오래된 prepared 재현도 포함되므로 통과한 테스트 수가 모든 경로의 안전성을
-보증하지는 않습니다. 최종 마이그레이션 8개를 적용한 임시 PostgreSQL에서 전체 pipeline
-**2,389 passed, 0 skipped**, 별도 DB의 스키마·seed·RLS **495 passed, 0 skipped**를 확인했습니다.
-순서만 다른 동일 notes의 불필요한 검토 경고도 수정했습니다.
-실제 공지 두 종류로 총 5회 논리 Gemini 호출을 했습니다. 초기 순수 뉴스의 빈 할 일 카드에
-과도한 제약을 적용한 실패 2회는 그대로 기록하고 계약을 고쳤습니다. 최종 새 뉴스 응답은
-`summarized`, 미처리 첨부가 있는 공동주택가격 이의신청은 생성 내용을 보존한 `needs_review`였습니다.
-두 결과 모두 임시 DB 저장→anon 조회→공개 뷰, 같은 원문 타임아웃 결과 보존,
-원문 변경 직후 무효화·이전 실행 차단까지 확인했습니다. 공식 DB·GitHub·커밋·푸시는 변경하지 않았습니다.
-수집→파일 준비→요약 job 예약, 앱 DB 조회·네 카드·원문 강조 UI, 연령·성별 알림은 미구현입니다.
-준비 객체의 본문·미디어와 전송 블록의 일치, 메타데이터가 같은 원격 파일의 바이트 변경,
-일반 한국어 의미의 완전한 검증도 이 테스트가 자동 보장하지 않습니다. 추가 재공격에서
-대상명·금액을 유지한 채 청년·어르신의 연령 조건만 교환하거나, 날짜 뒤에만 일정 역할을
-쓴 교환은 현재 관계 검사에서 감지하지 못했습니다. 공개 사실 검증 완료로 해석하면 안 됩니다.
-
-## #13 자동 연결 담당자에게 전달할 계약
-
-이번 브랜치의 push는 #14·#21의 SQL과 함수 계약을 공유하는 단계입니다.
-수집→DB 조회→파일 준비→Gemini→저장 자동 연결을 실행하는 변경은 포함하지 않습니다.
-
-### 최종 notice_summaries SQL
-
-하나의 초기 SQL만 적용하면 최종 구조가 아닙니다. 기존 수집용 마이그레이션 3개 뒤에
-아래 파일을 **순서대로** 적용해야 합니다. 이미 적용한 파일을 재실행하지 않습니다.
-
-1. `supabase/migrations/20261006120000_notice_summaries.sql`
-2. `supabase/migrations/20261007120000_notice_summaries_review_content.sql`
-3. `supabase/migrations/20261007123000_notice_summary_card_summaries.sql`
-4. `supabase/migrations/20261007130000_notice_summary_executions.sql`
-5. `supabase/migrations/20261007133000_notice_summary_source_revisions.sql`
-
-최종 구조에는 공개 결과에서 계산되는 `card_summaries`, 비공개 실행 레지스트리,
-`notices.content_revision`과 원문·파일 변경 시 기존 결과를 무효화하는 trigger가 포함됩니다.
-운영 DB에 이 문서만 보고 자동 적용하지 말고 해당 DB의 적용 이력을 확인해야 합니다.
-
-### 마감일·입력 해시·프롬프트 버전
-
-| 요청 항목 | 사용할 코드·기준 |
-|---|---|
-| 마감일 | `pipeline.storage.summary_deadline.compute_deadline_on(summary)`: `application`, `submission`, `payment` 종료일 중 최댓값. 없으면 `None`. job이 `summarized`일 때만 호출하며 `needs_review`는 `NULL` |
-| 입력 해시 | `pipeline.storage.summary_metadata.compute_source_hash(body_text, attachment_texts)`: 정확한 본문 평문과 `file_key` 순으로 정렬한 추출 텍스트를 JSON으로 묶어 UTF-8 SHA-256. 같은 키·같은 텍스트는 중복 제거, 같은 키·다른 텍스트는 오류 |
-| 프롬프트 버전 | `pipeline.transform.gemini_prompt.SUMMARY_PROMPT_VERSION = "notice-summary-v5-card-polite"` |
-| 모델 | `pipeline.transform.gemini_client.DEFAULT_MODEL`. 저장 metadata와 실제 호출 모델을 같게 사용 |
-| 실행 진입점 | `pipeline.summary_job.summarize_and_save_prepared_notice(conn, prepared, metadata, expected_source_revision=source_revision)` |
-
-본문은 저장된 HTML 자체가 아니라 준비 단계에서 만든 `prepared.notice.body_text`입니다.
-추출된 첨부 텍스트는 `SummaryAttachmentText(file_key=..., text=...)`로 전달합니다.
-현재 해시에는 제목·PDF/이미지 바이트가 포함되지 않으며, DB의 원문 버전 보호와 구분합니다.
-해시를 따로 구현하거나 `source_hash`만 직접 채우기보다 `build_summary_metadata()`를 사용합니다.
-
-```python
-from pipeline.storage.summary_metadata import build_summary_metadata
-from pipeline.summary_job import summarize_and_save_prepared_notice
-from pipeline.transform.gemini_client import DEFAULT_MODEL
-from pipeline.transform.gemini_prompt import SUMMARY_PROMPT_VERSION
-
-# prepared: #13의 파일 준비 결과
-# source_revision: 원문·파일 목록과 같은 DB 조회에서 확보한 content_revision
-# attachment_texts: 원래 file_key에 연결된 SummaryAttachmentText 목록
-# total_file_count/read_file_count: 원래 파일별 준비 상태에서 계산한 수
-metadata = build_summary_metadata(
-    body_text=prepared.notice.body_text,
-    attachment_texts=attachment_texts,
-    total_file_count=total_file_count,
-    read_file_count=read_file_count,
-    model=DEFAULT_MODEL,
-    prompt_version=SUMMARY_PROMPT_VERSION,
-)
-outcome = summarize_and_save_prepared_notice(
-    conn, prepared, metadata, expected_source_revision=source_revision,
-)
-```
-
-job에 마감일을 따로 계산해 넘기거나 Gemini를 별도로 호출하지 않습니다. job이 기본 마감일
-함수·Gemini 호출·준비/호출 실패 기록을 담당합니다. DB 연결은 짧은 등록을 위해 autocommit을
-권장하며, 수동 트랜잭션을 쓰면 호출자가 commit/rollback하기 전까지 저장 완료가 아닙니다.
-`superseded`는 API 실패가 아니라 오래된 원문/실행을 거부한 결과이므로 최신 원문을 다시 조회합니다.
-저장 후 앱 응답은 일시적인 job 실패 상태 대신 현재 DB 행으로 공개 뷰를 구성합니다.
-
-### #13 쪽에서 추가로 제공할 정보
-
-2026-10-07 확인한 원격 #13의 `SummarySource`에는 `content_revision`이 아직 없습니다.
-원문·파일 목록을 읽는 같은 SQL 조회에 이 값을 추가하고 준비·저장까지 전달해야 합니다.
-별도 나중 조회의 버전을 오래된 prepared에 붙이면 원문 변경 보호가 성립하지 않습니다.
-
-현재 #13 `PreparedSummary`의 추출 텍스트에는 원래 `file_key` 연결이 없고, 미디어는 바이트
-중복 제거를 수행합니다. 따라서 첨부 이름으로 키를 추정하거나 `len(attachments) + len(media)`를
-읽은 파일 수로 사용하면 안 됩니다. 원래 파일별 키·추출 텍스트·준비 성공/실패 대응을 유지해
-metadata에 전달해야 합니다. 본문에서 추가로 발견한 이미지의 처리 기준도 파일 목록에 맞춰
-정해야 합니다. 이 부분과 호출 연결은 이번 push만으로 구현되지 않습니다.
-
-최신 재공격에서 남은 두 카드 관계 반례(대상별 연령 조건 교환, 후행 일정 역할 교환)도
-위 적대적 검증 기록에 포함됩니다. 이 push를 사실 정확성 검증 완료나 운영 배포 완료로
-취급하지 않습니다.
+현재 한계: 카드의 조건 검사는 모든 의미 오류를 잡아내지 못합니다. `source_hash`에는
+제목과 PDF·이미지 바이트가 포함되지 않아 같은 파일 URL의 내용 변경을 감지하지 못할 수
+있습니다. 수집·파일 준비에서 이 job으로 이어지는 자동 연결과 모바일 표시·강조는
+별도 구현이 필요합니다.
 
 ## 실행과 검증
 

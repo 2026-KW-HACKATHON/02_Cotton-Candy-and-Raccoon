@@ -181,13 +181,23 @@ def test_contract_known_source_card_cannot_be_null_in_fresh_but_legacy_keeps_it(
     assert any(error["loc"] == ("card_summaries", slot) for error in failure.value.errors())
 
 
-def test_contract_explicit_no_action_and_unknown_fact_slots_can_remain_null():
+def test_contract_explicit_no_action_needs_prose_and_unknown_slots_remain_null():
     data = unknown_summary(_notice()).model_dump(mode="json")
     assert GeminiNoticeSummary.model_validate(data).card_summaries.model_dump() == {
         "audience": None, "deadline": None, "action": None, "notes": None,
     }
     data["action_requirement"] = "none"
+    # A classification-default none without a quoted statement is not a
+    # known resident action and must not force a new no-action card sentence.
     assert GeminiNoticeSummary.model_validate(data).card_summaries.action is None
+    data["evidence"].append({
+        "field": "action_requirement", "excerpt": "별도의 신청은 필요 없습니다.",
+    })
+    with pytest.raises(ValueError) as failure:
+        GeminiNoticeSummary.model_validate(data)
+    assert any(
+        error["loc"] == ("card_summaries", "action") for error in failure.value.errors()
+    )
     data["card_summaries"]["action"] = "별도로 해야 할 일은 없어요."
     assert GeminiNoticeSummary.model_validate(data).card_summaries.action == data[
         "card_summaries"

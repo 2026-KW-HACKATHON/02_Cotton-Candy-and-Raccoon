@@ -689,15 +689,13 @@ def test_review_guidance_preserves_four_cards_metadata_and_maximum_length_source
     assert view.content is not None
     assert repeated.content is not None
     assert view.content.headline.value == summary.summary == "가" * 40
-    assert view.content.headline.text == f"{summary.summary} (원문 확인 요함)"
-    assert len(view.content.headline.text) > 40
+    assert view.content.headline.text == summary.summary
+    assert len(view.content.headline.text) == 40
     assert view.content.cards.model_dump() == plain_cards.cards.model_dump()
     for key, text in before["card_summaries"].items():
         assert getattr(view.content.cards, key).text == text
     assert view.content.metadata.model_dump() == plain_cards.metadata.model_dump()
-    assert view.content.headline.model_dump(exclude={"text"}) == plain_cards.headline.model_dump(
-        exclude={"text"}
-    )
+    assert view.content.headline.model_dump() == plain_cards.headline.model_dump()
     assert repeated.content.model_dump() == view.content.model_dump()
     assert (source if as_mapping else summary.model_dump(mode="json")) == before
 
@@ -719,7 +717,7 @@ def test_persisted_review_status_keeps_guidance_even_when_summary_checks_pass() 
     assert view.message == "원문 확인 요함"
     assert view.content is not None
     assert view.content.headline.value == summary.summary
-    assert view.content.headline.text == f"{summary.summary} (원문 확인 요함)"
+    assert view.content.headline.text == summary.summary
 
 
 @pytest.mark.parametrize("attachment_status", ["none", "all_read"])
@@ -795,7 +793,7 @@ def test_stored_summarized_rows_keep_content_and_gain_guidance_under_review_rule
     assert result.message == "원문 확인 요함"
     assert result.content is not None
     assert result.content.headline.value == summary.summary
-    assert result.content.headline.text == f"{summary.summary} (원문 확인 요함)"
+    assert result.content.headline.text == summary.summary
     assert result.content.cards == build_summary_cards(summary).cards
 
 

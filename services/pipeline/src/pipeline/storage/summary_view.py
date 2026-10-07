@@ -48,9 +48,10 @@ def build_notice_summary_view(
 
     A failed retry can leave the DB row summarized; use that row's preserved
     result. pending/failed do not inspect or expose a supplied result. A valid
-    review result keeps its four cards and adds an original-notice instruction
-    only to the display headline. Historical review rows with no result contain
-    guidance alone. An optional notice adds plain-text evidence positions to a
+    review result keeps its headline and four cards unchanged. Review guidance
+    is returned separately in message for the caller to display as needed.
+    Historical review rows with no result contain guidance alone. An optional
+    notice adds plain-text evidence positions to a
     NoticeSummaryTextView; positions refer only to its returned UTF-16 sources,
     never raw HTML. Without that option the existing response shape is retained.
     This is no API or DB integration.
@@ -90,14 +91,11 @@ def build_notice_summary_view(
     if status == "needs_review" or summary_requires_review(
         checked, attachment_status=attachment_status
     ):
-        headline = content.headline.model_copy(
-            update={"text": f"{content.headline.text} (원문 확인 요함)"}
-        )
         return _with_text_highlights(
             NoticeSummaryView(
                 status="needs_review",
                 message=messages["needs_review"],
-                content=content.model_copy(update={"headline": headline}),
+                content=content,
             ), notice, checked,
         )
     return _with_text_highlights(

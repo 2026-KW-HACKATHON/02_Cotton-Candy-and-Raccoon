@@ -61,7 +61,7 @@ def test_real_capture_keeps_all_schedules_notes_and_evidence_with_review_guidanc
         ]
 
     # Historical outputs have no category code. The view preserves their source
-    # facts and adds review guidance only to the display headline.
+    # facts and headline, returning review guidance separately in message.
     view = build_notice_summary_view(
         status="summarized", result=summary, attachment_status="all_read"
     )
@@ -69,7 +69,7 @@ def test_real_capture_keeps_all_schedules_notes_and_evidence_with_review_guidanc
     assert view.message == "원문 확인 요함"
     assert view.content is not None
     assert view.content.headline.value == summary.summary
-    assert view.content.headline.text == f"{summary.summary} (원문 확인 요함)"
+    assert view.content.headline.text == summary.summary
     assert view.content.cards.model_dump() == cards.cards.model_dump()
     assert view.content.metadata.model_dump() == cards.metadata.model_dump()
     assert summary.model_dump(mode="json") == before
@@ -105,7 +105,7 @@ def test_added_ai_card_text_preserves_historical_capture_items_and_review_view()
     assert view.message == "원문 확인 요함"
     assert view.content is not None
     assert view.content.headline.value == summary.summary
-    assert view.content.headline.text == f"{summary.summary} (원문 확인 요함)"
+    assert view.content.headline.text == summary.summary
     for key, text in card_text.items():
         card = getattr(view.content.cards, key)
         assert card.text == text
@@ -138,6 +138,6 @@ def test_actual_pdf_file_references_remain_visible_with_review_guidance_after_gr
     assert public.message == "원문 확인 요함"
     assert public.content is not None
     assert public.content.headline.value == summary.summary
-    assert public.content.headline.text == f"{summary.summary} (원문 확인 요함)"
+    assert public.content.headline.text == summary.summary
     assert public.content.cards.model_dump() == internal.cards.model_dump()
     assert public.content.metadata.model_dump() == internal.metadata.model_dump()

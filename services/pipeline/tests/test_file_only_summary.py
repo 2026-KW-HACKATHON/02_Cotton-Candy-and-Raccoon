@@ -358,6 +358,7 @@ def test_text_only_preserves_a_claim_when_quote_does_not_support_it(
             {"field": "location", "excerpt": "장소: 월계공원"},
         ],
     )
+    output["card_summaries"]["action"] = "장소는 월계문화센터예요."
     requests = _mock_responses(monkeypatch, output)
 
     result = summarize_module.summarize_prepared_notice(prepared, api_key="mock-key")
@@ -455,17 +456,18 @@ def test_file_reference_retry_preserves_omitted_array_items_and_accepts_date_cor
     assert REVIEW_NOTE in result.uncertainties
 
 
-def test_broken_json_on_a_reference_retry_does_not_fall_back_to_the_first_summary(
+def test_broken_json_on_a_reference_retry_preserves_first_summary_for_review(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     first = _file_output()
     first["evidence"] = []
     requests = _mock_responses(monkeypatch, first, "not-json")
 
-    with pytest.raises(SummaryValidationError):
-        summarize_module.summarize_prepared_notice(
-            _prepared("", _media("image")), api_key="mock-key"
-        )
+    result = summarize_module.summarize_prepared_notice(
+        _prepared("", _media("image")), api_key="mock-key"
+    ).summary
+    assert _facts(result.model_dump()) == _facts(first)
+    assert result.uncertainties == [REVIEW_NOTE]
     assert len(requests) == 2
 
 
@@ -483,15 +485,17 @@ def test_broken_json_twice_is_processing_failure_for_file_only(
     assert marker not in str(error.value)
 
 
-def test_reference_retry_returning_broken_json_is_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_reference_retry_returning_broken_json_keeps_pdf_summary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     first = _file_output("document")
     for item in first["evidence"]:
         item.pop("page")
     requests = _mock_responses(monkeypatch, first, "not-json")
 
-    with pytest.raises(SummaryValidationError, match="after one retry"):
-        summarize_module.summarize_prepared_notice(
-            _prepared("", _media("document")), api_key="mock-key"
-        )
-
+    result = summarize_module.summarize_prepared_notice(
+        _prepared("", _media("document")), api_key="mock-key"
+    ).summary
+    assert _facts(result.model_dump()) == _facts(first)
+    assert result.uncertainties == [REVIEW_NOTE]
     assert len(requests) == 2

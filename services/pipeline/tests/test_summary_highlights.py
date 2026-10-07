@@ -210,7 +210,7 @@ def test_view_optional_highlights_preserve_review_prose_and_old_shape() -> None:
     assert after.text_highlights.cards.action.ranges[0].text == "서류 제출"
     assert after.status == "needs_review"
     assert after.content.cards.action.text == "서류를 제출해 주세요"
-    assert after.content.headline.text.endswith(" (원문 확인 요함)")
+    assert after.content.headline.text == summary.summary
 
 
 @pytest.mark.parametrize("status", ["pending", "failed", "needs_review"])

@@ -233,7 +233,7 @@ def test_file_retry_does_not_silently_drop_the_previous_policy_field() -> None:
 
 def test_prompt_describes_separate_fields_integer_encoding_and_no_fallback_code() -> None:
     prompt = load_summary_prompt()
-    assert SUMMARY_PROMPT_VERSION == "notice-summary-v5-card-polite"
+    assert SUMMARY_PROMPT_VERSION == "notice-summary-v6-card-grounding"
     assert '"category_code": null' in prompt
     assert (
         "category_code는 category, topics의 category, dates의 kind를 대체하거나 바꾸지 않는다"
