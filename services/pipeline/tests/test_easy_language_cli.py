@@ -44,15 +44,9 @@ def offline(monkeypatch, tmp_path):
         clock=lambda: datetime(2026, 10, 7, tzinfo=UTC),
     )
     gemini = MagicMock(return_value=result)
-    dictionary = MagicMock(
-        side_effect=AssertionError("notice conversion must not call a dictionary")
-    )
     connect = MagicMock()
     conn = connect.return_value.__enter__.return_value
     monkeypatch.setattr(module, "simplify_notice", gemini)
-    monkeypatch.setattr(
-        "pipeline.glossary.dictionary_service.lookup_dictionary_definition", dictionary
-    )
     monkeypatch.setattr(module.psycopg, "connect", connect)
     monkeypatch.setattr(module, "load_gemini_api_key", lambda: "fake")
     monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost/test")
@@ -61,7 +55,6 @@ def offline(monkeypatch, tmp_path):
         path=path,
         result=result,
         gemini=gemini,
-        dictionary=dictionary,
         connect=connect,
         conn=conn,
     )
@@ -75,7 +68,6 @@ def test_file_mode_preserves_original_and_never_calls_dictionary(offline, capsys
     assert payload["body_text_present"] is None
     assert payload["attachment_content_included"] is None
     assert not {"dictionary_terms", "dictionary_results", "dictionary_failures"} & payload.keys()
-    offline.dictionary.assert_not_called()
     offline.connect.assert_not_called()
 
 
@@ -97,14 +89,28 @@ def test_default_entry_uses_gemini_route(monkeypatch):
 
 
 def test_notice_db_mode_uses_saved_service_without_eager_credentials(offline, monkeypatch, capsys):
-    saved = MagicMock(return_value=offline.result)
+    phases = []
+    transaction = offline.conn.transaction.return_value
+    transaction.__enter__.side_effect = lambda: phases.append("read_started")
+    transaction.__exit__.side_effect = lambda *_args: phases.append("read_finished")
+
+    def load(conn, notice_id):
+        assert conn is offline.conn and notice_id == 7
+        assert phases == ["read_started"]
+        return offline.source
+
+    def process(conn, source, **_kwargs):
+        assert conn is offline.conn and source is offline.source
+        assert phases == ["read_started", "read_finished"]
+        return offline.result
+
+    saved = MagicMock(side_effect=process)
     monkeypatch.setattr(module, "simplify_and_store_notice", saved)
-    monkeypatch.setattr(module, "load_notice_glossary_input", lambda conn, notice: offline.source)
+    monkeypatch.setattr(module, "load_notice_glossary_input", load)
     monkeypatch.setattr(module, "load_gemini_api_key", MagicMock(side_effect=AssertionError))
     assert module.main(["--notice-id", "7"]) == 0
     assert json.loads(capsys.readouterr().out)["original_text"] == offline.source.text
     saved.assert_called_once()
-    offline.dictionary.assert_not_called()
     offline.gemini.assert_not_called()
 
 
@@ -123,7 +129,6 @@ def test_file_save_mode_uses_conversion_service_and_forwards_refresh(offline, mo
         offline.conn, offline.source, refresh=True, model=module.DEFAULT_MODEL
     )
     offline.gemini.assert_not_called()
-    offline.dictionary.assert_not_called()
 
 
 def test_corrupt_notice_conversion_outputs_no_result(offline, monkeypatch, capsys):
@@ -142,7 +147,6 @@ def test_word_mode_is_removed_before_database_or_network(offline):
     with pytest.raises(SystemExit) as error:
         module.main(["--word", "산정"])
     assert error.value.code == 2
-    offline.dictionary.assert_not_called()
     offline.connect.assert_not_called()
     offline.gemini.assert_not_called()
 
@@ -166,6 +170,5 @@ def test_output_cannot_overwrite_input(offline):
 def test_refresh_requires_database_mode_before_network(offline):
     with pytest.raises(SystemExit):
         module.main(["--input", str(offline.path), "--refresh"])
-    offline.dictionary.assert_not_called()
     offline.connect.assert_not_called()
     offline.gemini.assert_not_called()

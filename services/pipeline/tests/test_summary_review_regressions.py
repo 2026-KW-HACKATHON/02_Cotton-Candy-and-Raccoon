@@ -1,4 +1,4 @@
-"""Keep unverified claims out of issue #14's publicly readable summary rows."""
+"""Preserve review content while retaining the verified/unverified distinction."""
 
 import json
 from datetime import UTC, date, datetime
@@ -17,6 +17,7 @@ from pipeline.storage.summary_record import (
     build_summary_record,
 )
 from pipeline.transform import summarize as summarize_module
+from pipeline.transform.gemini_prompt import SUMMARY_PROMPT_VERSION
 from pipeline.transform.grounding import unknown_summary
 from pipeline.transform.prepared_summary import PreparedSummaryResult
 from pipeline.transform.summary_schema import MediaSource, NoticeSummary
@@ -29,7 +30,7 @@ def _metadata() -> SummaryMetadata:
     return SummaryMetadata(
         source_hash="cd" * 32,
         model="gemini-test",
-        prompt_version="summary-v3",
+        prompt_version=SUMMARY_PROMPT_VERSION,
         attachment_status="all_read",
     )
 
@@ -47,7 +48,13 @@ def _evidence(field: str = "summary", **changes: Any) -> dict[str, Any]:
 
 def _summary(**changes: Any) -> NoticeSummary:
     data = unknown_summary(_notice("행사 안내")).model_dump(mode="json")
-    data.update(category="event", summary="행사 안내", uncertainties=[], evidence=[_evidence()])
+    data.update(
+        category="event",
+        category_code=26,
+        summary="행사 안내",
+        uncertainties=[],
+        evidence=[_evidence(), _evidence("category_code")],
+    )
     return NoticeSummary.model_validate(data | changes)
 
 
@@ -82,12 +89,12 @@ def _file_evidence(field: str = "summary", kind: str = "document") -> dict[str, 
     )
 
 
-def _assert_review_not_published(result: PreparedSummaryResult) -> None:
+def _assert_review_content_preserved(result: PreparedSummaryResult) -> None:
     record = build_summary_record(
         result, _metadata(), deadline_on=DEADLINE, generated_at=GENERATED_AT
     )
     assert record.status == "needs_review"
-    assert record.result is None
+    assert record.result.model_dump(mode="json") == result.summary.model_dump(mode="json")
     assert record.deadline_on is None
     conn = MagicMock()
     cursor = conn.cursor.return_value.__enter__.return_value
@@ -100,13 +107,15 @@ def _assert_review_not_published(result: PreparedSummaryResult) -> None:
     assert stored.result.summary.model_dump(mode="json") == result.summary.model_dump(mode="json")
     values = cursor.execute.call_args.args[1]
     assert values[:2] == (17, "needs_review")
-    assert values[2:5] == (None, None, None)
-    assert values[11] == GENERATED_AT
+    assert values[2].obj == result.summary.model_dump(mode="json")
+    assert values[3] == (None if result.summary.category == "unknown" else result.summary.category)
+    assert values[4:6] == (result.summary.category_code, None)
+    assert values[12] == GENERATED_AT
 
 
 @pytest.mark.parametrize("kind", ["document", "image"])
-def test_file_only_summary_requires_original_notice_without_public_content(kind: str) -> None:
-    _assert_review_not_published(_result(_summary(evidence=[_file_evidence(kind=kind)])))
+def test_file_only_summary_preserves_public_content_with_review_status(kind: str) -> None:
+    _assert_review_content_preserved(_result(_summary(evidence=[_file_evidence(kind=kind)])))
 
 
 @pytest.mark.parametrize("include_text_dates", [False, True], ids=["file-dates", "mixed-dates"])
@@ -119,13 +128,14 @@ def test_file_application_dates_require_review_even_when_other_claims_match_text
         dates.insert(0, _date_entry("첫 신청 기간"))
         evidence.insert(1, _evidence("dates"))
     result = _result(_summary(category="application", dates=dates, evidence=evidence))
-    _assert_review_not_published(result)
+    _assert_review_content_preserved(result)
     monkeypatch.setattr(summary_job, "summarize_prepared_notice", lambda *_args, **_kwargs: result)
     conn = MagicMock()
     conn.cursor.return_value.__enter__.return_value.fetchone.return_value = (17,)
     resolver = MagicMock(side_effect=AssertionError("unverified dates must not reach the resolver"))
     stored = summary_job.summarize_and_save_prepared_notice(
-        conn, _prepared("행사 안내"), _metadata(), deadline_resolver=resolver
+        conn, _prepared("행사 안내"), _metadata(), deadline_resolver=resolver,
+        expected_source_revision=1,
     )
     assert stored.status == "needs_review"
     resolver.assert_not_called()
@@ -144,7 +154,7 @@ def test_unverified_or_missing_evidence_cannot_claim_summarized_status(
     evidence: list[dict[str, Any]],
 ) -> None:
     summary = _summary(evidence=evidence)
-    _assert_review_not_published(_result(summary))
+    _assert_review_content_preserved(_result(summary))
     with pytest.raises(SummaryRecordError, match="summary_requires_review"):
         SummaryRecord(
             notice_id=17,
@@ -169,8 +179,12 @@ def test_unverified_or_missing_evidence_cannot_claim_summarized_status(
 )
 def test_each_populated_claim_requires_its_own_text_evidence(field: str, value: Any) -> None:
     result = _result(_summary(**{field: value}))
-    _assert_review_not_published(result)
-    matched = _result(_summary(**{field: value}, evidence=[_evidence(), _evidence(field)]))
+    _assert_review_content_preserved(result)
+    matched = _result(
+        _summary(
+            **{field: value}, evidence=[_evidence(), _evidence("category_code"), _evidence(field)]
+        )
+    )
     record = build_summary_record(
         matched, _metadata(), deadline_on=DEADLINE, generated_at=GENERATED_AT
     )
@@ -221,15 +235,15 @@ def test_mutating_an_approved_record_cannot_bypass_review_before_sql(mutation: s
     conn.cursor.assert_not_called()
 
 
-def test_mutating_review_record_to_include_public_content_is_rejected_before_sql() -> None:
+def test_mutating_review_record_to_schema_invalid_content_is_rejected_before_sql() -> None:
     record = build_summary_record(
         _result(_summary(evidence=[_file_evidence()])),
         _metadata(),
         deadline_on=DEADLINE,
         generated_at=GENERATED_AT,
     )
-    object.__setattr__(record, "result", _summary())
+    record.result.category_code = "27"
     conn = MagicMock()
-    with pytest.raises(SummaryRecordError, match="unexpected_summary_result"):
+    with pytest.raises(SummaryRecordError, match="invalid_summary_result"):
         save_notice_summary(conn, record)
     conn.cursor.assert_not_called()

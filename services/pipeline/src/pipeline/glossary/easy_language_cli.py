@@ -49,11 +49,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.notice_id or args.save:
             with psycopg.connect(DatabaseSettings.from_env().database_url) as conn:
-                source = (
-                    NoticeGlossaryInput.model_validate_json(args.input.read_text("utf-8-sig"))
-                    if args.input
-                    else load_notice_glossary_input(conn, args.notice_id)
-                )
+                if args.input:
+                    source = NoticeGlossaryInput.model_validate_json(
+                        args.input.read_text("utf-8-sig")
+                    )
+                else:
+                    with conn.transaction():
+                        source = load_notice_glossary_input(conn, args.notice_id)
                 result = simplify_and_store_notice(
                     conn,
                     source,

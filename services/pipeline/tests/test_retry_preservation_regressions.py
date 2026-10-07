@@ -67,6 +67,12 @@ def _output(notice: NoticeInput, *, include_cost: bool = True) -> dict[str, Any]
         notice_update="new",
         notes=[COST] if include_cost else [],
         uncertainties=[],
+        card_summaries={
+            "audience": "노원구에 거주하는 초등학생이 대상이에요.",
+            "deadline": "신청 기간은 2026-10-02부터 2026-10-06까지예요.",
+            "action": "현장을 방문하여 신청해 주세요.",
+            "notes": "참가비는 30,000원이에요." if include_cost else None,
+        },
         evidence=[
             {"field": "summary", "excerpt": TITLE},
             {"field": "audience", "excerpt": "대상: 노원구 거주 초등학생"},

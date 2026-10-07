@@ -52,6 +52,10 @@ def _output(
         publisher=notice.publisher,
         notice_update="new",
         notes=notes,
+        card_summaries={
+            "audience": None, "deadline": None, "action": None,
+            "notes": " ".join(f"“{note}”를 확인해 주세요." for note in notes) or None,
+        },
         uncertainties=[],
         evidence=[
             {"field": "summary", "excerpt": TITLE, **reference},

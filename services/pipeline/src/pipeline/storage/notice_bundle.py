@@ -70,6 +70,7 @@ def save_notice_with_files(
 
     An empty list means a successfully collected notice with no files. Callers
     must not pass a partial list after a failed API or page request.
+    Existing file metadata changes also advance the notice's content_updated_at.
     """
     if files is None:
         raise ValueError("파일 목록 수집이 완료되지 않았습니다.")
@@ -92,7 +93,7 @@ def save_notice_with_files(
             if not is_new:
                 with conn.cursor() as cursor:
                     cursor.execute(
-                        "update notices set is_modified = true where id = %s",
-                        (notice_id,),
+                        "update notices set is_modified = true, content_updated_at = now() "
+                        "where id = %s", (notice_id,),
                     )
     return notice_id

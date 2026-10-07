@@ -1,5 +1,7 @@
 """Persist validated Gemini replacements in a caller-owned transaction."""
 
+from enum import Enum
+
 from psycopg import Connection
 from psycopg.pq import TransactionStatus
 from psycopg.rows import tuple_row
@@ -42,6 +44,10 @@ encode(sha256(convert_to(
 
 class EasyTextStorageError(RuntimeError):
     """A saved result is corrupt or belongs to an obsolete notice revision."""
+
+
+class _CacheTokenDefault(Enum):
+    UNSPECIFIED = "unspecified"
 
 
 def _notice_id(value: int) -> int:
@@ -181,7 +187,7 @@ def save_notice_easy_text(
     conn: Connection,
     result: EasyLanguageResult,
     *,
-    expected_cache_token: str | None = None,
+    expected_cache_token: str | None | _CacheTokenDefault = _CacheTokenDefault.UNSPECIFIED,
 ) -> None:
     """Save after validating source revision; preserve existing results on failure.
 
@@ -191,6 +197,9 @@ def save_notice_easy_text(
     may replace that exact snapshot even with an earlier worker clock, but
     cannot overwrite work saved since then. Without a token, a different
     generation is preserved. Older timestamps cannot replace the same generation.
+    Supplying a token also guards same-generation updates. Explicit None means
+    that no cached result existed before generation; omission keeps the standalone
+    timestamp/generation rules. A changed snapshot is preserved without a write.
     """
     try:
         result = EasyLanguageResult.model_validate(result.model_dump(mode="python"))
@@ -199,10 +208,12 @@ def save_notice_easy_text(
     notice_id = _notice_id(result.notice_id)
     if result.notice_revision is None:
         raise EasyTextStorageError("쉬운말 저장에는 수집 원문 버전이 필요합니다.")
-    if expected_cache_token is not None and (
-        not isinstance(expected_cache_token, str)
-        or len(expected_cache_token) != 64
-        or any(char not in "0123456789abcdef" for char in expected_cache_token)
+    check_cache_token = expected_cache_token is not _CacheTokenDefault.UNSPECIFIED
+    cache_token = expected_cache_token if check_cache_token else None
+    if cache_token is not None and (
+        not isinstance(cache_token, str)
+        or len(cache_token) != 64
+        or any(char not in "0123456789abcdef" for char in cache_token)
     ):
         raise EasyTextStorageError("쉬운말 저장 상태 확인값이 올바르지 않습니다.")
     if conn.autocommit:
@@ -211,7 +222,7 @@ def save_notice_easy_text(
         conn.execute("select 1")
     with conn.transaction(), conn.cursor(row_factory=tuple_row) as cursor:
         cursor.execute(
-            "select title, body_html from public.notices where id = %s for share",
+            "select title, body_html from public.notices where id = %s for update",
             (notice_id,),
         )
         parent = cursor.fetchone()
@@ -222,6 +233,10 @@ def save_notice_easy_text(
         current_text = title + ("\n" + body if body else "")
         if result.original_text != current_text:
             raise EasyTextStorageError("쉬운말 원문이 저장된 DB 공지와 일치하지 않습니다.")
+        # Serialize only the brief save phase. Checking under the parent lock
+        # also handles a cached row being deleted while Gemini was running.
+        if check_cache_token and get_notice_easy_text_cache_token(conn, notice_id) != cache_token:
+            return
         if not body:
             raise EasyTextStorageError("본문 없는 공지는 쉬운말 성공 결과로 저장하지 않습니다.")
         if result.original_title is not None and result.original_title != title:
@@ -259,14 +274,15 @@ def save_notice_easy_text(
             "generated_at = excluded.generated_at, "
             "body_text_present = excluded.body_text_present, "
             "attachment_content_included = excluded.attachment_content_included "
-            "where notice_easy_texts.notice_revision != excluded.notice_revision "
+            "where (notice_easy_texts.notice_revision != excluded.notice_revision "
             "or (notice_easy_texts.model = excluded.model "
             "and notice_easy_texts.prompt_version = excluded.prompt_version "
             "and notice_easy_texts.generated_at < excluded.generated_at) "
             "or ((notice_easy_texts.model != excluded.model "
             "or notice_easy_texts.prompt_version != excluded.prompt_version) "
-            f"and {_CACHE_TOKEN} = %s::text)",
-            (*values, expected_cache_token),
+            f"and {_CACHE_TOKEN} = %s::text)) "
+            f"and (%s::boolean or {_CACHE_TOKEN} = %s::text)",
+            (*values, cache_token, not check_cache_token, cache_token),
         )
         # An unchanged scope across a source change is cleared by the migration
         # trigger to protect old workers; restore it after exact source validation.

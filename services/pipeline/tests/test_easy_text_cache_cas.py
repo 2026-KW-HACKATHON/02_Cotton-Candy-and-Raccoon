@@ -5,8 +5,10 @@ from unittest.mock import MagicMock
 
 import pytest
 from psycopg.types.json import Jsonb
+from test_collect_easy_text_storage import committed_easy_db as committed_easy_db
 from test_easy_text_storage import _NOW, _notice, _request, _result
 from test_easy_text_storage import easy_db as easy_db
+from test_easy_text_storage import service_db as service_db
 
 from pipeline.glossary.easy_language import EasyLanguageResult, simplify_notice
 from pipeline.glossary.easy_language_service import simplify_and_store_notice
@@ -20,6 +22,8 @@ from pipeline.storage.notice_easy_text import (
 
 
 def _old_generation(result, generation):
+    if generation == "same":
+        return result
     field = "model" if generation == "model" else "prompt_version"
     value = "gemini-previous-model" if generation == "model" else "easy-language-v3"
     return EasyLanguageResult.model_validate({**result.model_dump(), field: value})
@@ -41,42 +45,44 @@ def _alternative_result(source, now=_NOW):
     ids=["earlier", "equal", "later"],
 )
 def test_late_old_generation_cannot_replace_current_cache(
-    easy_db, monkeypatch, generation, clock_offset
+    service_db, monkeypatch, generation, clock_offset
 ):
-    source = _notice(easy_db)
+    source = _notice(service_db)
     current = _result(source)
-    save_notice_easy_text(easy_db, current)
+    save_notice_easy_text(service_db, current)
     delayed = _old_generation(_alternative_result(source, _NOW + clock_offset), generation)
 
-    save_notice_easy_text(easy_db, delayed)
+    save_notice_easy_text(service_db, delayed)
 
-    assert get_notice_easy_text(easy_db, source.notice_id) == current
+    assert get_notice_easy_text(service_db, source.notice_id) == current
     request = MagicMock(side_effect=AssertionError("current cache must avoid another API request"))
     monkeypatch.setattr(
         "pipeline.glossary.easy_language_service.load_gemini_api_key",
         MagicMock(side_effect=AssertionError("current cache must not read credentials")),
     )
-    assert simplify_and_store_notice(easy_db, source, request=request) == current
+    service_db.commit()
+    assert simplify_and_store_notice(service_db, source, request=request) == current
     request.assert_not_called()
 
 
 @pytest.mark.parametrize("generation", ["model", "prompt"])
-def test_old_worker_with_a_captured_token_cannot_undo_a_completed_upgrade(easy_db, generation):
-    source = _notice(easy_db)
+def test_old_worker_with_a_captured_token_cannot_undo_a_completed_upgrade(service_db, generation):
+    source = _notice(service_db)
     previous = _old_generation(_alternative_result(source), generation)
-    save_notice_easy_text(easy_db, previous)
-    token = get_notice_easy_text_cache_token(easy_db, source.notice_id)
+    save_notice_easy_text(service_db, previous)
+    token = get_notice_easy_text_cache_token(service_db, source.notice_id)
     current = _result(source, _NOW - timedelta(hours=1))
-    save_notice_easy_text(easy_db, current, expected_cache_token=token)
+    save_notice_easy_text(service_db, current, expected_cache_token=token)
     delayed_old = _old_generation(
         _alternative_result(source, _NOW + timedelta(hours=1)), generation
     )
 
-    save_notice_easy_text(easy_db, delayed_old, expected_cache_token=token)
+    save_notice_easy_text(service_db, delayed_old, expected_cache_token=token)
 
-    assert get_notice_easy_text(easy_db, source.notice_id) == current
+    assert get_notice_easy_text(service_db, source.notice_id) == current
     request = MagicMock(side_effect=AssertionError("completed upgrade must still be cached"))
-    assert simplify_and_store_notice(easy_db, source, request=request) == current
+    service_db.commit()
+    assert simplify_and_store_notice(service_db, source, request=request) == current
     request.assert_not_called()
 
 
@@ -113,7 +119,7 @@ def test_stale_token_cannot_replace_an_intervening_same_generation_refresh(easy_
     assert get_notice_easy_text(easy_db, source.notice_id) == refreshed
 
 
-@pytest.mark.parametrize("generation", ["model", "prompt"])
+@pytest.mark.parametrize("generation", ["model", "prompt", "same"])
 def test_absent_token_cannot_clobber_a_generation_inserted_during_the_request(easy_db, generation):
     source = _notice(easy_db)
     token = get_notice_easy_text_cache_token(easy_db, source.notice_id)
@@ -127,7 +133,7 @@ def test_absent_token_cannot_clobber_a_generation_inserted_during_the_request(ea
     assert get_notice_easy_text(easy_db, source.notice_id) == intervening
 
 
-@pytest.mark.parametrize("generation", ["model", "prompt"])
+@pytest.mark.parametrize("generation", ["model", "prompt", "same"])
 def test_changed_conversion_invalidates_token_with_generation_and_clock_unchanged(
     easy_db, generation
 ):
@@ -159,6 +165,43 @@ def test_changed_conversion_invalidates_token_with_generation_and_clock_unchange
     )
 
     assert get_notice_easy_text(easy_db, source.notice_id) == edited
+
+
+def test_stale_token_cannot_replace_same_generation_with_a_later_clock(easy_db):
+    source = _notice(easy_db)
+    previous = _result(source)
+    save_notice_easy_text(easy_db, previous)
+    token = get_notice_easy_text_cache_token(easy_db, source.notice_id)
+    assert token is not None
+    refreshed = _alternative_result(source, _NOW + timedelta(hours=1))
+    save_notice_easy_text(easy_db, refreshed)
+    assert get_notice_easy_text(easy_db, source.notice_id) == refreshed
+
+    save_notice_easy_text(
+        easy_db,
+        _result(source, _NOW + timedelta(hours=2)),
+        expected_cache_token=token,
+    )
+
+    assert get_notice_easy_text(easy_db, source.notice_id) == refreshed
+
+
+def test_captured_token_cannot_recreate_a_deleted_cache(easy_db):
+    source = _notice(easy_db)
+    save_notice_easy_text(easy_db, _result(source))
+    token = get_notice_easy_text_cache_token(easy_db, source.notice_id)
+    assert token is not None
+    easy_db.execute(
+        "delete from public.notice_easy_texts where notice_id = %s", (source.notice_id,)
+    )
+
+    save_notice_easy_text(
+        easy_db,
+        _alternative_result(source, _NOW + timedelta(hours=1)),
+        expected_cache_token=token,
+    )
+
+    assert get_notice_easy_text(easy_db, source.notice_id) is None
 
 
 @pytest.mark.parametrize(

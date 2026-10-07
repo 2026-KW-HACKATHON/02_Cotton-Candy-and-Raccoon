@@ -6,7 +6,9 @@ from unittest.mock import MagicMock
 
 import pytest
 from psycopg.types.json import Jsonb
+from test_collect_easy_text_storage import committed_easy_db as committed_easy_db
 from test_easy_text_storage import easy_db as easy_db
+from test_easy_text_storage import service_db as service_db
 
 from pipeline.glossary.easy_language import DEFAULT_MODEL, PROMPT_VERSION, NoNoticeBodyError
 from pipeline.glossary.easy_language_service import simplify_and_store_notice
@@ -60,9 +62,9 @@ def _public_rows(conn, role, notice_id):
     return rows
 
 
-def test_gemini_receives_body_only_and_exact_title_is_retained(easy_db):
+def test_gemini_receives_body_only_and_exact_title_is_retained(service_db):
     title = "익일 안내 😀\n접수 공고"
-    source = _notice(easy_db, title=title)
+    source = _notice(service_db, title=title)
     request = MagicMock(
         return_value=json.dumps(
             {
@@ -74,8 +76,9 @@ def test_gemini_receives_body_only_and_exact_title_is_retained(easy_db):
         )
     )
 
+    service_db.commit()
     result = simplify_and_store_notice(
-        easy_db, source, api_key="fake", request=request, clock=lambda: _NOW
+        service_db, source, api_key="fake", request=request, clock=lambda: _NOW
     )
 
     request.assert_called_once()
@@ -84,28 +87,31 @@ def test_gemini_receives_body_only_and_exact_title_is_retained(easy_db):
     assert result.easy_text == title + "\n다음 날 방문하세요."
     assert result.changes[0].start == len(title) + 1
     assert result.prompt_version == PROMPT_VERSION
-    assert get_notice_easy_text(easy_db, source.notice_id) == result
+    assert get_notice_easy_text(service_db, source.notice_id) == result
     for role in ("anon", "authenticated"):
-        assert _public_rows(easy_db, role, source.notice_id) == [(result.easy_text,)]
-    assert load_notice_glossary_input(easy_db, source.notice_id).text == source.text
+        assert _public_rows(service_db, role, source.notice_id) == [(result.easy_text,)]
+    assert load_notice_glossary_input(service_db, source.notice_id).text == source.text
 
 
 @pytest.mark.parametrize(
     "body_html",
     [None, "<p> \t\n </p>", "<img src='notice.png' alt='공고 이미지'>"],
 )
-def test_title_only_notice_makes_no_api_call_and_stores_no_result(easy_db, monkeypatch, body_html):
-    source = _notice(easy_db, body_html=body_html)
+def test_title_only_notice_makes_no_api_call_and_stores_no_result(
+    service_db, monkeypatch, body_html
+):
+    source = _notice(service_db, body_html=body_html)
     request = MagicMock(side_effect=AssertionError("a title-only notice must not call Gemini"))
     key_loader = MagicMock(side_effect=AssertionError("no body must not read the API key"))
     monkeypatch.setattr("pipeline.glossary.easy_language_service.load_gemini_api_key", key_loader)
 
+    service_db.commit()
     with pytest.raises(NoNoticeBodyError):
-        simplify_and_store_notice(easy_db, source, request=request)
+        simplify_and_store_notice(service_db, source, request=request)
 
     request.assert_not_called()
     key_loader.assert_not_called()
-    assert easy_db.execute("select count(*) from public.notice_easy_texts").fetchone()[0] == 0
+    assert service_db.execute("select count(*) from public.notice_easy_texts").fetchone()[0] == 0
 
 
 @pytest.mark.parametrize("role", ["anon", "authenticated"])

@@ -24,6 +24,7 @@ from pipeline.storage.notice_easy_text import get_notice_easy_text
 from pipeline.transform.nowon import transform_nowon_notice
 
 _ROOT = Path(__file__).resolve().parents[3]
+_TEST_ROLES = ("anon", "authenticated", "service_role")
 _BODY = "익일 방문하세요."
 _TITLE = "익일 안내 제목"
 
@@ -52,20 +53,25 @@ def committed_easy_db() -> Iterator[DatabaseSettings]:
     try:
         admin.execute(sql.SQL("create database {}").format(sql.Identifier(database_name)))
         created_database = True
-        for role in ("anon", "authenticated"):
-            if admin.execute("select 1 from pg_roles where rolname = %s", (role,)).fetchone():
-                continue
-            admin.execute(sql.SQL("create role {} nologin").format(sql.Identifier(role)))
-            created_roles.append(role)
+        for role in _TEST_ROLES:
+            flags = admin.execute(
+                "select rolsuper,rolbypassrls,rolcreaterole,rolcreatedb,rolreplication,rolcanlogin "
+                "from pg_roles where rolname = %s", (role,),
+            ).fetchone()
+            if flags is None:
+                admin.execute(sql.SQL("create role {} nologin").format(sql.Identifier(role)))
+                created_roles.append(role)
+            else:
+                assert flags == (False,) * 6, "Existing test role has elevated flags"
+                assert admin.execute(
+                    "select count(*) from pg_auth_members "
+                    "where member=(select oid from pg_roles where rolname=%s)", (role,),
+                ).fetchone() == (0,), "Existing test role inherits other privileges"
         test_info = {**info, "dbname": database_name}
         with psycopg.connect(**test_info) as setup:
-            for name in (
-                "20260922053900_init.sql",
-                "20261007000000_notice_easy_text.sql",
-                "20261007000004_notice_easy_text_scope.sql",
-                "20261007000005_notice_easy_text_body_only.sql",
-            ):
-                setup.execute((_ROOT / "supabase/migrations" / name).read_text("utf-8"))
+            setup.execute("grant usage on schema public to anon, authenticated, service_role")
+            for migration in sorted((_ROOT / "supabase/migrations").glob("*.sql")):
+                setup.execute(migration.read_text("utf-8"))
         yield DatabaseSettings(make_conninfo(**test_info))
     finally:
         try:

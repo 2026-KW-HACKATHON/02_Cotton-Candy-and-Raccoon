@@ -35,22 +35,22 @@ def simplify_and_store_notice(
     request: Callable[..., str] | None = None,
     clock: Callable[[], datetime] | None = None,
 ) -> EasyLanguageResult:
-    """Read cached conversion or generate/save once; never call a dictionary.
+    """Reuse a saved conversion, or generate between two short transactions.
 
-    Serialize duplicate first requests for one notice. A matching cached result
-    needs neither API credentials nor network access. Caller owns the transaction.
+    This service owns its transactions and requires an idle connection. It never
+    commits the caller's pending work. Gemini runs with no open DB transaction or
+    notice lock. Concurrent cache misses may both request Gemini, but only the
+    worker whose saved-state token still matches can replace an existing result.
     """
     if source.notice_id is None:
         raise ValueError("쉬운말 DB 저장에는 공지 ID가 필요합니다.")
     if conn.autocommit:
         raise EasyTextStorageError("쉬운말 처리에는 autocommit이 꺼진 연결이 필요합니다.")
-    if conn.info.transaction_status == TransactionStatus.IDLE:
-        conn.execute("select 1")
-    with conn.transaction():
-        conn.execute(
-            "select pg_advisory_xact_lock(hashtextextended(%s, 2026100702))",
-            (f"notice-easy-text:{source.notice_id}",),
+    if conn.info.transaction_status != TransactionStatus.IDLE:
+        raise EasyTextStorageError(
+            "쉬운말 처리는 열린 트랜잭션 밖에서 요청하세요. 기존 작업은 확정하지 않았습니다."
         )
+    with conn.transaction():
         current = load_notice_glossary_input(conn, source.notice_id)
         if source.notice_revision is not None and current.notice_revision != source.notice_revision:
             raise EasyTextStorageError("공지 원문이 바뀌었습니다. 최신 공지로 다시 요청하세요.")
@@ -87,13 +87,16 @@ def simplify_and_store_notice(
                         "캐시 처리 중 공지 원문이나 저장 결과가 바뀌었습니다."
                     )
                 return cached
-        result = simplify_notice(
-            source,
-            api_key=api_key if api_key is not None else load_gemini_api_key(),
-            model=model,
-            request=request,
-            clock=clock,
-        )
+    result = simplify_notice(
+        source,
+        api_key=api_key if api_key is not None else load_gemini_api_key(),
+        model=model,
+        request=request,
+        clock=clock,
+    )
+    # Storage rechecks the parent revision and the exact cache snapshot. The
+    # transaction starts only after the external request has completed.
+    with conn.transaction():
         save_notice_easy_text(conn, result, expected_cache_token=expected_cache_token)
         saved = get_notice_easy_text(
             conn,

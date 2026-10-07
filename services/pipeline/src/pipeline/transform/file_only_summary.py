@@ -17,11 +17,6 @@ def is_file_only_notice(notice: NoticeInput, media_sources: tuple[MediaSource, .
     return bool(media_sources) and not notice.body_text.strip() and not notice.attachments
 
 
-def _metadata_sources(notice: NoticeInput) -> list[str]:
-    """Only literal metadata supplied by the caller can match a text quote."""
-    return [value for value in (notice.title, notice.publisher, notice.department) if value]
-
-
 def reversed_end_fields(entry: DateEntry) -> tuple[str, ...]:
     """Compare dates before clocks, allowing a next-day end with an earlier clock."""
     if entry.start_date and entry.end_date:
@@ -38,7 +33,6 @@ def file_reference_problems(
     summary: NoticeSummary, notice: NoticeInput, media_sources: tuple[MediaSource, ...]
 ) -> tuple[str, ...]:
     """Return safe field paths for one retry, without claiming to inspect pixels."""
-    sources = _metadata_sources(notice)
     problems = []
     cited_fields = set()
     for index, item in enumerate(summary.evidence):
@@ -46,12 +40,17 @@ def file_reference_problems(
             continue
         if getattr(summary, item.field) in (None, []):
             problems.append(f"evidence.{index}.field: empty_field")
-        elif not evidence_reference_valid(item, sources=sources, media_sources=media_sources):
+        elif not evidence_reference_valid(
+            item, sources=[], media_sources=media_sources, title=notice.title,
+        ):
             problems.append(f"evidence.{index}: invalid_file_or_text_reference")
         else:
             cited_fields.add(item.field)
     required = {"summary"} if summary.summary != REVIEW_NOTE else set()
-    for field in ("applicable_area", "audience", "action", "location", "dates", "notes", "topics"):
+    for field in (
+        "category_code", "applicable_area", "audience", "action", "location", "dates", "notes",
+        "topics",
+    ):
         if getattr(summary, field) not in (None, []):
             required.add(field)
     problems.extend(
@@ -71,18 +70,22 @@ def preserve_file_only_summary(
 
     File quotes and page counts are not compared with binary contents here. A
     missing reference remains unverified, never inferred from the available file.
+    Metadata titles support only headlines and classification, just as in the
+    ordinary text path; title text never verifies eligibility or schedules.
+    The caller's publisher remains separate trusted metadata.
     The caller owns the one-retry budget; this function performs no API calls.
     """
     problems = file_reference_problems(summary, notice, media_sources)
     data = summary.model_dump()
-    sources = _metadata_sources(notice)
     evidence = []
     for item in summary.evidence:
         if getattr(summary, item.field) in (None, []):
             continue
         if item.field == "publisher" and notice.publisher:
             continue
-        valid = evidence_reference_valid(item, sources=sources, media_sources=media_sources)
+        valid = evidence_reference_valid(
+            item, sources=[], media_sources=media_sources, title=notice.title,
+        )
         verification = (
             ("text_matched" if item.source_type == "text" else "file_reference_only")
             if valid

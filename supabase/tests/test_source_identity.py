@@ -1,70 +1,7 @@
 """Validate the consolidated baseline using an empty disposable loopback DB."""
 
-import os
-from collections.abc import Iterator
-from pathlib import Path
-
 import psycopg
 import pytest
-
-ROOT = Path(__file__).resolve().parents[2]
-
-
-@pytest.fixture(scope="module")
-def database() -> Iterator[psycopg.Connection]:
-    dsn = os.environ.get("SCHEMA_TEST_DATABASE_URL")
-    if not dsn:
-        pytest.skip("SCHEMA_TEST_DATABASE_URL is required")
-    conn = psycopg.connect(dsn)
-    if conn.info.host != "127.0.0.1" or not conn.info.dbname.startswith(
-        "pipeline_schema_test_"
-    ):
-        conn.close()
-        pytest.fail("Use a disposable loopback pipeline_schema_test_* database")
-    try:
-        assert (
-            conn.execute("select to_regclass('public.notices')").fetchone()[0] is None
-        )
-        # Emulate Supabase default API role grants, not the actual Data API.
-        conn.execute("create role anon; create role authenticated")
-        conn.execute("grant usage on schema public to anon, authenticated")
-        conn.execute(
-            "alter default privileges in schema public grant all on tables to anon, authenticated"
-        )
-        conn.execute(
-            "alter default privileges in schema public "
-            "grant all on sequences to anon, authenticated"
-        )
-        files = sorted((ROOT / "supabase/migrations").glob("*.sql"))
-        assert [path.name for path in files] == [
-            "20260922053900_init.sql",
-            "20260922053901_rls.sql",
-            "20260923044500_holidays.sql",
-            "20261005000000_glossary.sql",
-            "20261006000000_notice_glossary.sql",
-            "20261007000000_notice_easy_text.sql",
-            "20261007000001_notice_glossary_current_source.sql",
-            "20261007000003_standard_dictionary.sql",
-            "20261007000004_notice_easy_text_scope.sql",
-            "20261007000005_notice_easy_text_body_only.sql",
-        ]
-        for path in files:
-            conn.execute(path.read_text(encoding="utf-8"))
-        conn.execute((ROOT / "supabase/seed.sql").read_text(encoding="utf-8"))
-        yield conn
-    finally:
-        conn.rollback()
-        conn.close()
-
-
-@pytest.fixture
-def db(database: psycopg.Connection) -> Iterator[psycopg.Connection]:
-    database.execute("savepoint source_test")
-    try:
-        yield database
-    finally:
-        database.execute("rollback to savepoint source_test")
-        database.execute("release savepoint source_test")
 
 
 def insert_notice(
@@ -96,7 +33,7 @@ def test_consolidated_init_and_seed(db: psycopg.Connection) -> None:
         == "id:aaaaaaaa-0000-0000-0000-000000000001"
     )
     assert db.execute("select count(*) from notices").fetchone()[0] == 5
-    assert db.execute("select count(*) from notice_files").fetchone()[0] == 3
+    assert db.execute("select count(*) from notice_files").fetchone()[0] == 4
     columns = dict(
         db.execute(
             "select column_name,is_nullable from information_schema.columns "
@@ -107,6 +44,23 @@ def test_consolidated_init_and_seed(db: psycopg.Connection) -> None:
     assert columns["file_key"] == "NO"
     assert (
         db.execute("select to_regclass('public.holidays')").fetchone()[0] == "holidays"
+    )
+
+
+@pytest.mark.parametrize(
+    "table",
+    [
+        "glossary_entries",
+        "glossary_lookups",
+        "glossary_lookup_entries",
+        "notice_glossary_results",
+    ],
+)
+def test_removed_dictionary_tables_are_not_created(
+    db: psycopg.Connection, table: str
+) -> None:
+    assert (
+        db.execute("select to_regclass(%s)", (f"public.{table}",)).fetchone()[0] is None
     )
 
 
@@ -226,7 +180,7 @@ def test_visible_rows_allowed_file_key_forbidden(
     )
     assert (
         len(db.execute("select id,notice_id,kind,url from notice_files").fetchall())
-        == 2
+        == 3
     )
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         db.execute("select file_key from notice_files")
@@ -284,7 +238,7 @@ def test_seoul_visible_notice_and_files_allowed_hidden_ones_filtered(
 @pytest.mark.parametrize("role", ["anon", "authenticated"])
 @pytest.mark.parametrize(
     "table",
-    ["notices", "notice_files", "notice_glossary_results", "notice_easy_texts"],
+    ["notices", "notice_files", "notice_easy_texts"],
 )
 def test_app_table_privileges_are_read_only(
     db: psycopg.Connection, role: str, table: str
@@ -306,29 +260,32 @@ def test_app_table_privileges_are_read_only(
 
 
 @pytest.mark.parametrize("role", ["anon", "authenticated"])
-def test_notice_glossary_originals_follow_notice_visibility(
+def test_easy_text_originals_follow_notice_visibility_and_revision(
     db: psycopg.Connection, role: str
 ) -> None:
     visible = insert_notice(db, board="25")
     hidden = insert_notice(db, board="30")
+    db.execute(
+        "update notices set body_html='<p>행사 본문</p>' where id=any(%s)",
+        ([visible, hidden],),
+    )
     db.execute("update notices set is_visible=false where id=%s", (hidden,))
     db.execute(
         """with source as (
                select id, public.notice_easy_text_revision(title, body_html) as notice_revision,
-                      'policy test dummy'::text as original_text,
+                      E'test\n행사 본문'::text as original_text,
                       '2026-10-06T00:00:00+00:00'::timestamptz as generated_at
                from notices where id=any(%s)
            ), content as (
                select *, encode(sha256(convert_to(original_text,'UTF8')),'hex') as source_hash
                from source
            )
-           insert into notice_glossary_results
-               (notice_id,source_hash,rules_version,generated_at,status,result)
-           select id,source_hash,'policy-test',generated_at,'completed',jsonb_build_object(
-               'notice_id',id,'notice_revision',notice_revision,
-               'source_hash',source_hash,'rules_version','policy-test',
-               'generated_at',generated_at,'status','completed',
-               'original_text',original_text,'easy_text',original_text)
+           insert into notice_easy_texts
+               (notice_id,notice_revision,source_hash,original_text,easy_text,changes,
+                model,prompt_version,attempt_count,generated_at,
+                body_text_present,attachment_content_included)
+           select id,notice_revision,source_hash,original_text,original_text,'[]'::jsonb,
+                  'policy-test','policy-test',1,generated_at,true,false
            from content""",
         ([visible, hidden],),
     )
@@ -339,15 +296,27 @@ def test_notice_glossary_originals_follow_notice_visibility(
         )
         db.execute("set local role " + role)
         assert db.execute(
-            "select notice_id,result->>'original_text' from notice_glossary_results "
+            "select notice_id,original_text from notice_easy_texts "
             "where notice_id=any(%s)",
             ([visible, hidden],),
-        ).fetchall() == [(permitted, "policy test dummy")]
+        ).fetchall() == [(permitted, "test\n행사 본문")]
         assert (
             db.execute(
-                "select result->>'original_text' from notice_glossary_results where notice_id=%s",
+                "select original_text from notice_easy_texts where notice_id=%s",
                 (denied,),
             ).fetchone()
             is None
         )
         db.execute("reset role")
+    db.execute(
+        "update notices set is_visible=true where id=any(%s)",
+        ([visible, hidden],),
+    )
+    db.execute(
+        "update notices set body_html='<p>변경된 본문</p>' where id=%s", (visible,)
+    )
+    db.execute("set local role " + role)
+    assert db.execute(
+        "select notice_id,original_text from notice_easy_texts where notice_id=any(%s)",
+        ([visible, hidden],),
+    ).fetchall() == [(hidden, "test\n행사 본문")]

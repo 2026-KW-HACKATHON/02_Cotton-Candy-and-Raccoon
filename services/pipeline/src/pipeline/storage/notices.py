@@ -4,7 +4,15 @@ from psycopg import Connection
 
 from pipeline.models import NoticeRecord
 
-UPSERT_NOTICE = """
+_CONTENT_CHANGED = """
+    notices.title is distinct from excluded.title
+    or notices.body_html is distinct from excluded.body_html
+    or notices.registered_on is distinct from excluded.registered_on
+    or notices.url is distinct from excluded.url
+    or notices.license_type is distinct from excluded.license_type
+"""
+
+UPSERT_NOTICE = f"""
 insert into notices (
     category, source_board, dong_group, is_pinned, post_sn, title, department,
     registered_on, url, body_html, license_type
@@ -18,13 +26,9 @@ on conflict (category, source_board, post_sn) do update set
     url = excluded.url,
     body_html = excluded.body_html,
     license_type = excluded.license_type,
-    is_modified = notices.is_modified or (
-        notices.title is distinct from excluded.title
-        or notices.body_html is distinct from excluded.body_html
-        or notices.registered_on is distinct from excluded.registered_on
-        or notices.url is distinct from excluded.url
-        or notices.license_type is distinct from excluded.license_type
-    ),
+    is_modified = notices.is_modified or ({_CONTENT_CHANGED}),
+    content_updated_at = case when {_CONTENT_CHANGED}
+        then now() else notices.content_updated_at end,
     is_visible = true,
     updated_at = now()
 returning id
@@ -65,7 +69,10 @@ def insert_notice_if_absent(conn: Connection, record: NoticeRecord) -> int | Non
 
 
 def save_notice(conn: Connection, record: NoticeRecord) -> int:
-    """Upsert a notice and return its DB ID; never commit or close the connection."""
+    """Upsert a notice; content_updated_at advances only for changed source content.
+
+    Return its DB ID without committing or closing the caller's connection.
+    """
     with conn.cursor() as cursor:
         cursor.execute(UPSERT_NOTICE, _values(record))
         row = cursor.fetchone()

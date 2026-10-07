@@ -9,7 +9,9 @@ import psycopg
 import pytest
 from psycopg.types.json import Jsonb
 from pydantic import ValidationError
+from test_collect_easy_text_storage import committed_easy_db as committed_easy_db
 from test_easy_text_storage import _easy_db_connection
+from test_easy_text_storage import service_db as service_db
 
 from pipeline.glossary.easy_language import (
     EasyLanguageResult,
@@ -96,33 +98,35 @@ def test_direct_json_cannot_claim_processing_scope() -> None:
 
 @pytest.mark.parametrize("body_html,expected", [(None, False), ("<p>본문</p>", True)])
 def test_fresh_save_and_cache_publish_known_scope_without_second_api_call(
-    easy_db, monkeypatch, body_html: str | None, expected: bool
+    service_db, monkeypatch, body_html: str | None, expected: bool
 ) -> None:
-    source = _insert_notice(easy_db, body_html)
+    source = _insert_notice(service_db, body_html)
     request = MagicMock(side_effect=_request)
 
+    service_db.commit()
     if not expected:
         with pytest.raises(NoNoticeBodyError):
-            simplify_and_store_notice(easy_db, source, api_key="fake", request=request)
-        assert get_notice_easy_text(easy_db, source.notice_id) is None
+            simplify_and_store_notice(service_db, source, api_key="fake", request=request)
+        assert get_notice_easy_text(service_db, source.notice_id) is None
         request.assert_not_called()
         return
 
-    first = simplify_and_store_notice(easy_db, source, api_key="fake", request=request)
+    first = simplify_and_store_notice(service_db, source, api_key="fake", request=request)
     assert (first.body_text_present, first.attachment_content_included) == (expected, False)
-    assert _raw_scope(easy_db, source.notice_id) == (expected, False)
-    assert get_notice_easy_text(easy_db, source.notice_id) == first
+    assert _raw_scope(service_db, source.notice_id) == (expected, False)
+    assert get_notice_easy_text(service_db, source.notice_id) == first
 
     monkeypatch.setattr(
         "pipeline.glossary.easy_language_service.load_gemini_api_key",
         MagicMock(side_effect=AssertionError("cache must not read the key")),
     )
-    assert simplify_and_store_notice(easy_db, source, request=request) == first
+    service_db.commit()
+    assert simplify_and_store_notice(service_db, source, request=request) == first
     request.assert_called_once()
 
 
-def test_title_replacement_is_rejected_without_storing_success(easy_db) -> None:
-    source = _insert_notice(easy_db, "<p>본문</p>")
+def test_title_replacement_is_rejected_without_storing_success(service_db) -> None:
+    source = _insert_notice(service_db, "<p>본문</p>")
 
     def title_change(**_kwargs: object) -> str:
         return json.dumps(
@@ -131,12 +135,13 @@ def test_title_replacement_is_rejected_without_storing_success(easy_db) -> None:
         )
 
     request = MagicMock(side_effect=title_change)
+    service_db.commit()
     with pytest.raises(EasyLanguageValidationError):
         simplify_and_store_notice(
-            easy_db, source, api_key="fake", request=request, clock=lambda: _NOW
+            service_db, source, api_key="fake", request=request, clock=lambda: _NOW
         )
     assert request.call_count == 2
-    assert get_notice_easy_text(easy_db, source.notice_id) is None
+    assert get_notice_easy_text(service_db, source.notice_id) is None
 
 
 def test_getter_derives_legacy_scope_without_mutating_sql(easy_db) -> None:
@@ -156,11 +161,11 @@ def test_getter_derives_legacy_scope_without_mutating_sql(easy_db) -> None:
 
 @pytest.mark.parametrize("body_html,expected", [("<p>본문</p>", True)])
 def test_legacy_unknown_scope_is_filled_on_cache_hit_without_gemini(
-    easy_db, monkeypatch, body_html: str | None, expected: bool
+    service_db, monkeypatch, body_html: str | None, expected: bool
 ) -> None:
-    source = _insert_notice(easy_db, body_html)
-    save_notice_easy_text(easy_db, _result(source))
-    easy_db.execute(
+    source = _insert_notice(service_db, body_html)
+    save_notice_easy_text(service_db, _result(source))
+    service_db.execute(
         "update public.notice_easy_texts set body_text_present = null, "
         "attachment_content_included = null where notice_id = %s",
         (source.notice_id,),
@@ -171,10 +176,11 @@ def test_legacy_unknown_scope_is_filled_on_cache_hit_without_gemini(
         MagicMock(side_effect=AssertionError("legacy cache must not read the key")),
     )
 
-    cached = simplify_and_store_notice(easy_db, source, request=request)
+    service_db.commit()
+    cached = simplify_and_store_notice(service_db, source, request=request)
 
     assert (cached.body_text_present, cached.attachment_content_included) == (expected, False)
-    assert _raw_scope(easy_db, source.notice_id) == (expected, False)
+    assert _raw_scope(service_db, source.notice_id) == (expected, False)
     request.assert_not_called()
 
 
@@ -263,18 +269,18 @@ def test_scope_fill_requires_unchanged_cache_token(easy_db) -> None:
     assert _raw_scope(easy_db, source.notice_id) == (None, None)
 
 
-def test_old_worker_source_change_clears_scope_then_cache_fills_without_api(easy_db) -> None:
-    source = _insert_notice(easy_db, "<p>이전 본문</p>")
-    save_notice_easy_text(easy_db, _result(source))
-    assert _raw_scope(easy_db, source.notice_id) == (True, False)
+def test_old_worker_source_change_clears_scope_then_cache_fills_without_api(service_db) -> None:
+    source = _insert_notice(service_db, "<p>이전 본문</p>")
+    save_notice_easy_text(service_db, _result(source))
+    assert _raw_scope(service_db, source.notice_id) == (True, False)
     new_html = "<p>추가된 본문</p>"
     new_text = "익일 안내\n추가된 본문"
-    easy_db.execute(
+    service_db.execute(
         "update public.notices set body_html = %s where id = %s",
         (new_html, source.notice_id),
     )
     # An old worker writes a new source but has no SQL columns for the scope.
-    easy_db.execute(
+    service_db.execute(
         "update public.notice_easy_texts set notice_revision = %s, source_hash = %s, "
         "original_text = %s, easy_text = %s, changes = %s, "
         "generated_at = generated_at + interval '1 second' where notice_id = %s",
@@ -287,13 +293,14 @@ def test_old_worker_source_change_clears_scope_then_cache_fills_without_api(easy
             source.notice_id,
         ),
     )
-    assert _raw_scope(easy_db, source.notice_id) == (None, None)
+    assert _raw_scope(service_db, source.notice_id) == (None, None)
 
-    current = load_notice_glossary_input(easy_db, source.notice_id)
+    current = load_notice_glossary_input(service_db, source.notice_id)
     request = MagicMock(side_effect=AssertionError("old cache must not call Gemini"))
-    cached = simplify_and_store_notice(easy_db, current, request=request)
+    service_db.commit()
+    cached = simplify_and_store_notice(service_db, current, request=request)
     assert (cached.body_text_present, cached.attachment_content_included) == (True, False)
-    assert _raw_scope(easy_db, source.notice_id) == (True, False)
+    assert _raw_scope(service_db, source.notice_id) == (True, False)
     request.assert_not_called()
 
 

@@ -13,6 +13,7 @@ from test_gemini_multimodal import PreparationIssue, _media, _notice, _prepared
 
 from pipeline import summary_job
 from pipeline.storage.summaries import (
+    REGISTER_SUMMARY_EXECUTION_AT_REVISION,
     SummaryStorageError,
     record_summary_failure,
     save_prepared_summary,
@@ -24,7 +25,7 @@ from pipeline.storage.summary_record import (
 )
 from pipeline.transform import summarize as summarize_module
 from pipeline.transform.gemini_client import DEFAULT_MODEL, GeminiRequestError
-from pipeline.transform.gemini_prompt import GeminiConfigurationError
+from pipeline.transform.gemini_prompt import SUMMARY_PROMPT_VERSION, GeminiConfigurationError
 from pipeline.transform.grounding import REVIEW_NOTE, unknown_summary
 from pipeline.transform.prepared_summary import PreparedSummaryResult, SummaryPreparationError
 from pipeline.transform.summary_schema import NoticeSummary, SummaryValidationError
@@ -38,14 +39,14 @@ def _metadata(attachment_status: str = "all_read") -> SummaryMetadata:
     return SummaryMetadata(
         source_hash="cd" * 32,
         model=DEFAULT_MODEL,
-        prompt_version="summary-v3",
+        prompt_version=SUMMARY_PROMPT_VERSION,
         attachment_status=attachment_status,
     )
 
 
 def _response(kind: str) -> dict[str, Any]:
     data = unknown_summary(_notice("행사 안내")).model_dump(mode="json")
-    data.update(category="event", summary="행사 안내", uncertainties=[])
+    data.update(category="event", category_code=26, summary="행사 안내", uncertainties=[])
     evidence: dict[str, Any] = {"field": "summary", "excerpt": "행사 안내"}
     if kind in {"pdf", "image"}:
         evidence.update(
@@ -53,7 +54,7 @@ def _response(kind: str) -> dict[str, Any]:
             source_id="media_1",
             page=1 if kind == "pdf" else None,
         )
-    data["evidence"] = [evidence]
+    data["evidence"] = [evidence, evidence | {"field": "category_code"}]
     if kind == "mixed":
         data["dates"] = [
             {
@@ -67,6 +68,8 @@ def _response(kind: str) -> dict[str, Any]:
             }
         ]
         data["notes"] = ["참가비 무료"]
+        data["card_summaries"]["deadline"] = "2026-10-03부터 2026-10-20까지 행사예요."
+        data["card_summaries"]["notes"] = "참가비는 무료예요."
         data["evidence"].extend(
             [
                 {
@@ -128,6 +131,28 @@ def _assert_caller_keeps_transaction(conn: MagicMock) -> None:
     conn.close.assert_not_called()
 
 
+def _job_values(cursor: MagicMock) -> tuple:
+    sql, values = cursor.execute.call_args.args
+    assert "active_execution" in sql
+    assert values[:2] == (17, 17)
+    return values[2:]
+
+
+def _assert_job_registers_then_stores(cursor: MagicMock) -> None:
+    assert cursor.execute.call_count == 2
+    assert cursor.execute.call_args_list[0].args == (
+        REGISTER_SUMMARY_EXECUTION_AT_REVISION, (17, 1),
+    )
+    _job_values(cursor)
+
+
+def _assert_only_registration(conn: MagicMock) -> None:
+    conn.cursor.assert_called_once()
+    conn.cursor.return_value.__enter__.return_value.execute.assert_called_once_with(
+        REGISTER_SUMMARY_EXECUTION_AT_REVISION, (17, 1)
+    )
+
+
 @pytest.mark.parametrize("kind", ["text", "hwp", "pdf", "image", "mixed"])
 def test_actual_prepared_summary_then_mock_storage_preserves_all_sources_and_result(
     monkeypatch: pytest.MonkeyPatch, kind: str
@@ -154,12 +179,9 @@ def test_actual_prepared_summary_then_mock_storage_preserves_all_sources_and_res
     assert stored.generated_at == GENERATED_AT
     assert stored.result.summary.model_dump(mode="json") == result.summary.model_dump(mode="json")
     assert stored.result.media_sources == result.media_sources
-    if needs_review:
-        assert values[2:5] == (None, None, None)
-    else:
-        assert values[2].obj == result.summary.model_dump(mode="json")
-        assert values[3:5] == ("event", DEADLINE)
-    assert values[6:10] == ("cd" * 32, DEFAULT_MODEL, "summary-v3", 1)
+    assert values[2].obj == result.summary.model_dump(mode="json")
+    assert values[3:6] == ("event", 26, None if needs_review else DEADLINE)
+    assert values[7:11] == ("cd" * 32, DEFAULT_MODEL, SUMMARY_PROMPT_VERSION, 1)
     if kind in {"pdf", "image"}:
         assert stored.result.summary.evidence[0].verification == "file_reference_only"
     if kind == "mixed":
@@ -167,7 +189,7 @@ def test_actual_prepared_summary_then_mock_storage_preserves_all_sources_and_res
             "text_matched",
             "file_reference_only",
         }
-        assert stored.result.summary.evidence[1].page == 2
+        assert stored.result.summary.evidence[2].page == 2
     _assert_caller_keeps_transaction(conn)
 
 
@@ -205,7 +227,7 @@ def test_warnings_are_preserved_but_do_not_alone_change_status_or_emit_messages(
 
 
 @pytest.mark.parametrize("review_reason", ["unknown", "uncertainties", "partial", "unread"])
-def test_review_conditions_keep_a_private_snapshot_without_publishing_summary_or_deadline(
+def test_review_conditions_store_generated_summary_without_a_sorting_deadline(
     monkeypatch: pytest.MonkeyPatch, review_reason: str
 ) -> None:
     _, result, _ = _summarize(monkeypatch, "text")
@@ -219,7 +241,7 @@ def test_review_conditions_keep_a_private_snapshot_without_publishing_summary_or
         )
     record = build_summary_record(result, metadata, deadline_on=DEADLINE, generated_at=GENERATED_AT)
     assert record.status == "needs_review"
-    assert record.result is None
+    assert record.result.model_dump(mode="json") == result.summary.model_dump(mode="json")
     assert record.deadline_on is None
     conn, cursor = _connection()
     stored = save_prepared_summary(
@@ -229,7 +251,10 @@ def test_review_conditions_keep_a_private_snapshot_without_publishing_summary_or
     assert stored.deadline_on is None
     assert stored.result.summary.model_dump(mode="json") == result.summary.model_dump(mode="json")
     assert stored.result.media_sources == result.media_sources
-    assert cursor.execute.call_args.args[1][2:5] == (None, None, None)
+    values = cursor.execute.call_args.args[1]
+    assert values[2].obj == result.summary.model_dump(mode="json")
+    assert values[3] == (None if result.summary.category == "unknown" else result.summary.category)
+    assert values[4:6] == (result.summary.category_code, None)
     _assert_caller_keeps_transaction(conn)
 
 
@@ -257,7 +282,7 @@ def test_storage_connector_forwards_execution_increment_without_counting_http_re
         generated_at=GENERATED_AT,
         attempt_increment=increment,
     )
-    assert cursor.execute.call_args.args[1][9] == increment
+    assert cursor.execute.call_args.args[1][10] == increment
     cursor.execute.assert_called_once()
     _assert_caller_keeps_transaction(conn)
 
@@ -292,10 +317,10 @@ def test_summary_failure_is_written_as_failed_without_any_success_json(
     assert record_summary_failure(conn, 17, _metadata(), reason_code=error.value.reason_code) == 17
     values = cursor.execute.call_args.args[1]
     assert values[1] == "failed"
-    assert values[2:5] == (None, None, None)
-    assert values[10] == error.value.reason_code
-    assert values[11] is None
-    assert PRIVATE_MARKER not in str(values[10])
+    assert values[2:6] == (None, None, None, None)
+    assert values[11] == error.value.reason_code
+    assert values[12] is None
+    assert PRIVATE_MARKER not in str(values[11])
     _assert_caller_keeps_transaction(conn)
 
 
@@ -333,7 +358,7 @@ def test_failure_connector_storage_error_does_not_turn_into_a_saved_failure_succ
 
 
 @pytest.mark.parametrize("kind", ["text", "pdf"])
-def test_saved_result_is_a_snapshot_and_only_summarized_results_publish_json(
+def test_saved_result_is_a_snapshot_in_both_completed_states(
     monkeypatch: pytest.MonkeyPatch, kind: str
 ) -> None:
     _, result, _ = _summarize(monkeypatch, kind)
@@ -345,12 +370,10 @@ def test_saved_result_is_a_snapshot_and_only_summarized_results_publish_json(
     result.summary.evidence[0].page = 9
     assert stored.result.summary.summary == "행사 안내"
     assert stored.result.summary.evidence[0].page == (1 if kind == "pdf" else None)
-    if kind == "pdf":
-        assert cursor.execute.call_args.args[1][2:5] == (None, None, None)
-    else:
-        assert cursor.execute.call_args.args[1][2].obj == (
-            stored.result.summary.model_dump(mode="json")
-        )
+    assert cursor.execute.call_args.args[1][2].obj == (
+        stored.result.summary.model_dump(mode="json")
+    )
+    assert cursor.execute.call_args.args[1][5] == (None if kind == "pdf" else DEADLINE)
 
 
 @pytest.mark.parametrize("kind", ["text", "hwp", "pdf", "image", "mixed"])
@@ -363,7 +386,7 @@ def test_integrated_job_summarizes_each_input_then_saves_with_model_and_utc_time
     requests: list[dict[str, Any]] = []
 
     def generate(**kwargs: Any) -> str:
-        conn.cursor.assert_not_called()
+        _assert_only_registration(conn)
         requests.append(deepcopy(kwargs))
         return json.dumps(_response(kind), ensure_ascii=False)
 
@@ -371,7 +394,8 @@ def test_integrated_job_summarizes_each_input_then_saves_with_model_and_utc_time
     deadline_resolver = MagicMock(return_value=DEADLINE)
     before = datetime.now(UTC)
     stored = summary_job.summarize_and_save_prepared_notice(
-        conn, prepared, metadata, deadline_resolver=deadline_resolver, api_key="test-key"
+        conn, prepared, metadata, deadline_resolver=deadline_resolver, api_key="test-key",
+        expected_source_revision=1,
     )
     after = datetime.now(UTC)
     needs_review = kind in {"pdf", "image", "mixed"}
@@ -390,18 +414,15 @@ def test_integrated_job_summarizes_each_input_then_saves_with_model_and_utc_time
         assert deadline_resolver.call_args.args[0].model_dump(mode="json") == (
             stored.result.summary.model_dump(mode="json")
         )
-    values = cursor.execute.call_args.args[1]
+    values = _job_values(cursor)
     assert values[:2] == (17, stored.status)
-    if needs_review:
-        assert values[2:5] == (None, None, None)
-    else:
-        assert values[2].obj == stored.result.summary.model_dump(mode="json")
-        assert values[4] == DEADLINE
-    assert values[6:10] == (metadata.source_hash, metadata.model, metadata.prompt_version, 1)
-    assert before <= values[11] <= after
-    assert values[11].utcoffset().total_seconds() == 0
-    assert stored.generated_at == values[11]
-    cursor.execute.assert_called_once()
+    assert values[2].obj == stored.result.summary.model_dump(mode="json")
+    assert values[5] == (None if needs_review else DEADLINE)
+    assert values[7:11] == (metadata.source_hash, metadata.model, metadata.prompt_version, 1)
+    assert before <= values[12] <= after
+    assert values[12].utcoffset().total_seconds() == 0
+    assert stored.generated_at == values[12]
+    _assert_job_registers_then_stores(cursor)
     _assert_caller_keeps_transaction(conn)
 
 
@@ -422,11 +443,17 @@ def test_integrated_review_outcome_never_calls_the_deadline_resolver(
     conn, cursor = _connection()
     deadline_resolver = MagicMock(side_effect=AssertionError("review must not publish a deadline"))
     stored = summary_job.summarize_and_save_prepared_notice(
-        conn, prepared, metadata, deadline_resolver=deadline_resolver, api_key="test-key"
+        conn, prepared, metadata, deadline_resolver=deadline_resolver, api_key="test-key",
+        expected_source_revision=1,
     )
     assert stored.status == "needs_review"
     assert stored.deadline_on is None
-    assert cursor.execute.call_args.args[1][2:5] == (None, None, None)
+    values = _job_values(cursor)
+    assert values[2].obj == stored.result.summary.model_dump(mode="json")
+    assert values[3] == (
+        None if stored.result.summary.category == "unknown" else stored.result.summary.category
+    )
+    assert values[4:6] == (stored.result.summary.category_code, None)
     deadline_resolver.assert_not_called()
     _assert_caller_keeps_transaction(conn)
 
@@ -447,14 +474,17 @@ def test_integrated_shape_retry_retains_media_and_counts_as_one_execution(
     monkeypatch.setattr(summarize_module, "generate_summary_json", generate)
     conn, cursor = _connection()
     stored = summary_job.summarize_and_save_prepared_notice(
-        conn, prepared, _metadata(), deadline_resolver=lambda _summary: None, api_key="test-key"
+        conn, prepared, _metadata(), deadline_resolver=lambda _summary: None, api_key="test-key",
+        expected_source_revision=1,
     )
     assert stored.status == "needs_review"
-    assert cursor.execute.call_args.args[1][2:5] == (None, None, None)
+    values = _job_values(cursor)
+    assert values[2].obj == stored.result.summary.model_dump(mode="json")
+    assert values[5] is None
     assert len(calls) == 2
     assert calls[1]["notice_text"][: len(calls[0]["notice_text"])] == calls[0]["notice_text"]
-    assert cursor.execute.call_args.args[1][9] == 1
-    cursor.execute.assert_called_once()
+    assert _job_values(cursor)[10] == 1
+    _assert_job_registers_then_stores(cursor)
     _assert_caller_keeps_transaction(conn)
 
 
@@ -508,6 +538,7 @@ def test_integrated_known_failure_returns_saved_failure_without_raising_or_succe
             _metadata(),
             deadline_resolver=deadline_resolver,
             api_key="test-key",
+            expected_source_revision=1,
         )
     assert isinstance(stored, summary_job.StoredSummaryFailure)
     assert stored.status == "failed"
@@ -516,17 +547,17 @@ def test_integrated_known_failure_returns_saved_failure_without_raising_or_succe
     assert stored.notice_id == 17
     assert stored.warnings == (warning,)
     assert len(requests) == api_attempts
-    values = cursor.execute.call_args.args[1]
+    values = _job_values(cursor)
     assert values[1] == "failed"
-    assert values[2:5] == (None, None, None)
-    assert values[9] == 1
-    assert values[10] == expected_code
-    assert values[11] is None
-    assert PRIVATE_MARKER not in values[10]
+    assert values[2:6] == (None, None, None, None)
+    assert values[10] == 1
+    assert values[11] == expected_code
+    assert values[12] is None
+    assert PRIVATE_MARKER not in values[11]
     # Returning a failure outcome leaves the caller's connection context without an exception.
     conn.__exit__.assert_called_once_with(None, None, None)
     deadline_resolver.assert_not_called()
-    cursor.execute.assert_called_once()
+    _assert_job_registers_then_stores(cursor)
     _assert_caller_keeps_transaction(conn)
 
 
@@ -541,7 +572,7 @@ def test_integrated_storage_error_propagates_for_success_and_failure_writes(
 
     monkeypatch.setattr(summarize_module, "generate_summary_json", generate)
     conn, cursor = _connection()
-    cursor.execute.side_effect = psycopg.OperationalError(PRIVATE_MARKER)
+    cursor.execute.side_effect = [None, psycopg.OperationalError(PRIVATE_MARKER)]
     with pytest.raises(SummaryStorageError):
         summary_job.summarize_and_save_prepared_notice(
             conn,
@@ -549,8 +580,9 @@ def test_integrated_storage_error_propagates_for_success_and_failure_writes(
             _metadata(),
             deadline_resolver=lambda _summary: None,
             api_key="test-key",
+            expected_source_revision=1,
         )
-    cursor.execute.assert_called_once()
+    _assert_job_registers_then_stores(cursor)
     _assert_caller_keeps_transaction(conn)
 
 
@@ -578,9 +610,10 @@ def test_integrated_programming_errors_propagate_without_being_recorded_as_model
             _metadata(),
             deadline_resolver=deadline,
             api_key="test-key",
+            expected_source_revision=1,
         )
     assert raised.value is error
-    conn.cursor.assert_not_called()
+    _assert_only_registration(conn)
     _assert_caller_keeps_transaction(conn)
 
 
@@ -602,7 +635,8 @@ def test_integrated_invalid_caller_contract_stops_before_api_or_storage(
     conn, _ = _connection()
     with pytest.raises(SummaryRecordError):
         summary_job.summarize_and_save_prepared_notice(
-            conn, prepared, metadata, deadline_resolver=deadline_resolver, api_key="test-key"
+            conn, prepared, metadata, deadline_resolver=deadline_resolver, api_key="test-key",
+            expected_source_revision=1,
         )
     generate.assert_not_called()
     assert prepared.calls == []
@@ -627,8 +661,9 @@ def test_integrated_notice_id_mismatch_stops_before_deadline_and_storage(
             _metadata(),
             deadline_resolver=deadline_resolver,
             api_key="test-key",
+            expected_source_revision=1,
         )
-    conn.cursor.assert_not_called()
+    _assert_only_registration(conn)
     deadline_resolver.assert_not_called()
 
 
@@ -651,7 +686,8 @@ def test_integrated_warning_data_is_preserved_without_automatic_emission(
     monkeypatch.setattr(summarize_module, "generate_summary_json", generate)
     conn, _ = _connection()
     stored = summary_job.summarize_and_save_prepared_notice(
-        conn, prepared, _metadata(), deadline_resolver=lambda _summary: None, api_key="test-key"
+        conn, prepared, _metadata(), deadline_resolver=lambda _summary: None, api_key="test-key",
+        expected_source_revision=1,
     )
     warnings = stored.warnings if failed else stored.result.warnings
     assert warnings == prepared.warnings
@@ -707,7 +743,8 @@ def test_invalid_preparation_warnings_stop_integrated_job_before_api_or_sql(
     deadline_resolver = MagicMock()
     with pytest.raises(SummaryRecordError) as failure:
         summary_job.summarize_and_save_prepared_notice(
-            conn, prepared, _metadata(), deadline_resolver=deadline_resolver, api_key="test-key"
+            conn, prepared, _metadata(), deadline_resolver=deadline_resolver, api_key="test-key",
+            expected_source_revision=1,
         )
     assert failure.value.reason_code == "invalid_preparation_warnings"
     assert str(failure.value) == "invalid_preparation_warnings"

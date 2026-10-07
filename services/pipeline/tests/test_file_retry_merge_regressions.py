@@ -38,6 +38,17 @@ def _output(
         dates=dates or [],
         topics=topics or [],
         uncertainties=[],
+        card_summaries={
+            "audience": None,
+            "deadline": (
+                "일정은 " + "; ".join(
+                    " ".join(str(value) for value in entry.values() if value) + "예요."
+                    for entry in dates
+                ) if dates else None
+            ),
+            "action": None,
+            "notes": None,
+        },
         evidence=[
             {
                 "field": field,

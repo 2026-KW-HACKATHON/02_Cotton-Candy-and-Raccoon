@@ -21,8 +21,9 @@ from pipeline.transform.gemini_prompt import GeminiConfigurationError
 class AfterCollectEasyText:
     """Callable post-save processor; success includes reuse of a current cache.
 
-    Each notice uses a separate caller-owned transaction. Public reports contain
-    only notice IDs and fixed reason codes, never source text or exception details.
+    Each notice uses a separate connection with short DB transactions; Gemini
+    runs between them. Public reports contain only notice IDs and fixed reason
+    codes, never source text or exception details.
     """
 
     database: DatabaseSettings
@@ -44,7 +45,8 @@ class AfterCollectEasyText:
                 connect_timeout=5,
                 autocommit=False,
             ) as conn:
-                source = load_notice_glossary_input(conn, notice_id)
+                with conn.transaction():
+                    source = load_notice_glossary_input(conn, notice_id)
                 skipped = not source.body_text_present
                 if not skipped:
                     simplify_and_store_notice(conn, source, refresh=False)

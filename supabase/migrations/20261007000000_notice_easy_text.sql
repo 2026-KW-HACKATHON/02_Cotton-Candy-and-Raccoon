@@ -1,5 +1,4 @@
 -- Gemini가 제안한 단어 치환만 반영한 본문을 원문과 분리해 저장한다.
--- 사전 조회 캐시는 기존 glossary_* 테이블을 재사용한다.
 create function public.notice_easy_text_revision(notice_title text, notice_body text)
 returns text language sql immutable parallel safe as $$
     select encode(sha256(convert_to(
