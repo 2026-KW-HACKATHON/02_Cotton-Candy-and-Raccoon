@@ -5,11 +5,13 @@ import { useDisplayPreferences } from "@/shared/accessibility/displayPreferences
 type Props = TextProps & {
   variant?: "body" | "display" | "bold" | "medium";
   size?: number;
+  lineHeight?: number;
   secondary?: boolean;
 };
 export function AppText({
   variant = "body",
   size = 14.77,
+  lineHeight = size * 1.5,
   secondary,
   style,
   ...props
@@ -24,7 +26,7 @@ export function AppText({
           fontFamily: FONTS[variant],
           color: secondary ? COLORS.secondary : COLORS.text,
           fontSize: size * fontScale,
-          lineHeight: size * fontScale * 1.5,
+          lineHeight: lineHeight * fontScale,
         },
         style,
       ]}

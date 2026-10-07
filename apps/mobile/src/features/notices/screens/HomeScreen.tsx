@@ -55,7 +55,7 @@ function StandardHomeScreen() {
       contentStyle={{ paddingHorizontal: 0, gap: 7.385 }}
     >
       <View style={styles.greeting}>
-        <AppText variant="display" size={32} style={{ lineHeight: 44 }}>
+        <AppText variant="display" size={32} lineHeight={44}>
           이번 주 소식이{"\n"}도착했어요
         </AppText>
         <AppText secondary size={12.923}>

@@ -75,7 +75,7 @@ const DEMO_NOTICES: Notice[] = [
 export async function fetchNotices(): Promise<Notice[]> {
   return DEMO_NOTICES;
 }
-/** 없는 ID는 undefined로 반환해 조회 실패와 공문 없음 상태를 구분한다. */
-export async function fetchNotice(id: string): Promise<Notice | undefined> {
-  return DEMO_NOTICES.find((notice) => notice.id === id);
+/** Query가 성공한 빈 결과를 캐시할 수 있도록 없는 공문은 null로 반환한다. */
+export async function fetchNotice(id: string): Promise<Notice | null> {
+  return DEMO_NOTICES.find((notice) => notice.id === id) ?? null;
 }

@@ -86,7 +86,7 @@ export function LetterIllustration({ notice }: { notice: Notice }) {
               key={index}
               variant="display"
               size={20.31}
-              style={{ lineHeight: 25.846 }}
+              lineHeight={25.846}
             >
               {word}{" "}
             </AppText>
@@ -107,8 +107,8 @@ export function LetterIllustration({ notice }: { notice: Notice }) {
           >
             기한
           </AppText>
-          <AppText size={11.08} numberOfLines={1} style={{ flex: 1 }}>
-            {notice.deadline.split("(")[0]}까지
+          <AppText size={11.08} style={{ flex: 1 }}>
+            {notice.deadline}
           </AppText>
         </View>
         <View style={styles.fact}>

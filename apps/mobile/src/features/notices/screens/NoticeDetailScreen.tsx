@@ -96,7 +96,8 @@ function StandardNoticeDetailScreen() {
             <AppText
               variant="display"
               size={25.846}
-              style={{ flex: 1, lineHeight: 35.077 }}
+              lineHeight={35.077}
+              style={{ flex: 1 }}
             >
               {notice.title}
             </AppText>
@@ -125,7 +126,7 @@ function StandardNoticeDetailScreen() {
               </View>
             ))}
             <AppText secondary size={11.08}>
-              AI 요약이에요. 정확한 조건은 원문을 확인해요.
+              화면 검토용 예시 요약입니다. 정확한 조건은 원문을 확인해요.
             </AppText>
           </View>
           <View style={styles.document}>
