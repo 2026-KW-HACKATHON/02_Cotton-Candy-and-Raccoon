@@ -165,6 +165,58 @@ def test_successful_empty_changes_keeps_original_without_retry() -> None:
     assert len(calls) == 1
 
 
+def test_direct_text_provenance_stays_unknown_and_old_result_json_remains_readable() -> None:
+    result = run_response("공지 제목\n붙여 넣은 본문 또는 추출 텍스트", response_json())
+    assert result.body_text_present is None
+    assert result.attachment_content_included is None
+    payload = result.model_dump()
+    del payload["body_text_present"]
+    del payload["attachment_content_included"]
+    assert EasyLanguageResult.model_validate(payload) == result
+
+
+@pytest.mark.parametrize("body", [False, True])
+def test_db_provenance_changes_only_local_result_metadata_not_gemini_input(body) -> None:
+    from pipeline.glossary.source import StoredNoticeInput
+
+    source = StoredNoticeInput(
+        notice_id=22, notice_revision="a" * 64, text="공지 제목", body_text_present=body
+    )
+    request = []
+
+    def call(**kwargs):
+        request.append(kwargs)
+        return response_json()
+
+    result = simplify_notice(source, api_key=API_KEY, request=call)
+    assert result.body_text_present is body
+    assert result.attachment_content_included is False
+    assert request[0]["notice_text"] == source.text
+    assert "body_text_present" not in request[0]
+    assert "attachment_content_included" not in request[0]
+    assert result.prompt_version == PROMPT_VERSION
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"body_text_present": False},
+        {"attachment_content_included": False},
+        {"body_text_present": "false", "attachment_content_included": False},
+    ],
+)
+def test_partial_or_coerced_provenance_cannot_be_presented_as_a_known_result(metadata) -> None:
+    payload = run_response("원문", response_json()).model_dump()
+    with pytest.raises(ValidationError):
+        EasyLanguageResult.model_validate({**payload, **metadata})
+
+
+def test_model_cannot_claim_input_coverage_in_its_response() -> None:
+    output = json.dumps({"changes": [], "body_text_present": True})
+    with pytest.raises(EasyLanguageValidationError):
+        run_response("공지 제목", output)
+
+
 def test_legacy_dictionary_field_is_rejected_even_if_changes_are_valid() -> None:
     output = json.dumps(
         {

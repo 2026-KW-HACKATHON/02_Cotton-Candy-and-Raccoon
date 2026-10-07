@@ -72,8 +72,20 @@ def test_file_mode_preserves_original_and_never_calls_dictionary(offline, capsys
     payload = json.loads(capsys.readouterr().out)
     assert payload["original_text"] == offline.source.text
     assert payload["easy_text"] == "준비할 서류를 지참하세요.\n"
+    assert payload["body_text_present"] is None
+    assert payload["attachment_content_included"] is None
     assert not {"dictionary_terms", "dictionary_results", "dictionary_failures"} & payload.keys()
     offline.dictionary.assert_not_called()
+    offline.connect.assert_not_called()
+
+
+def test_direct_json_cannot_inject_db_processing_scope(offline, capsys):
+    payload = json.loads(offline.path.read_text("utf-8"))
+    payload.update(body_text_present=True, attachment_content_included=False)
+    offline.path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    assert module.main(["--input", str(offline.path)]) == 2
+    assert capsys.readouterr().out == ""
+    offline.gemini.assert_not_called()
     offline.connect.assert_not_called()
 
 

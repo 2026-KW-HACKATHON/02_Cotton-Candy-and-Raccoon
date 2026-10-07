@@ -11,7 +11,8 @@ from pipeline.transform.html_text import html_to_notice_text
 
 _SELECT = """
 select notice_id, notice_revision, source_hash, original_text, easy_text, changes,
-       model, prompt_version, attempt_count, generated_at
+       model, prompt_version, attempt_count, generated_at,
+       body_text_present, attachment_content_included
 from public.notice_easy_texts where notice_id = %s
 """
 _NAMES = (
@@ -25,6 +26,8 @@ _NAMES = (
     "prompt_version",
     "attempt_count",
     "generated_at",
+    "body_text_present",
+    "attachment_content_included",
 )
 # Hash the raw row so old prompt results need not pass today's result validator.
 # Epoch time keeps the token identical across connections with different time zones.
@@ -85,6 +88,12 @@ def get_notice_easy_text(
     body = html_to_notice_text(body_html)
     if payload["original_text"] != title + ("\n" + body if body else ""):
         raise EasyTextStorageError("저장된 쉬운말 원문이 DB 공지와 일치하지 않습니다.")
+    scope = (payload["body_text_present"], payload["attachment_content_included"])
+    if scope != (None, None) and scope != (bool(body), False):
+        raise EasyTextStorageError("저장된 쉬운말 처리 범위가 DB 원문과 일치하지 않습니다.")
+    # Old rows stay unknown in SQL until a validated service read fills them.
+    # A backend read can already derive truthful scope from the verified parent.
+    payload.update(body_text_present=bool(body), attachment_content_included=False)
     try:
         result = EasyLanguageResult.model_validate(payload)
         if result.notice_id != notice_id:
@@ -108,6 +117,56 @@ def get_notice_easy_text_cache_token(conn: Connection, notice_id: int) -> str | 
         )
         row = cursor.fetchone()
     return row[0] if row is not None else None
+
+
+def fill_notice_easy_text_scope(
+    conn: Connection, result: EasyLanguageResult, *, expected_cache_token: str
+) -> bool:
+    """Fill only a verified legacy snapshot's unknown scope; never call Gemini.
+
+    The parent lock and raw row token protect against concurrent source changes
+    and cache refreshes. False means the row was already known or has changed;
+    callers must re-read rather than returning their previous snapshot.
+    """
+    notice_id = _notice_id(result.notice_id)
+    if result.notice_revision is None or conn.autocommit:
+        raise EasyTextStorageError("처리 범위 저장에는 원문 버전과 트랜잭션이 필요합니다.")
+    if (
+        not isinstance(expected_cache_token, str)
+        or len(expected_cache_token) != 64
+        or any(char not in "0123456789abcdef" for char in expected_cache_token)
+    ):
+        raise EasyTextStorageError("쉬운말 저장 상태 확인값이 올바르지 않습니다.")
+    if conn.info.transaction_status == TransactionStatus.IDLE:
+        conn.execute("select 1")
+    with conn.transaction(), conn.cursor(row_factory=tuple_row) as cursor:
+        cursor.execute(
+            "select title, body_html from public.notices where id = %s for share", (notice_id,)
+        )
+        parent = cursor.fetchone()
+        if parent is None or notice_content_revision(*parent) != result.notice_revision:
+            raise EasyTextStorageError("공지 원문이 바뀌어 처리 범위를 보충하지 않았습니다.")
+        title, body_html = parent
+        body = html_to_notice_text(body_html)
+        if result.original_text != title + ("\n" + body if body else ""):
+            raise EasyTextStorageError("처리 범위를 확인할 DB 공지 원문이 일치하지 않습니다.")
+        cursor.execute(
+            "update public.notice_easy_texts "
+            "set body_text_present = %s, attachment_content_included = false "
+            "where notice_id = %s and notice_revision = %s and source_hash = %s "
+            "and original_text = %s and body_text_present is null "
+            "and attachment_content_included is null "
+            f"and {_CACHE_TOKEN} = %s::text",
+            (
+                bool(body),
+                notice_id,
+                result.notice_revision,
+                result.source_hash,
+                result.original_text,
+                expected_cache_token,
+            ),
+        )
+        return cursor.rowcount == 1
 
 
 def save_notice_easy_text(
@@ -155,6 +214,18 @@ def save_notice_easy_text(
         current_text = title + ("\n" + body if body else "")
         if result.original_text != current_text:
             raise EasyTextStorageError("쉬운말 원문이 저장된 DB 공지와 일치하지 않습니다.")
+        scope = (result.body_text_present, result.attachment_content_included)
+        if scope != (None, None) and scope != (bool(body), False):
+            raise EasyTextStorageError("쉬운말 처리 범위가 DB 원문과 일치하지 않습니다.")
+        # Standalone JSON has unknown provenance. DB storage establishes it from
+        # the locked parent, rather than trusting any caller-provided assertion.
+        result = EasyLanguageResult.model_validate(
+            {
+                **result.model_dump(),
+                "body_text_present": bool(body),
+                "attachment_content_included": False,
+            }
+        )
         values = tuple(
             Jsonb([item.model_dump(mode="json") for item in result.changes])
             if name == "changes"
@@ -164,14 +235,17 @@ def save_notice_easy_text(
         cursor.execute(
             "insert into public.notice_easy_texts "
             "(notice_id, notice_revision, source_hash, original_text, easy_text, changes, "
-            "model, prompt_version, attempt_count, generated_at) "
-            "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+            "model, prompt_version, attempt_count, generated_at, "
+            "body_text_present, attachment_content_included) "
+            "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
             "on conflict (notice_id) do update set "
             "notice_revision = excluded.notice_revision, source_hash = excluded.source_hash, "
             "original_text = excluded.original_text, easy_text = excluded.easy_text, "
             "changes = excluded.changes, model = excluded.model, "
             "prompt_version = excluded.prompt_version, attempt_count = excluded.attempt_count, "
-            "generated_at = excluded.generated_at "
+            "generated_at = excluded.generated_at, "
+            "body_text_present = excluded.body_text_present, "
+            "attachment_content_included = excluded.attachment_content_included "
             "where notice_easy_texts.notice_revision != excluded.notice_revision "
             "or (notice_easy_texts.model = excluded.model "
             "and notice_easy_texts.prompt_version = excluded.prompt_version "
@@ -181,3 +255,8 @@ def save_notice_easy_text(
             f"and {_CACHE_TOKEN} = %s::text)",
             (*values, expected_cache_token),
         )
+        # An unchanged scope across a source change is cleared by the migration
+        # trigger to protect old workers; restore it after exact source validation.
+        token = get_notice_easy_text_cache_token(conn, notice_id)
+        if token is not None:
+            fill_notice_easy_text_scope(conn, result, expected_cache_token=token)

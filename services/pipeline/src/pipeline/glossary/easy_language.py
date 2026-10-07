@@ -17,7 +17,12 @@ from pydantic import (
     model_validator,
 )
 
-from pipeline.glossary.source import MAX_SOURCE_CHARACTERS, NoticeGlossaryInput, source_hash
+from pipeline.glossary.source import (
+    MAX_SOURCE_CHARACTERS,
+    NoticeGlossaryInput,
+    StoredNoticeInput,
+    source_hash,
+)
 
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
 PROMPT_VERSION = "easy-language-v6"
@@ -252,9 +257,15 @@ class EasyLanguageResult(BaseModel):
     generated_at: AwareDatetime
     changes: tuple[AppliedChange, ...]
     attempt_count: int = Field(ge=1, le=2, strict=True)
+    # None means provenance is unknown, not that a body/attachment was absent.
+    # False for attachment content does not assert that the notice has files.
+    body_text_present: bool | None = Field(default=None, strict=True)
+    attachment_content_included: bool | None = Field(default=None, strict=True)
 
     @model_validator(mode="after")
     def validate_original_and_changes(self) -> Self:
+        if (self.body_text_present is None) != (self.attachment_content_included is None):
+            raise ValueError("처리 범위 정보는 함께 확인되거나 함께 알 수 없어야 합니다.")
         source = NoticeGlossaryInput(
             notice_id=self.notice_id, notice_revision=self.notice_revision, text=self.original_text
         )
@@ -407,5 +418,9 @@ def simplify_notice(
             generated_at=clock() if clock else datetime.now(UTC),
             changes=changes,
             attempt_count=attempt,
+            body_text_present=source.body_text_present
+            if isinstance(source, StoredNoticeInput)
+            else None,
+            attachment_content_included=False if isinstance(source, StoredNoticeInput) else None,
         )
     raise AssertionError("Unreachable easy-language attempt state.")

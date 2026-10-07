@@ -16,6 +16,7 @@ from pipeline.glossary.notice_service import load_notice_glossary_input
 from pipeline.glossary.source import NoticeGlossaryInput, source_hash
 from pipeline.storage.notice_easy_text import (
     EasyTextStorageError,
+    fill_notice_easy_text_scope,
     get_notice_easy_text,
     get_notice_easy_text_cache_token,
     save_notice_easy_text,
@@ -66,6 +67,22 @@ def simplify_and_store_notice(
                 prompt_version=PROMPT_VERSION,
             )
             if cached is not None:
+                if expected_cache_token is not None:
+                    fill_notice_easy_text_scope(
+                        conn, cached, expected_cache_token=expected_cache_token
+                    )
+                cached = get_notice_easy_text(
+                    conn,
+                    source.notice_id,
+                    source_hash=source_hash(source),
+                    notice_revision=source.notice_revision,
+                    model=model,
+                    prompt_version=PROMPT_VERSION,
+                )
+                if cached is None:
+                    raise EasyTextStorageError(
+                        "캐시 처리 중 공지 원문이나 저장 결과가 바뀌었습니다."
+                    )
                 return cached
         result = simplify_notice(
             source,

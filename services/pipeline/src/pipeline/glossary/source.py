@@ -35,6 +35,14 @@ class NoticeGlossaryInput(BaseModel):
         return text
 
 
+class StoredNoticeInput(NoticeGlossaryInput):
+    """DB-derived title/body input; this metadata is not accepted by the JSON CLI."""
+
+    notice_id: int = Field(gt=0, strict=True)
+    notice_revision: str = Field(pattern=r"^[0-9a-f]{64}$", strict=True)
+    body_text_present: bool = Field(strict=True)
+
+
 def source_hash(source: NoticeGlossaryInput | str) -> str:
     """Return lowercase SHA-256 hex of the exact source text encoded as UTF-8.
 
