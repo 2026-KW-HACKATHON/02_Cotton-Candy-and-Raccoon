@@ -72,6 +72,9 @@ def process_notice_glossary(
 ) -> NoticeGlossaryResult:
     """At most max_queries distinct uncached words per run; successful work survives retries.
 
+    Once a rate limit is reported, defer further uncached queries for this run;
+    successful prior outcomes and cached terms can still be used. A later run
+    retries the deferred work without assuming a reset time for either provider.
     Whole-word meanings take priority over particle-stripped alternatives. Failures
     are never treated as a successful empty search. All replacements remain linked
     to the exact original; offsets always refer to original Unicode code points.
@@ -113,6 +116,7 @@ def process_notice_glossary(
     pending: list[str] = []
     new_queries = 0
     attempted: set[str] = set()
+    rate_limited = False
 
     for probe in ordered:
         decision = None
@@ -127,7 +131,7 @@ def process_notice_glossary(
                     outcomes[candidate.query] = outcome
                     attempted.add(candidate.query)
             if outcome is None:
-                if new_queries >= max_queries:
+                if rate_limited or new_queries >= max_queries:
                     pending.append(candidate.query)
                     decision = DocumentTerm(
                         word=probe.surface,
@@ -152,6 +156,8 @@ def process_notice_glossary(
                         else "api"
                     )
                     outcome = QueryOutcome(query=candidate.query, error_code=code)
+                    if code == "rate_limit":
+                        rate_limited = True
                 else:
                     outcome = _validated_outcome(candidate.query, found)
                 outcomes[candidate.query] = outcome

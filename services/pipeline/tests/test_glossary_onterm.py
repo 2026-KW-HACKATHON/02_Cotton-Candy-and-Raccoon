@@ -242,6 +242,32 @@ def test_remote_error_codes_are_never_empty_success(code, expected):
     assert "시스템 에러" not in str(caught.value)
 
 
+@pytest.mark.parametrize("limit", ["010", "022", "http429"])
+def test_shared_client_stops_requests_after_limit_and_new_client_can_retry(limit):
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        if len(requests) == 1:
+            return (
+                httpx.Response(429)
+                if limit == "http429"
+                else httpx.Response(200, json=no_results(limit, "요청 제한"))
+            )
+        return httpx.Response(200, json=success())
+
+    client, transport = make_client(handler=handler)
+    with transport:
+        for query in ("피투피", "새 단어", "또 다른 단어"):
+            with pytest.raises(GlossaryAPIError) as caught:
+                client.lookup(query)
+            assert caught.value.code == "rate_limit"
+        assert len(requests) == 1
+        retried = OnTermClient(KEY, client=transport)
+        assert retried.lookup("피투피")[0].easy_terms == ("개인간통신",)
+        assert len(requests) == 2
+
+
 @pytest.mark.parametrize(
     "payload",
     [
@@ -337,10 +363,125 @@ def test_missing_records_on_a_nonfinal_page_cannot_skip_results():
 
 
 def test_result_overflow_is_failure_without_a_partial_return():
-    client, transport = make_client(success(total=1001))
+    client, transport = make_client(success(total=3001))
     with transport, pytest.raises(GlossaryAPIError) as caught:
         client.lookup("피투피")
     assert caught.value.code == "too_many_results"
+
+
+@pytest.mark.parametrize("total", [1001, 3000])
+def test_late_exact_polished_word_survives_thousand_records_and_allowed_boundary(total):
+    starts = []
+
+    def handler(request):
+        start = int(request.url.params["start"])
+        starts.append(start)
+        first = (start - 1) * 100
+        records = [
+            record(word=f"비관련 항목{index}") for index in range(first, min(first + 100, total))
+        ]
+        if first + len(records) == total:
+            records[-1] = record()
+        return httpx.Response(200, json=success(records, total=total, start=start))
+
+    client, transport = make_client(handler=handler)
+    with transport:
+        entries = client.lookup("피투피")
+    assert starts == list(range(1, (total + 99) // 100 + 1))
+    assert len(entries) == 1
+    assert entries[0].easy_terms == ("개인간통신",)
+
+
+def test_empty_exact_result_requires_every_raw_page_after_a_thousand_matches():
+    starts = []
+
+    def handler(request):
+        start = int(request.url.params["start"])
+        starts.append(start)
+        first = (start - 1) * 100
+        records = [
+            record(word=f"비관련 항목{index}") for index in range(first, min(first + 100, 1001))
+        ]
+        return httpx.Response(200, json=success(records, total=1001, start=start))
+
+    client, transport = make_client(handler=handler)
+    with transport:
+        assert client.lookup("피투피") == ()
+    assert starts == list(range(1, 12))
+
+
+def test_raw_records_are_filtered_once_before_requesting_the_next_page(monkeypatch):
+    events = []
+    original_entry = OnTermClient._entry
+
+    def observed_entry(self, item, query):
+        events.append(("entry", item["source"]))
+        return original_entry(self, item, query)
+
+    def handler(request):
+        start = int(request.url.params["start"])
+        events.append(("page", start))
+        if start == 1:
+            records = [record(source=f"테스트 기관{index}") for index in range(100)]
+        else:
+            records = [record(source="마지막 기관")]
+        return httpx.Response(200, json=success(records, total=101, start=start))
+
+    monkeypatch.setattr(OnTermClient, "_entry", observed_entry)
+    client, transport = make_client(handler=handler)
+    with transport:
+        assert len(client.lookup("피투피")) == 101
+    assert events == [
+        ("page", 1),
+        *[("entry", f"테스트 기관{index}") for index in range(100)],
+        ("page", 2),
+        ("entry", "마지막 기관"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "last_page",
+    [
+        "changed_total",
+        "changed_num",
+        "wrong_start",
+        "missing_records",
+        "no_result",
+        "error",
+        "repeated_record",
+    ],
+)
+def test_invalid_page_after_thousand_records_rejects_an_already_found_exact_entry(last_page):
+    starts = []
+
+    def handler(request):
+        start = int(request.url.params["start"])
+        starts.append(start)
+        if start <= 10:
+            first = (start - 1) * 100
+            records = [record(source=f"테스트 기관{index}") for index in range(first, first + 100)]
+            payload = success(records, total=1001, start=start)
+        elif last_page == "changed_total":
+            payload = success([record(source="마지막 기관")], total=1002, start=start)
+        elif last_page == "changed_num":
+            payload = success([record(source="마지막 기관")], total=1001, start=start, num=99)
+        elif last_page == "wrong_start":
+            payload = success([record(source="마지막 기관")], total=1001, start=12)
+        elif last_page == "missing_records":
+            payload = success([], total=1001, start=start)
+        elif last_page == "no_result":
+            payload = no_results()
+        elif last_page == "error":
+            payload = no_results("100", "시스템 에러")
+        else:
+            payload = success([record(source="테스트 기관0")], total=1001, start=start)
+        return httpx.Response(200, json=payload)
+
+    client, transport = make_client(handler=handler)
+    with transport, pytest.raises(GlossaryAPIError) as caught:
+        client.lookup("피투피")
+    assert caught.value.code == ("api" if last_page == "error" else "invalid_response")
+    assert starts == list(range(1, 12))
 
 
 @pytest.mark.parametrize(

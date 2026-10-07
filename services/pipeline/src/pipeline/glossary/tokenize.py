@@ -19,6 +19,25 @@ from pipeline.glossary.source import (
 
 _PARTICLES_LONGEST_FIRST = tuple(sorted(_KOREAN_PARTICLES, key=lambda item: (-len(item), item)))
 _INTERNAL_SEPARATORS = frozenset({"-", "·"})
+# Match complete words only. Frequency alone does not establish that a term is easy.
+_EASY_FUNCTION_WORDS = frozenset(
+    {
+        "그리고",
+        "그러나",
+        "하지만",
+        "또한",
+        "또는",
+        "혹은",
+        "있는",
+        "없는",
+        "있습니다",
+        "없습니다",
+        "합니다",
+        "됩니다",
+        "하세요",
+        "주세요",
+    }
+)
 _PARTICLE_PATTERN = "(?:" + "|".join(_PARTICLES_LONGEST_FIRST) + ")?"
 _DOMAIN_LABEL = r"[^\W_][\w\u0300-\u036f-]*"
 _ADDRESS_END = _PARTICLE_PATTERN + r"(?=$|[^\w-])"
@@ -26,6 +45,17 @@ _PATH_TAIL = r"(?:[/?#][^\s<>\"'\[\]{}(),;]*)?"
 _DOCUMENT_EXTENSIONS = "pdf|hwp|hwpx|doc|docx|xls|xlsx|ppt|pptx|txt|csv|tsv|rtf|odt|ods|odp|zip|7z"
 _FILE_END = _PARTICLE_PATTERN + r"(?=$|[^\w.-]|\.(?=$|\s|[가-힣\u1100-\u11ff]))"
 _MONTHLY_AMOUNT = r"(?<!\w)월[ \t]*\d+(?:,\d{3})*(?:\.\d+)?(?:천|만|억)?[ \t]*원"
+_WEEKDAY = r"[월화수목금토일](?:요일)?"
+_WEEKDAY_LIST = _WEEKDAY + rf"(?:[ \t]*[,·ㆍ/~～][ \t]*{_WEEKDAY}){{1,6}}"
+_SCHEDULE_SPANS = re.compile(
+    r"(?<!\w)(?:(?:\d{2,4}[./-][ \t]*)?\d{1,2}[./-][ \t]*\d{1,2}[.]?"
+    r"|(?:\d{2,4}년[ \t]*)?\d{1,2}월[ \t]*\d{1,2}일)"
+    rf"[ \t]*\([ \t]*{_WEEKDAY}[ \t]*\)"
+    rf"|(?<!\w){_WEEKDAY_LIST}[ \t]*(?:요일[ \t]*)?주[ \t]*\d+[ \t]*회"
+    rf"|(?<!\w)주[ \t]*\d+[ \t]*회[ \t]*\(?[ \t]*{_WEEKDAY_LIST}(?!\w)"
+    rf"|(?:수업|운영|교육|수강|진료|근무|방문|상담)?[ \t]*요일[ \t]*[:：][ \t]*"
+    rf"{_WEEKDAY}(?:[ \t]*[,·ㆍ/~～][ \t]*{_WEEKDAY}){{0,6}}(?!\w)"
+)
 # Start guards prevent rescanning the same long dotted run at every character.
 _EXCLUDED_SPANS = re.compile(
     r"(?<![A-Za-z0-9+.-])(?:[A-Za-z][A-Za-z0-9+.-]*://|www\.)"
@@ -107,13 +137,25 @@ def _word_spans(text: str) -> Iterator[tuple[int, int]]:
         yield start, cursor
 
 
+def _is_easy_function_word(surface: str) -> bool:
+    """Skip one Hangul syllable or an exact grammatical expression; keep source text."""
+    normalized = unicodedata.normalize("NFC", surface)
+    return normalized in _EASY_FUNCTION_WORDS or (
+        len(normalized) == 1 and "가" <= normalized <= "힣"
+    )
+
+
 def _candidates_for_word(surface: str) -> tuple[TermCandidate, ...]:
     candidates = [TermCandidate(surface=surface, query=surface)]
     for particle in _PARTICLES_LONGEST_FIRST:
         if not surface.endswith(particle):
             continue
         base = surface[: -len(particle)]
-        if len(unicodedata.normalize("NFC", base)) < 2 or not base[-1].isalpha():
+        if (
+            len(unicodedata.normalize("NFC", base)) < 2
+            or not base[-1].isalpha()
+            or _is_easy_function_word(base)
+        ):
             continue
         candidates.append(TermCandidate(surface=base, query=base))
     return tuple(candidates)
@@ -126,8 +168,13 @@ def tokenize_notice(source: NoticeGlossaryInput) -> tuple[WordProbe, ...]:
     marks, digits and internal hyphens or middle dots. Numeric-leading runs
     (including dates, amounts and unit values), monthly won amounts beginning
     with 월 and digits, URLs (including bare Unicode
-    domains), email addresses, known document filenames/paths, connector
-    punctuation words and punctuation are excluded. A normalized query longer
+    domains), email addresses, known document filenames/paths, weekdays attached
+    to dates or explicitly labelled/repeating weekday schedules, connector
+    punctuation words and punctuation are excluded. Single Hangul syllables and
+    a small exact list of connectors and grammatical expressions are excluded
+    from lookup, including particle-stripped alternatives. Frequent content words
+    remain eligible, and matching never removes part of a compound or the source.
+    A normalized query longer
     than the existing dictionary query limit of 200 code points is skipped whole.
 
     Query normalization never changes the original surface or source offsets.
@@ -141,8 +188,10 @@ def tokenize_notice(source: NoticeGlossaryInput) -> tuple[WordProbe, ...]:
     code points of surrounding context. Indices are half-open Python Unicode
     code point offsets, as in ``SourceOccurrence``.
     """
-    excluded = tuple(
-        (match.start(), match.end()) for match in _EXCLUDED_SPANS.finditer(source.text)
+    excluded = sorted(
+        (match.start(), match.end())
+        for pattern in (_EXCLUDED_SPANS, _SCHEDULE_SPANS)
+        for match in pattern.finditer(source.text)
     )
     excluded_index = 0
     grouped: dict[str, list[SourceOccurrence]] = {}
@@ -156,6 +205,7 @@ def tokenize_notice(source: NoticeGlossaryInput) -> tuple[WordProbe, ...]:
             unicodedata.category(surface[0])[0] != "L"
             or any(unicodedata.category(character) == "Pc" for character in surface)
             or len(unicodedata.normalize("NFC", surface)) > 200
+            or _is_easy_function_word(surface)
         ):
             continue
         context_start = max(0, start - CONTEXT_CHARACTERS)

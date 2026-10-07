@@ -57,6 +57,24 @@ def result(
     )
 
 
+def test_skipped_easy_words_do_not_consume_lookup_budget_or_leave_failed_work() -> None:
+    source = NoticeGlossaryInput(text="만 외 달 말 전 등 후 그리고 있는 대상 익일에 증빙서류")
+    calls = []
+
+    def lookup(query: str) -> GlossaryLookup:
+        assert query in {"대상", "익일에", "익일", "증빙서류"}
+        calls.append(query)
+        return result(query, (entry(query, ("다음 날",)),) if query == "익일" else ())
+
+    processed = process_notice_glossary(source, lookup, max_queries=4, clock=lambda: NOW)
+    assert calls == ["대상", "익일에", "익일", "증빙서류"]
+    assert processed.status == "completed"
+    assert processed.pending_queries == ()
+    assert processed.new_query_count == 4
+    assert processed.original_text == source.text
+    assert processed.easy_text == "만 외 달 말 전 등 후 그리고 있는 대상 다음 날에 증빙서류"
+
+
 def historical_krdict_lookup(*, providers=("onterm", "opendict", "krdict")):
     historical = GlossaryEntry(
         provider="krdict",
@@ -291,7 +309,17 @@ def test_expected_lookup_failures_keep_term_safe_code_and_successful_other_terms
             "익일": result("익일", (entry("익일", ("다음 날",)),)),
         }
     )
-    processed = process_notice_glossary(NoticeGlossaryInput(text="금회 익일"), fake)
+    processed = process_notice_glossary(
+        NoticeGlossaryInput(text="금회 익일"),
+        fake,
+        cached_lookup=(
+            lambda query: (
+                result(query, (entry(query, ("다음 날",)),), cached=True)
+                if query == "익일"
+                else None
+            )
+        ),
+    )
     assert processed.original_text == "금회 익일"
     assert processed.easy_text == "금회 다음 날"
     assert processed.status == "partial"
@@ -325,6 +353,47 @@ def test_failed_full_word_is_not_treated_as_empty_search_for_a_stripped_candidat
     assert processed.queries[0].lookup is None
     assert processed.changes == ()
     assert processed.pending_queries == ("익일에",)
+
+
+@pytest.mark.parametrize("provider", ["onterm", "opendict"])
+def test_rate_limit_defers_new_queries_but_keeps_cached_changes_and_can_resume(provider) -> None:
+    source = NoticeGlossaryInput(text="금회 익일 안내 익일에")
+    cache = {
+        "익일": result("익일", (entry("익일", ("다음 날",)),), cached=True),
+        "익일에": result("익일에", cached=True),
+    }
+    blocked = FakeLookup({"금회": GlossaryAPIError(provider, "rate_limit")})
+    partial = process_notice_glossary(source, blocked, cached_lookup=cache.get)
+    assert blocked.calls == ["금회"]
+    assert partial.new_query_count == 1
+    assert partial.easy_text == "금회 다음 날 안내 다음 날에"
+    assert partial.original_text == source.text
+    assert partial.status == "partial"
+    assert [term.status for term in partial.terms] == ["failed", "replaced", "pending", "replaced"]
+    assert partial.pending_queries == ("금회", "안내")
+    assert all(outcome.query != "안내" for outcome in partial.queries)
+    assert NoticeGlossaryResult.model_validate_json(partial.model_dump_json()) == partial
+
+    resumed_lookup = FakeLookup()
+    completed = process_notice_glossary(source, resumed_lookup, previous=partial)
+    assert resumed_lookup.calls == ["안내", "금회"]
+    assert completed.status == "completed"
+    assert completed.easy_text == partial.easy_text
+    assert completed.changes == partial.changes
+
+
+def test_rate_limit_preserves_success_from_before_limit_without_more_requests() -> None:
+    fake = FakeLookup(
+        {
+            "익일": result("익일", (entry("익일", ("다음 날",)),)),
+            "금회": GlossaryAPIError("onterm", "rate_limit"),
+        }
+    )
+    partial = process_notice_glossary(NoticeGlossaryInput(text="익일 금회 안내"), fake)
+    assert fake.calls == ["익일", "금회"]
+    assert partial.easy_text == "다음 날 금회 안내"
+    assert partial.new_query_count == 2
+    assert partial.terms[-1].status == "pending"
 
 
 @pytest.mark.parametrize(

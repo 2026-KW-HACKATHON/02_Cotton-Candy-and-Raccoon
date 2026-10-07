@@ -199,10 +199,14 @@ def test_saved_result_roundtrips_all_evidence_and_original_offsets() -> None:
     assert restored.terms[0].entries[0].source_url.startswith("https://opendict.korean.go.kr/")
 
 
-def test_new_refinement_rules_rebuild_previous_completed_results() -> None:
+@pytest.mark.parametrize(
+    "previous_version",
+    ["dictionary-replacement-v3", "dictionary-replacement-v4", "dictionary-replacement-v5"],
+)
+def test_new_refinement_rules_rebuild_previous_completed_results(previous_version: str) -> None:
     source = NoticeGlossaryInput(text="금회")
     previous = process_notice_glossary(source, lambda query: lookup(query), clock=lambda: NOW)
-    previous = previous.model_copy(update={"rules_version": "dictionary-replacement-v3"})
+    previous = previous.model_copy(update={"rules_version": previous_version})
     calls = []
 
     def updated(query: str) -> GlossaryLookup:
@@ -210,7 +214,7 @@ def test_new_refinement_rules_rebuild_previous_completed_results() -> None:
         return lookup(query, (entry(query, ("이번 회",)),))
 
     current = process_notice_glossary(source, updated, previous=previous, clock=lambda: NOW)
-    assert current.rules_version == RULES_VERSION == "dictionary-replacement-v4"
+    assert current.rules_version == RULES_VERSION == "dictionary-replacement-v6"
     assert calls == ["금회"]
     assert current.original_text == source.text
     assert current.easy_text == "이번 회"

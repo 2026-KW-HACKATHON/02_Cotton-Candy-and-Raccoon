@@ -82,17 +82,17 @@ def test_urls_and_email_addresses_are_excluded_with_adjacent_prose_retained() ->
         "문의: user.name+notice@example.co.kr,지원 "
         "https://example.com/가정?value=익일&count=2;접수 "
         "www.example.com/안내 (ftp://example.com/금회) "
-        "info@예시.kr 끝"
+        "info@예시.kr 종료"
     )
-    assert surfaces(text) == ["문의", "지원", "접수", "끝"]
+    assert surfaces(text) == ["문의", "지원", "접수", "종료"]
 
 
 def test_bare_domains_and_paths_are_reserved_with_korean_prose_punctuation_retained() -> None:
     text = (
         "문의:nowon.kr,지원.접수 news.seoul.go.kr/path?word=익일&count=2;마감 "
-        "예시.kr/path 서울.한국에서 안내 (cafe\u0301.fr/가정) 끝"
+        "예시.kr/path 서울.한국에서 안내 (cafe\u0301.fr/가정) 종료"
     )
-    assert surfaces(text) == ["문의", "지원", "접수", "마감", "안내", "끝"]
+    assert surfaces(text) == ["문의", "지원", "접수", "마감", "안내", "종료"]
 
 
 @pytest.mark.parametrize(
@@ -120,8 +120,8 @@ def test_known_document_filenames_and_paths_are_excluded(filename: str) -> None:
 
 
 def test_address_recognition_preserves_regular_korean_sentences_dates_and_amounts() -> None:
-    text = "신청.접수.마감 안내.끝 2026.10.06까지 1,000원 10.5만원"
-    assert surfaces(text) == ["신청", "접수", "마감", "안내", "끝"]
+    text = "신청.접수.마감 안내.종료 2026.10.06까지 1,000원 10.5만원"
+    assert surfaces(text) == ["신청", "접수", "마감", "안내", "종료"]
 
 
 def test_full_size_dotted_plain_text_retains_every_token_occurrence() -> None:
@@ -178,6 +178,107 @@ def test_monthly_amount_rule_preserves_identifiers_and_words_without_won_units()
         "월28",
         "월드28",
     ]
+
+
+@pytest.mark.parametrize(
+    "schedule",
+    [
+        "2026. 10. 1.(목)",
+        "10. 19.(월)",
+        "2026-10-06(화요일)",
+        "10/06 ( 화 )",
+        "2026년 10월 6일(화)",
+        "10월 6일 (화요일)",
+        "월, 수, 금 주3회",
+        "화, 목 주2회",
+        "월·수·금 주 3 회",
+        "주3회 (월, 수, 금)",
+        "수업 요일: 월, 수, 금",
+        "운영요일：월~금",
+        "요일: 수",
+    ],
+)
+def test_explicit_schedule_weekdays_do_not_create_dictionary_queries(schedule: str) -> None:
+    text = f"안내 {schedule}; 접수"
+    source = NoticeGlossaryInput(text=text)
+    probes = tokenize_notice(source)
+    assert all(
+        candidate.query not in {"월", "화", "수", "목", "금", "토", "일", "화요일", "월·수·금"}
+        for probe in probes
+        for candidate in probe.candidates
+    )
+    assert probes[-1].surface == "접수"
+    assert probes[-1].occurrences[0].start == text.index("접수")
+    assert source.text == text
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("목 보호 안내", ["보호", "안내"]),
+        ("수 구분 안내", ["구분", "안내"]),
+        ("금 세공 안내", ["세공", "안내"]),
+        ("화 예방 안내", ["예방", "안내"]),
+        ("월 관측 안내", ["관측", "안내"]),
+        ("선택 (수) 확인", ["선택", "확인"]),
+        ("월, 수, 금 안내", ["안내"]),
+        ("수요일 행사 안내", ["수요일", "행사", "안내"]),
+        ("목요일에 방문", ["목요일에", "방문"]),
+        ("항목1(목) 선택", ["항목1", "선택"]),
+        ("주3회 신청 가능", ["주3회", "신청", "가능"]),
+    ],
+)
+def test_schedule_filter_keeps_content_words_with_single_syllables_skipped(text, expected) -> None:
+    assert surfaces(text) == expected
+
+
+def test_weekday_filter_preserves_same_word_in_a_nonschedule_occurrence() -> None:
+    text = "2026.10.7.(수요일) 수요일 안내; 월, 수, 금 주3회 금요일 상담"
+    probes = tokenize_notice(NoticeGlossaryInput(text=text))
+    indexed = {probe.surface: probe for probe in probes}
+    for word in ("수요일", "금요일"):
+        assert len(indexed[word].occurrences) == 1
+        assert indexed[word].occurrences[0].start == text.rindex(word)
+    assert "월" not in indexed
+
+
+@pytest.mark.parametrize("word", ["만", "외", "달", "말", "전", "등", "후"])
+@pytest.mark.parametrize("form", ["NFC", "NFD"])
+def test_short_words_that_exceeded_search_limit_are_skipped_without_editing_source(
+    word: str, form: str
+) -> None:
+    text = f"📌 {unicodedata.normalize(form, word)} 증빙서류"
+    source = NoticeGlossaryInput(text=text)
+    (probe,) = tokenize_notice(source)
+    assert probe.surface == "증빙서류"
+    assert probe.occurrences[0].start == text.index("증빙서류")
+    assert probe.occurrences[0].context == text
+    assert source.text == text
+
+
+def test_easy_connectors_and_grammar_are_excluded_but_frequent_content_words_remain() -> None:
+    text = "그리고 그러나 하지만 또한 또는 혹은 있는 없는 합니다 됩니다 신청 지원 대상 기한"
+    source = NoticeGlossaryInput(text=text)
+    assert [probe.surface for probe in tokenize_notice(source)] == ["신청", "지원", "대상", "기한"]
+    assert source.text == text
+
+
+def test_easy_word_matches_do_not_remove_compounds_or_content_word_endings() -> None:
+    text = "없는집 지원합니다 신청됩니다 만24세 월요일 등본 전액 달력 말소"
+    assert surfaces(text) == text.split()
+
+
+def test_particle_stripped_easy_word_is_skipped_after_complete_word_candidate() -> None:
+    probes = tokenize_notice(NoticeGlossaryInput(text="있는가 또는가"))
+    assert [probe.surface for probe in probes] == ["있는가", "또는가"]
+    assert [[candidate.query for candidate in probe.candidates] for probe in probes] == [
+        ["있는가"],
+        ["또는가"],
+    ]
+
+
+def test_single_foreign_letters_and_combining_marks_are_not_hangul_syllables() -> None:
+    assert surfaces("A a Ω 漢 A\u0301") == ["A", "a", "Ω", "漢", "A\u0301"]
 
 
 def test_unicode_letters_internal_digits_hyphens_and_middle_dots_are_words() -> None:

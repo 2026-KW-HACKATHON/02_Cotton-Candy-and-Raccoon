@@ -16,7 +16,7 @@ from pipeline.glossary.models import (
 from pipeline.glossary.source import NoticeGlossaryInput, SourceOccurrence, source_hash
 from pipeline.glossary.tokenize import tokenize_notice
 
-RULES_VERSION = "dictionary-replacement-v4"
+RULES_VERSION = "dictionary-replacement-v6"
 GlossaryFailureCode = Literal[
     "configuration",
     "authentication",

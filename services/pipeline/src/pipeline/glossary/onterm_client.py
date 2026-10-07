@@ -19,7 +19,7 @@ _SOURCE_URL = "https://kli.korean.go.kr/term/"
 _LICENSE_URL = "https://www.kogl.or.kr/info/licenseType1.do"
 _TIMEOUT_SECONDS = 15.0
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
-_MAX_RESULTS = 1_000
+_MAX_RESULTS = 3_000
 _PAGE_SIZE = 100
 _NO_RESULTS = "검색 결과가 없습니다."
 _RELATION = re.compile(r"\(([^(),]+),\s*([^(),]+)\)")
@@ -113,6 +113,7 @@ class OnTermClient:
         self._owns_client = client is None
         self._client = client or httpx.Client(timeout=_TIMEOUT_SECONDS, follow_redirects=False)
         self._closed = False
+        self._rate_limited = False
 
     def close(self) -> None:
         if not self._closed and self._owns_client:
@@ -199,33 +200,46 @@ class OnTermClient:
     def lookup(self, query: str) -> tuple[GlossaryEntry, ...]:
         if self._closed:
             raise GlossaryAPIError(self.provider, "configuration")
+        if self._rate_limited:
+            raise GlossaryAPIError(self.provider, "rate_limit")
         query = normalize_query(query)
         try:
-            records = self._search(query)
-            entries = tuple(
-                entry for record in records if (entry := self._entry(record, query)) is not None
-            )
+            entries = self._search(query)
             # Identical content may appear more than once. Distinct source/meaning records
             # use different content hashes and must remain separate.
             unique = {entry.identity: entry for entry in entries}
             return tuple(unique.values())
+        except GlossaryAPIError as error:
+            # Keep a shared batch client from repeating requests against a known
+            # limit. Recreate the client for a later attempt; reset times are not
+            # documented, so do not guess a sleep duration or cache this failure.
+            if error.code == "rate_limit":
+                self._rate_limited = True
+            raise
         except (ValueError, ValidationError, RecursionError):
             pass
         raise GlossaryAPIError(self.provider, "invalid_response")
 
-    def _search(self, query: str) -> tuple[dict[str, Any], ...]:
-        results: list[dict[str, Any]] = []
+    def _search(self, query: str) -> tuple[GlossaryEntry, ...]:
+        """Filter complete pages, while checking pagination against raw record counts.
+
+        Exact matches may occur on any page, including after unrelated results.
+        Only return after the full bounded search completes; an incomplete or
+        oversized search must never become a successful partial or empty lookup.
+        """
+        entries: list[GlossaryEntry] = []
         prior_page_records: set[str] = set()
         total: int | None = None
+        raw_count = 0
         start = 1
-        while total is None or len(results) < total:
+        while total is None or raw_count < total:
             channel = self._request(query, start)
             if "returnCode" in channel:
                 self._check_code(channel["returnCode"])
             returned = channel.get("return_object")
             if isinstance(returned, str):
                 self._check_code(channel.get("returnCode"))
-                if returned != _NO_RESULTS or results:
+                if returned != _NO_RESULTS or raw_count:
                     raise ValueError("Unexpected terminology empty-result response.")
                 if "total" in channel and _integer(channel["total"]) != 0:
                     raise ValueError("Inconsistent terminology empty-result count.")
@@ -253,19 +267,27 @@ class OnTermClient:
                 ):
                     raise ValueError("Invalid terminology result records.")
                 page.extend(records)
-            expected_count = min(page_num, total - len(results))
+            expected_count = min(page_num, total - raw_count)
             if len(page) != expected_count:
                 raise ValueError("Inconsistent terminology page count.")
-            if not page and len(results) < total:
+            if not page and raw_count < total:
                 raise ValueError("Missing terminology result page.")
-            page_keys = {json.dumps(record, sort_keys=True, ensure_ascii=False) for record in page}
+            page_keys = {
+                hashlib.sha256(
+                    json.dumps(record, sort_keys=True, ensure_ascii=False).encode("utf-8")
+                ).hexdigest()
+                for record in page
+            }
             if prior_page_records.intersection(page_keys):
                 raise ValueError("Repeated terminology records across search pages.")
             prior_page_records.update(page_keys)
-            results.extend(page)
+            entries.extend(
+                entry for record in page if (entry := self._entry(record, query)) is not None
+            )
+            raw_count += len(page)
             # OnTerm echoes the page number in start, not the first record offset.
             start += 1
-        return tuple(results)
+        return tuple(entries)
 
     def _entry(self, record: dict[str, Any], query: str) -> GlossaryEntry | None:
         headword = _plain_text(record.get("word"), required=True) or ""
