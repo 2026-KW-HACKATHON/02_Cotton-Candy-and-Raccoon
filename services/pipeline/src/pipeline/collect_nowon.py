@@ -169,8 +169,11 @@ def _save_notices(
                     )
                 except psycopg.Error:
                     failures.extend(
-                        NoticeFailure(rest.post_sn, "storage", "db_unavailable")
-                        for rest in notices[index:]
+                        NoticeFailure(
+                            rest.post_sn, "storage",
+                            "db_unavailable" if offset == 0 else "db_unavailable_not_attempted",
+                        )
+                        for offset, rest in enumerate(notices[index:])
                     )
                     break
             try:
@@ -214,8 +217,12 @@ def collect_and_save_nowon(
         conflicts=set(listing.conflicting_post_sns),
     )
 
+    skipped = {
+        failure.post_sn for failure in failures
+        if failure.stage == "listing_conflict" or failure.reason_code.endswith("_not_attempted")
+    }
     return CollectNowonResult(
-        listing.total_count, len(listing.notices), len(notices), saved_count,
+        listing.total_count, len(listing.notices), len(notices) - len(skipped), saved_count,
         listing.complete, limited, failed_pages, failures,
     )
 

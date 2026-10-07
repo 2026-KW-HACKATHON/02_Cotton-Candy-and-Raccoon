@@ -213,7 +213,7 @@ def test_mixed_input_valid_file_quote_is_reference_only_without_text_matching() 
 
 
 @pytest.mark.parametrize("metadata", ("title", "department"))
-def test_literal_metadata_quotes_are_text_matched_even_when_absent_from_body(
+def test_only_scoped_title_metadata_quotes_are_text_matched_when_absent_from_body(
     metadata: str,
 ) -> None:
     notice = _notice(body="지역 주민 대상 문화교실 참가자를 모집합니다.")
@@ -228,7 +228,7 @@ def test_literal_metadata_quotes_are_text_matched_even_when_absent_from_body(
 
     assert result.summary == output["summary"]
     assert result.evidence[0].excerpt == excerpt
-    assert result.evidence[0].verification == "text_matched"
+    assert result.evidence[0].verification == ("text_matched" if metadata == "title" else None)
     assert result.uncertainties == [REVIEW_NOTE]
 
 
@@ -340,7 +340,7 @@ def test_diagnostic_exception_does_not_reset_schema_valid_content(
 
 
 @pytest.mark.parametrize("mixed", (False, True), ids=("text", "mixed"))
-def test_preserved_uncertain_result_stores_review_without_publishing_content_or_deadline(
+def test_preserved_uncertain_result_stores_review_content_without_a_sorting_deadline(
     mixed: bool,
 ) -> None:
     notice = _notice()
@@ -364,7 +364,7 @@ def test_preserved_uncertain_result_stores_review_without_publishing_content_or_
 
     assert record.status == "needs_review"
     assert record.deadline_on is None
-    assert record.result is None
+    assert record.result.model_dump(mode="json") == prepared_result.summary.model_dump(mode="json")
     assert prepared_result.summary.action == output["action"]
     assert prepared_result.summary.dates[0].end_date == "2026-10-10"
     assert prepared_result.summary.uncertainties == [REVIEW_NOTE]

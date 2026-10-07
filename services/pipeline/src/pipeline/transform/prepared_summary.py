@@ -3,9 +3,14 @@
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from pydantic import ValidationError
+
 from pipeline.transform.gemini_input import GeminiInputError, validate_gemini_input
 from pipeline.transform.notice_input import NoticeInput
+from pipeline.transform.summary_files import PrivateSummaryFileManifest, manifest_snapshot
 from pipeline.transform.summary_schema import MediaSource, NoticeSummary
+
+_UNSET_MANIFEST = object()
 
 
 class PreparationIssueLike(Protocol):
@@ -37,12 +42,18 @@ class PreparedSummaryLike(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class PreparedSummaryResult:
-    """A summary plus the preparation warnings and references needed by its caller."""
+    """Summary and private execution metadata needed by the storage caller.
+
+    A correction failure retains a usable candidate, but must not replace an
+    existing summary as though generation completed without a processing error.
+    """
 
     notice_id: int
     summary: NoticeSummary = field(repr=False)
     warnings: tuple[PreparationIssueLike, ...]
     media_sources: tuple[MediaSource, ...] = ()
+    correction_failure_code: str | None = None
+    file_manifest: PrivateSummaryFileManifest | None = field(default=None, repr=False)
 
 
 class SummaryPreparationError(ValueError):
@@ -53,16 +64,44 @@ class SummaryPreparationError(ValueError):
         super().__init__(reason_code)
 
 
+def prepared_file_manifest(prepared: PreparedSummaryLike) -> PrivateSummaryFileManifest | None:
+    """Copy explicit provider provenance; absent legacy data never implies a mapping."""
+    value = getattr(prepared, "file_manifest", None)
+    if value is None:
+        return None
+    try:
+        manifest = manifest_snapshot(value)
+        if manifest.notice_id != prepared.notice_id:
+            raise ValueError("file_manifest_notice_mismatch")
+    except (TypeError, ValueError):
+        raise SummaryPreparationError("invalid_prepared_input") from None
+    return manifest
+
+
 def prepare_gemini_request(
     prepared: PreparedSummaryLike,
+    *,
+    notice: NoticeInput | None = None,
+    file_manifest: PrivateSummaryFileManifest | None | object = _UNSET_MANIFEST,
 ) -> tuple[list[dict[str, str]], tuple[MediaSource, ...]]:
     """Copy prepared blocks and append a stable ordinal file-reference manifest.
 
     media_1 identifies the first document/image block, media_2 the second, etc.
-    The original preparer retains file metadata; these IDs refer to transmitted blocks.
+    Explicit file_manifest data binds source files to actual block bytes. Old
+    preparers without that data remain readable but provide no file identity.
     """
     if prepared.failures:
         raise SummaryPreparationError("input_preparation_failed")
+    # The public summarizer supplies its already validated request snapshot.
+    # Standalone preparation also avoids rereading mutable notice properties
+    # after to_gemini_input runs.
+    if notice is None:
+        try:
+            notice = NoticeInput.model_validate(
+                prepared.notice.model_dump(mode="python", warnings=False)
+            )
+        except ValidationError:
+            raise SummaryPreparationError("invalid_prepared_input") from None
     try:
         value = prepared.to_gemini_input()
     except ValueError:
@@ -71,6 +110,17 @@ def prepare_gemini_request(
         raise SummaryPreparationError("invalid_prepared_input")
     blocks = validate_gemini_input(value)
     assert isinstance(blocks, list)
+    manifest = (
+        prepared_file_manifest(prepared) if file_manifest is _UNSET_MANIFEST else file_manifest
+    )
+    if manifest is not None:
+        try:
+            manifest = manifest_snapshot(manifest)
+            if manifest.notice_id != prepared.notice_id:
+                raise ValueError("file_manifest_notice_mismatch")
+            manifest.validate_input(blocks, notice)
+        except (TypeError, ValueError):
+            raise SummaryPreparationError("invalid_prepared_input") from None
     media = []
     descriptions = []
     for block in blocks:
@@ -80,7 +130,7 @@ def prepare_gemini_request(
         source_id = f"media_{len(media) + 1}"
         media.append(MediaSource(source_id=source_id, source_type=source_type))
         descriptions.append(f"{source_id}: {source_type}, {block['mime_type']}")
-    if not (prepared.notice.body_text.strip() or prepared.notice.attachments or media):
+    if not (notice.body_text.strip() or notice.attachments or media):
         raise SummaryPreparationError("summary_source_has_no_content")
     if descriptions:
         blocks.append(

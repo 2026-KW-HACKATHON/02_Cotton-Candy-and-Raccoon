@@ -16,6 +16,7 @@ from google.genai import errors
 from test_gemini_multimodal import _media, _mock_sdk
 
 from pipeline.transform import gemini_client
+from pipeline.transform.summary_schema import GeminiNoticeSummary
 
 PRIVATE_MARKER = "MOCK_PRIVATE_SDK_ERROR_CONTENT_123"
 PIPELINE_ROOT = Path(__file__).resolve().parents[1]
@@ -64,6 +65,39 @@ def _request() -> str:
     return gemini_client.generate_summary_json(
         prompt="instructions", notice_text=[_media("document")], api_key="test-key"
     )
+
+
+def test_installed_sdk_sends_the_required_four_card_response_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "status": "completed",
+                "steps": [{
+                    "type": "model_output",
+                    "content": [{"type": "text", "text": '{"summary":"mock"}'}],
+                }],
+            },
+        )
+
+    _mock_sdk(monkeypatch, handler)
+    assert _request() == '{"summary":"mock"}'
+    assert len(sent) == 1
+    response_format = sent[0]["response_format"]
+    assert response_format["mime_type"] == "application/json"
+    schema = response_format["schema"]
+    assert schema == GeminiNoticeSummary.model_json_schema()
+    assert "card_summaries" in schema["required"]
+    assert schema["properties"]["card_summaries"] == {"$ref": "#/$defs/GeminiCardSummaries"}
+    assert set(schema["$defs"]["GeminiCardSummaries"]["required"]) == {
+        "audience", "deadline", "action", "notes"
+    }
+    assert sent[0]["store"] is False
 
 
 @pytest.mark.parametrize(

@@ -156,6 +156,7 @@ def test_inconclusive_grounding_preserves_claims_instead_of_becoming_shape_failu
         data["summary"] = "신청 접수"
     else:
         data.update(action="온라인 신청", action_requirement="optional")
+        data["card_summaries"]["action"] = "온라인으로 신청할 수 있어요."
         data["evidence"].append({"field": "action", "excerpt": "원문에 없는 내용"})
     calls: list[str] = []
 

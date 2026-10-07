@@ -2,7 +2,7 @@
 
 import os
 from dataclasses import replace
-from datetime import date
+from datetime import UTC, date, datetime
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -145,7 +145,10 @@ def test_existing_file_change_replaces_rows_and_marks_modified(
     cursor = conn.cursor.return_value.__enter__.return_value
     statements = [call.args[0] for call in cursor.execute.call_args_list]
     assert any(sql.startswith("delete from notice_files") for sql in statements)
-    assert any(sql.startswith("update notices set is_modified") for sql in statements)
+    assert any(
+        sql.startswith("update notices set is_modified = true, content_updated_at = now()")
+        for sql in statements
+    )
 
 
 def _file_rows(conn: psycopg.Connection, notice_id: int) -> list[tuple]:
@@ -166,14 +169,33 @@ def test_new_repeat_and_order_only_preserve_rows(
         ("attachment", "file-a"), ("inline_image", "file-b"),
     ]
     with db_conn.cursor() as cursor:
-        cursor.execute("select post_sn, is_modified from notices where id = %s", (notice_id,))
-        assert cursor.fetchone() == (notice.post_sn, False)
+        cursor.execute(
+            "select post_sn, is_modified, created_at, content_updated_at from notices "
+            "where id = %s", (notice_id,),
+        )
+        post_sn, modified, created, content_updated = cursor.fetchone()
+        assert (post_sn, modified) == (notice.post_sn, False)
+        assert content_updated == created
+
+    old_timestamp = datetime(2000, 1, 1, tzinfo=UTC)
+    db_conn.execute(
+        "update notices set content_updated_at = %s where id = %s", (old_timestamp, notice_id),
+    )
 
     assert save_notice_with_files(db_conn, notice, [second_file, first_file]) == notice_id
     assert _file_rows(db_conn, notice_id) == before
     with db_conn.cursor() as cursor:
-        cursor.execute("select is_modified from notices where id = %s", (notice_id,))
-        assert cursor.fetchone() == (False,)
+        cursor.execute(
+            "select is_modified, content_updated_at from notices where id = %s", (notice_id,),
+        )
+        assert cursor.fetchone() == (False, old_timestamp)
+
+    db_conn.execute("update notices set is_modified = true where id = %s", (notice_id,))
+    assert save_notice_with_files(db_conn, notice, [first_file, second_file]) == notice_id
+    assert _file_rows(db_conn, notice_id) == before
+    assert db_conn.execute(
+        "select is_modified, content_updated_at from notices where id = %s", (notice_id,),
+    ).fetchone() == (True, old_timestamp)
 
 
 @pytest.mark.parametrize("change", ["add", "delete", "replace", "metadata", "empty"])
@@ -183,6 +205,10 @@ def test_existing_file_changes_mark_modified(
 ) -> None:
     initial = [first_file, second_file]
     notice_id = save_notice_with_files(db_conn, notice, initial)
+    old_timestamp = datetime(2000, 1, 1, tzinfo=UTC)
+    db_conn.execute(
+        "update notices set content_updated_at = %s where id = %s", (old_timestamp, notice_id),
+    )
     replacement = replace(
         first_file, file_id="file-c", file_sn="10",
         url="https://www.nowon.kr/file?q_fileSn=10&q_fileId=file-c",
@@ -199,18 +225,36 @@ def test_existing_file_changes_mark_modified(
         (file.file_id, file.kind, file.file_sn, file.file_name, file.url) for file in changed
     }
     with db_conn.cursor() as cursor:
-        cursor.execute("select is_modified from notices where id = %s", (notice_id,))
-        assert cursor.fetchone() == (True,)
+        cursor.execute(
+            "select is_modified, content_updated_at from notices where id = %s", (notice_id,),
+        )
+        modified, content_updated = cursor.fetchone()
+        assert modified is True and content_updated > old_timestamp
+
+    db_conn.execute(
+        "update notices set content_updated_at = %s where id = %s", (old_timestamp, notice_id),
+    )
+    assert save_notice_with_files(db_conn, notice, changed) == notice_id
+    assert db_conn.execute(
+        "select is_modified, content_updated_at from notices where id = %s", (notice_id,),
+    ).fetchone() == (True, old_timestamp)
 
 
 def test_existing_empty_list_then_file_addition_marks_modified(
     db_conn, notice: NoticeRecord, first_file: FileRecord,
 ) -> None:
     notice_id = save_notice_with_files(db_conn, notice, [])
+    old_timestamp = datetime(2000, 1, 1, tzinfo=UTC)
+    db_conn.execute(
+        "update notices set content_updated_at = %s where id = %s", (old_timestamp, notice_id),
+    )
     assert save_notice_with_files(db_conn, notice, [first_file]) == notice_id
     with db_conn.cursor() as cursor:
-        cursor.execute("select is_modified from notices where id = %s", (notice_id,))
-        assert cursor.fetchone() == (True,)
+        cursor.execute(
+            "select is_modified, content_updated_at from notices where id = %s", (notice_id,),
+        )
+        modified, content_updated = cursor.fetchone()
+        assert modified is True and content_updated > old_timestamp
 
 
 def test_file_insert_failure_rolls_back_notice_and_file_changes(
@@ -218,6 +262,10 @@ def test_file_insert_failure_rolls_back_notice_and_file_changes(
 ) -> None:
     notice_id = save_notice_with_files(db_conn, notice, [first_file])
     before = _file_rows(db_conn, notice_id)
+    old_timestamp = datetime(2000, 1, 1, tzinfo=UTC)
+    db_conn.execute(
+        "update notices set content_updated_at = %s where id = %s", (old_timestamp, notice_id),
+    )
     with patch(
         "pipeline.storage.notice_bundle._insert_file",
         side_effect=psycopg.IntegrityError("injected file failure"),
@@ -228,8 +276,28 @@ def test_file_insert_failure_rolls_back_notice_and_file_changes(
             )
     assert _file_rows(db_conn, notice_id) == before
     with db_conn.cursor() as cursor:
-        cursor.execute("select title, is_modified from notices where id = %s", (notice_id,))
-        assert cursor.fetchone() == ("원래 제목", False)
+        cursor.execute(
+            "select title, is_modified, content_updated_at from notices where id = %s",
+            (notice_id,),
+        )
+        assert cursor.fetchone() == ("원래 제목", False, old_timestamp)
+
+
+def test_missing_file_list_preserves_existing_notice_and_content_timestamp(
+    db_conn, notice: NoticeRecord, first_file: FileRecord,
+) -> None:
+    notice_id = save_notice_with_files(db_conn, notice, [first_file])
+    before = _file_rows(db_conn, notice_id)
+    old_timestamp = datetime(2000, 1, 1, tzinfo=UTC)
+    db_conn.execute(
+        "update notices set content_updated_at = %s where id = %s", (old_timestamp, notice_id),
+    )
+    with pytest.raises(ValueError, match="완료"):
+        save_notice_with_files(db_conn, replace(notice, title="수집 실패한 변경 제목"), None)
+    assert _file_rows(db_conn, notice_id) == before
+    assert db_conn.execute(
+        "select title, is_modified, content_updated_at from notices where id = %s", (notice_id,),
+    ).fetchone() == ("원래 제목", False, old_timestamp)
 
 
 def test_new_notice_is_rolled_back_when_file_insert_fails(
