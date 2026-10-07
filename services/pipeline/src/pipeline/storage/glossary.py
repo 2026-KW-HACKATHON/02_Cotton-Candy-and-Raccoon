@@ -153,12 +153,13 @@ def save_glossary(conn: Connection, result: GlossaryLookup) -> None:
         if not is_new and stored[1] >= result.queried_at:
             return
         if stored[0] == "found" and result.status == "not_found":
-            if result.providers_checked != ACTIVE_PROVIDERS:
+            definition_only = result.providers_checked == ("opendict",)
+            if result.providers_checked != ACTIVE_PROVIDERS and not definition_only:
                 raise GlossaryStorageError("검색 결과가 없어 기존 용어 설명을 보존했습니다.")
             cursor.execute(
                 "select exists (select 1 from public.glossary_lookup_entries "
                 "where query = %s and provider = any(%s))",
-                (result.query, list(ACTIVE_PROVIDERS)),
+                (result.query, ["opendict"] if definition_only else list(ACTIVE_PROVIDERS)),
             )
             active_meanings = cursor.fetchone()
             if active_meanings is None or active_meanings[0] is not False:

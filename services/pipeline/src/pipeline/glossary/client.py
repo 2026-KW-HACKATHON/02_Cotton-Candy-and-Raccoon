@@ -63,6 +63,8 @@ class GlossaryAPIError(RuntimeError):
 class _Meaning:
     sense_id: str
     definition: str
+    part_of_speech: str | None = None
+    original_language: str | None = None
 
 
 @dataclass(frozen=True)
@@ -304,6 +306,42 @@ class DictionaryClient:
             pass
         raise GlossaryAPIError(self.provider, "invalid_response")
 
+    def lookup_definitions(self, query: str) -> tuple[GlossaryEntry, ...]:
+        """Read all Ourmalsam meanings directly from validated search responses.
+
+        Each search page is one request. Definitions, identifiers and source
+        links are already supplied by that API, so this operation needs no
+        detail requests. Missing optional metadata remains empty.
+        """
+        if self.provider != "opendict":
+            raise ValueError("Definitions-only lookups require Ourmalsam.")
+        if self._closed:
+            raise GlossaryAPIError(self.provider, "configuration")
+        query = normalize_query(query)
+        try:
+            found = self._search(query)
+            result = tuple(
+                GlossaryEntry(
+                    provider="opendict",
+                    entry_id=item.entry_id,
+                    sense_id=meaning.sense_id,
+                    headword=item.headword,
+                    definition=meaning.definition,
+                    part_of_speech=meaning.part_of_speech,
+                    original_language=meaning.original_language,
+                    source_url=item.source_url,
+                )
+                for item in found
+                for meaning in item.meanings
+            )
+            identities = [entry.identity for entry in result]
+            if len(set(identities)) != len(identities):
+                raise ValueError("Duplicate dictionary meaning.")
+            return result
+        except (ValueError, ValidationError):
+            pass
+        raise GlossaryAPIError(self.provider, "invalid_response")
+
     def _search(self, query: str) -> tuple[_SearchItem, ...]:
         results: list[_SearchItem] = []
         total: int | None = None
@@ -372,6 +410,8 @@ class DictionaryClient:
                 _Meaning(
                     _ourmalsam_sense_id(sense),
                     _text(sense, "definition", required=True) or "",
+                    _text(sense, "pos"),
+                    _text(sense, "origin"),
                 ),
             )
         # Validate source metadata before issuing another authenticated request.
@@ -470,3 +510,17 @@ class DictionaryClient:
                 )
             )
         return tuple(entries)
+
+
+class DictionaryDefinitionClient(DictionaryClient):
+    """Expose search-only Ourmalsam definitions through the shared lookup interface."""
+
+    def __init__(
+        self, provider: Provider, api_key: str, *, client: httpx.Client | None = None
+    ) -> None:
+        if provider != "opendict":
+            raise ValueError("Definitions-only lookups require Ourmalsam.")
+        super().__init__(provider, api_key, client=client)
+
+    def lookup(self, query: str) -> tuple[GlossaryEntry, ...]:
+        return self.lookup_definitions(query)
