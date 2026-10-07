@@ -16,11 +16,15 @@ def database() -> Iterator[psycopg.Connection]:
     if not dsn:
         pytest.skip("SCHEMA_TEST_DATABASE_URL is required")
     conn = psycopg.connect(dsn)
-    if conn.info.host != "127.0.0.1" or not conn.info.dbname.startswith("pipeline_schema_test_"):
+    if conn.info.host != "127.0.0.1" or not conn.info.dbname.startswith(
+        "pipeline_schema_test_"
+    ):
         conn.close()
         pytest.fail("Use a disposable loopback pipeline_schema_test_* database")
     try:
-        assert conn.execute("select to_regclass('public.notices')").fetchone()[0] is None
+        assert (
+            conn.execute("select to_regclass('public.notices')").fetchone()[0] is None
+        )
         # Emulate Supabase default API role grants, not the actual Data API.
         conn.execute("create role anon; create role authenticated")
         conn.execute("grant usage on schema public to anon, authenticated")
@@ -39,6 +43,8 @@ def database() -> Iterator[psycopg.Connection]:
             "20261005000000_glossary.sql",
             "20261006000000_notice_glossary.sql",
             "20261007000000_notice_easy_text.sql",
+            "20261007000001_notice_glossary_current_source.sql",
+            "20261007000003_standard_dictionary.sql",
         ]
         for path in files:
             conn.execute(path.read_text(encoding="utf-8"))
@@ -82,7 +88,9 @@ def test_consolidated_init_and_seed(db: psycopg.Connection) -> None:
     ).fetchone()
     assert (board, post) == ("1001", "20260901000000001")
     assert (
-        db.execute("select file_key from notice_files where notice_id=%s", (key,)).fetchone()[0]
+        db.execute(
+            "select file_key from notice_files where notice_id=%s", (key,)
+        ).fetchone()[0]
         == "id:aaaaaaaa-0000-0000-0000-000000000001"
     )
     assert db.execute("select count(*) from notices").fetchone()[0] == 5
@@ -95,13 +103,18 @@ def test_consolidated_init_and_seed(db: psycopg.Connection) -> None:
     )
     assert columns["file_sn"] == columns["file_id"] == "YES"
     assert columns["file_key"] == "NO"
-    assert db.execute("select to_regclass('public.holidays')").fetchone()[0] == "holidays"
+    assert (
+        db.execute("select to_regclass('public.holidays')").fetchone()[0] == "holidays"
+    )
 
 
 @pytest.mark.parametrize("board", ["21", "22", "23", "24", "25", "26", "27", "30"])
 def test_seoul_boards_and_leading_zero(db: psycopg.Connection, board: str) -> None:
     key = insert_notice(db, board=board)
-    assert db.execute("select post_sn from notices where id=%s", (key,)).fetchone()[0] == "00123"
+    assert (
+        db.execute("select post_sn from notices where id=%s", (key,)).fetchone()[0]
+        == "00123"
+    )
 
 
 def test_same_id_different_board_allowed_same_board_duplicate_rejected(
@@ -125,7 +138,9 @@ def test_same_id_different_board_allowed_same_board_duplicate_rejected(
     ],
 )
 def test_invalid_source_shape_rejected(db: psycopg.Connection, values: dict) -> None:
-    with pytest.raises((psycopg.errors.CheckViolation, psycopg.errors.NotNullViolation)):
+    with pytest.raises(
+        (psycopg.errors.CheckViolation, psycopg.errors.NotNullViolation)
+    ):
         insert_notice(db, **values)
 
 
@@ -164,7 +179,9 @@ def test_same_file_sn_different_ids_allowed(db: psycopg.Connection) -> None:
             (key, file_id, "id:" + file_id),
         )
     assert (
-        db.execute("select count(*) from notice_files where notice_id=%s", (key,)).fetchone()[0]
+        db.execute(
+            "select count(*) from notice_files where notice_id=%s", (key,)
+        ).fetchone()[0]
         == 2
     )
 
@@ -186,7 +203,9 @@ def test_invalid_file_key_rejected(
     file_key: str | None,
 ) -> None:
     key = insert_notice(db)
-    with pytest.raises((psycopg.errors.CheckViolation, psycopg.errors.NotNullViolation)):
+    with pytest.raises(
+        (psycopg.errors.CheckViolation, psycopg.errors.NotNullViolation)
+    ):
         db.execute(
             """insert into notice_files(notice_id,kind,file_id,file_sn,file_key,url)
                     values (%s,'inline_image',%s,%s,%s,'https://news.seoul.go.kr/image.png')""",
@@ -195,16 +214,26 @@ def test_invalid_file_key_rejected(
 
 
 @pytest.mark.parametrize("role", ["anon", "authenticated"])
-def test_visible_rows_allowed_file_key_forbidden(db: psycopg.Connection, role: str) -> None:
+def test_visible_rows_allowed_file_key_forbidden(
+    db: psycopg.Connection, role: str
+) -> None:
     db.execute("set local role " + role)
-    assert db.execute("select count(*) from notices where not is_visible").fetchone()[0] == 0
-    assert len(db.execute("select id,notice_id,kind,url from notice_files").fetchall()) == 2
+    assert (
+        db.execute("select count(*) from notices where not is_visible").fetchone()[0]
+        == 0
+    )
+    assert (
+        len(db.execute("select id,notice_id,kind,url from notice_files").fetchall())
+        == 2
+    )
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         db.execute("select file_key from notice_files")
 
 
 @pytest.mark.parametrize("role", ["anon", "authenticated"])
-@pytest.mark.parametrize("table,column", [("notice_files", "file_name"), ("holidays", "locdate")])
+@pytest.mark.parametrize(
+    "table,column", [("notice_files", "file_name"), ("holidays", "locdate")]
+)
 def test_private_columns_and_holidays_forbidden(
     db: psycopg.Connection,
     role: str,
@@ -234,27 +263,42 @@ def test_seoul_visible_notice_and_files_allowed_hidden_ones_filtered(
         db.execute(
             "insert into notice_files(notice_id,kind,file_key,url) "
             "values (%s,'inline_image','url:'||encode(sha256(convert_to(%s,'UTF8')),'hex'),%s)",
-            (key, "https://news.seoul.go.kr/image.png", "https://news.seoul.go.kr/image.png"),
+            (
+                key,
+                "https://news.seoul.go.kr/image.png",
+                "https://news.seoul.go.kr/image.png",
+            ),
         )
     db.execute("set local role " + role)
     assert db.execute(
         "select id,source_board,post_sn from notices where category='seoul'"
     ).fetchall() == [(visible, "25", "00123")]
     assert db.execute(
-        "select notice_id from notice_files where notice_id=any(%s)", ([visible, hidden],)
+        "select notice_id from notice_files where notice_id=any(%s)",
+        ([visible, hidden],),
     ).fetchall() == [(visible,)]
 
 
 @pytest.mark.parametrize("role", ["anon", "authenticated"])
 @pytest.mark.parametrize(
-    "table", ["notices", "notice_files", "notice_glossary_results", "notice_easy_texts"],
+    "table",
+    ["notices", "notice_files", "notice_glossary_results", "notice_easy_texts"],
 )
-def test_app_table_privileges_are_read_only(db: psycopg.Connection, role: str, table: str) -> None:
-    for privilege in ("INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"):
+def test_app_table_privileges_are_read_only(
+    db: psycopg.Connection, role: str, table: str
+) -> None:
+    for privilege in (
+        "INSERT",
+        "UPDATE",
+        "DELETE",
+        "TRUNCATE",
+        "REFERENCES",
+        "TRIGGER",
+    ):
         assert (
-            db.execute("select has_table_privilege(%s,%s,%s)", (role, table, privilege)).fetchone()[
-                0
-            ]
+            db.execute(
+                "select has_table_privilege(%s,%s,%s)", (role, table, privilege)
+            ).fetchone()[0]
             is False
         )
 
@@ -268,7 +312,8 @@ def test_notice_glossary_originals_follow_notice_visibility(
     db.execute("update notices set is_visible=false where id=%s", (hidden,))
     db.execute(
         """with source as (
-               select id, 'policy test dummy'::text as original_text,
+               select id, public.notice_easy_text_revision(title, body_html) as notice_revision,
+                      'policy test dummy'::text as original_text,
                       '2026-10-06T00:00:00+00:00'::timestamptz as generated_at
                from notices where id=any(%s)
            ), content as (
@@ -278,7 +323,8 @@ def test_notice_glossary_originals_follow_notice_visibility(
            insert into notice_glossary_results
                (notice_id,source_hash,rules_version,generated_at,status,result)
            select id,source_hash,'policy-test',generated_at,'completed',jsonb_build_object(
-               'notice_id',id,'source_hash',source_hash,'rules_version','policy-test',
+               'notice_id',id,'notice_revision',notice_revision,
+               'source_hash',source_hash,'rules_version','policy-test',
                'generated_at',generated_at,'status','completed',
                'original_text',original_text,'easy_text',original_text)
            from content""",
