@@ -1,9 +1,9 @@
-"""Bounded downloads from the public Nowon notice attachment endpoint."""
+"""Bounded downloads from explicitly allowed official notice file hosts."""
 
 from dataclasses import dataclass, field
-from pathlib import PurePath
+from pathlib import PurePath, PurePosixPath
 from typing import Literal
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, parse_qsl, unquote, urlencode, urlsplit, urlunsplit
 
 import httpx
 
@@ -11,6 +11,7 @@ MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 ImageMediaType = Literal["image/png", "image/jpeg", "image/webp"]
 _FILE_PATH = "/component/file/ND_fileDownload.do"
+SEOUL_FILE_HOSTS = frozenset({"news.seoul.go.kr", "culture.seoul.go.kr"})
 _OLE_SIGNATURE = bytes.fromhex("D0 CF 11 E0 A1 B1 1A E1")
 _CONTENT_TYPES = {
     "pdf": {"application/pdf"},
@@ -40,7 +41,9 @@ class DownloadedAttachment:
 
 def _validate_source_url(url: str, *, image: bool = False) -> None:
     if (
-        not isinstance(url, str) or not url or url != url.strip()
+        not isinstance(url, str)
+        or not url
+        or url != url.strip()
         or any(ord(character) < 32 or ord(character) == 127 for character in url)
     ):
         raise AttachmentDownloadError("invalid_url")
@@ -49,26 +52,71 @@ def _validate_source_url(url: str, *, image: bool = False) -> None:
         query = parse_qs(parsed.query, keep_blank_values=True)
         valid = (
             parsed.scheme == "https"
-            and parsed.hostname == "www.nowon.kr"
             and parsed.port in (None, 443)
             and parsed.username is None
             and parsed.password is None
             and not parsed.fragment
             and (
                 (
-                    parsed.path == _FILE_PATH
-                    and len(query.get("q_fileSn", [])) == 1
-                    and query["q_fileSn"][0].isdigit()
-                    and len(query.get("q_fileId", [])) == 1
-                    and bool(query["q_fileId"][0].strip())
+                    parsed.hostname == "www.nowon.kr"
+                    and (
+                        (
+                            parsed.path == _FILE_PATH
+                            and len(query.get("q_fileSn", [])) == 1
+                            and query["q_fileSn"][0].isdigit()
+                            and len(query.get("q_fileId", [])) == 1
+                            and bool(query["q_fileId"][0].strip())
+                        )
+                        or (
+                            image
+                            and parsed.path.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
+                        )
+                    )
                 )
-                or (image and parsed.path.lower().endswith((".png", ".jpg", ".jpeg", ".webp")))
+                or (
+                    parsed.hostname in SEOUL_FILE_HOSTS
+                    and PurePosixPath(unquote(parsed.path)).suffix.lower()
+                    in ({".png", ".jpg", ".jpeg", ".webp"} if image else {".pdf", ".hwp"})
+                )
             )
         )
     except ValueError:
         valid = False
     if not valid:
         raise AttachmentDownloadError("invalid_url")
+
+
+def normalize_download_url(url: str, *, image: bool = False) -> str:
+    """Canonicalize Nowon query order/HTTP; other approved sources require HTTPS."""
+    if (
+        not isinstance(url, str)
+        or not url
+        or url != url.strip()
+        or any(ord(char) < 32 or ord(char) == 127 for char in url)
+    ):
+        raise AttachmentDownloadError("invalid_url")
+    try:
+        parsed = urlsplit(url)
+        if (
+            parsed.hostname == "www.nowon.kr"
+            and parsed.scheme in {"http", "https"}
+            and parsed.port in (None, 80, 443)
+            and parsed.username is None
+            and parsed.password is None
+        ):
+            url = urlunsplit(
+                (
+                    "https",
+                    "www.nowon.kr",
+                    parsed.path,
+                    urlencode(sorted(parse_qsl(parsed.query, keep_blank_values=True))),
+                    parsed.fragment,
+                )
+            )
+    except ValueError:
+        raise AttachmentDownloadError("invalid_url") from None
+    _validate_source_url(url, image=image)
+    return url
 
 
 def _expected_format(file_name: str) -> Literal["pdf", "hwp"]:

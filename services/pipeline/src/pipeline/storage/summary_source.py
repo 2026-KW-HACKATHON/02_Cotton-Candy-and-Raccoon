@@ -11,7 +11,9 @@ from psycopg import Connection
 class StoredFile:
     id: int
     kind: Literal["attachment", "inline_image"]
-    file_id: str
+    file_key: str
+    file_id: str | None
+    file_sn: str | None
     file_name: str | None
     url: str
 
@@ -21,6 +23,8 @@ class SummarySource:
     notice_id: int
     title: str
     category: str
+    source_board: str
+    post_sn: str
     department: str | None
     registered_on: date
     url: str
@@ -35,12 +39,15 @@ def load_summary_source(conn: Connection, notice_id: int) -> SummarySource | Non
     with conn.cursor() as cursor:
         cursor.execute(
             """
-            select n.id, n.title, n.category, n.department, n.registered_on,
+            select n.id, n.title, n.category, n.source_board, n.post_sn,
+                   n.department, n.registered_on,
                    n.url, n.body_html,
                    coalesce((select jsonb_agg(jsonb_build_object(
-                       'id', f.id, 'kind', f.kind, 'file_id', f.file_id,
+                       'id', f.id, 'kind', f.kind, 'file_key', f.file_key,
+                       'file_id', f.file_id, 'file_sn', f.file_sn,
                        'file_name', f.file_name, 'url', f.url
-                   ) order by f.id) from notice_files f where f.notice_id = n.id), '[]'::jsonb)
+                   ) order by f.file_key, f.kind, f.id)
+                       from notice_files f where f.notice_id = n.id), '[]'::jsonb)
             from notices n where n.id = %s and n.is_visible = true
             """,
             (notice_id,),
@@ -48,4 +55,4 @@ def load_summary_source(conn: Connection, notice_id: int) -> SummarySource | Non
         row = cursor.fetchone()
     if row is None:
         return None
-    return SummarySource(*row[:7], tuple(StoredFile(**item) for item in row[7]))
+    return SummarySource(*row[:9], tuple(StoredFile(**item) for item in row[9]))

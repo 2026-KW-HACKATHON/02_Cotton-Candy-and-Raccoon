@@ -4,7 +4,8 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from hashlib import sha256
-from pathlib import PurePath
+from pathlib import PurePath, PurePosixPath
+from urllib.parse import unquote, urlsplit
 
 import httpx
 
@@ -15,9 +16,11 @@ from pipeline.attachments.download import (
     DownloadedAttachment,
     download_attachment,
     download_image,
+    normalize_download_url,
 )
 from pipeline.attachments.hwp_text import HwpExtractionError, extract_hwp_text
 from pipeline.attachments.inline_images import prepare_notice_body
+from pipeline.attachments.seoul_html import is_decorative_image_url
 from pipeline.storage.summary_source import SummarySource
 from pipeline.transform.media_input import to_gemini_media_part
 from pipeline.transform.notice_input import AttachmentText, NoticeInput, render_notice_input
@@ -65,7 +68,8 @@ def prepare_summary_source(
 ) -> PreparedSummary:
     """Download files, extract HWP, deduplicate bytes, retain failure/warning codes.
 
-    Unknown formats/names fail rather than disappear. Body images absent from
+    Unknown formats fail rather than disappear. Missing names can be inferred
+    from explicit URL filenames, never from ambiguous endpoints. Body images absent from
     notice_files are also read. The budget includes text and base64 growth;
     it is a local safety cap, not a claim about Gemini's model-specific limits.
     """
@@ -88,6 +92,7 @@ def prepare_summary_source(
     texts: list[AttachmentText] = []
     digests: set[bytes] = set()
     urls: dict[str, str | None] = {}
+    image_cache: dict[str, DownloadedAttachment | str] = {}
     retained_bytes = 0
     text_bytes = 0
 
@@ -113,7 +118,13 @@ def prepare_summary_source(
 
     def collect(active_client: httpx.Client) -> None:
         nonlocal text_bytes
-        body = prepare_notice_body(source.body_html, source.url, client=active_client)
+        body = prepare_notice_body(
+            source.body_html,
+            source.url,
+            client=active_client,
+            image_cache=image_cache,
+            max_total_bytes=min(max_input_bytes, MAX_IMAGE_BYTES),
+        )
         notice.body_text = body.body_text
         text_bytes = len(body.body_text.encode("utf-8"))
         failures.extend(
@@ -126,31 +137,52 @@ def prepare_summary_source(
             except AttachmentDownloadError as exc:
                 failures.append(PreparationIssue("body_image", 0, exc.reason_code))
         for item in source.files:
-            if item.url in urls:
-                reason = urls[item.url]
-                if reason is not None:
-                    failures.append(PreparationIssue("file", item.id, reason))
-                continue
+            url = item.url
             try:
+                if item.kind == "inline_image" and is_decorative_image_url(url):
+                    continue
+                try:
+                    filename = item.file_name or PurePosixPath(unquote(urlsplit(url).path)).name
+                except ValueError:
+                    raise AttachmentDownloadError("invalid_url") from None
+                suffix = PurePath(filename).suffix.lower()
+                is_image = item.kind == "inline_image" or suffix in {
+                    ".jpg",
+                    ".jpeg",
+                    ".png",
+                    ".webp",
+                }
+                url = normalize_download_url(url, image=is_image)
+                if url in urls:
+                    reason = urls[url]
+                    if reason is not None:
+                        failures.append(PreparationIssue("file", item.id, reason))
+                    continue
+                cached = image_cache.get(url)
+                if isinstance(cached, str):
+                    raise AttachmentDownloadError(cached)
+                if cached is not None:
+                    retain(cached, item.id)
+                    urls[url] = None
+                    continue
                 remaining = max_input_bytes - retained_bytes
                 if remaining < 1:
                     raise AttachmentDownloadError("total_size_limit")
-                suffix = PurePath(item.file_name or "").suffix.lower()
-                if item.kind == "inline_image" or suffix in {".jpg", ".jpeg", ".png", ".webp"}:
+                if is_image:
                     file = download_image(
-                        item.url, client=active_client, max_bytes=min(remaining, MAX_IMAGE_BYTES)
+                        url, client=active_client, max_bytes=min(remaining, MAX_IMAGE_BYTES)
                     )
                 else:
                     file = download_attachment(
-                        item.url,
-                        item.file_name or "",
+                        url,
+                        filename,
                         client=active_client,
                         max_bytes=min(remaining, MAX_ATTACHMENT_BYTES),
                     )
                 retain(file, item.id)
-                urls[item.url] = None
+                urls[url] = None
             except (AttachmentDownloadError, HwpExtractionError) as exc:
-                urls[item.url] = exc.reason_code
+                urls[url] = exc.reason_code
                 failures.append(PreparationIssue("file", item.id, exc.reason_code))
 
     if client is None:

@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from hashlib import sha256
 from html.parser import HTMLParser
-from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
+from urllib.parse import urljoin
 
 import httpx
 
@@ -11,9 +11,10 @@ from pipeline.attachments.download import (
     MAX_IMAGE_BYTES,
     AttachmentDownloadError,
     DownloadedAttachment,
-    _validate_source_url,
     download_image,
+    normalize_download_url,
 )
+from pipeline.attachments.seoul_html import is_decorative_image_url
 from pipeline.transform.html_text import html_to_notice_text
 
 MAX_BODY_IMAGE_BYTES = 10 * 1024 * 1024
@@ -55,22 +56,9 @@ def _normalize_image_url(notice_url: str, source: str) -> str:
     if not source.strip() or any(ord(char) < 32 or ord(char) == 127 for char in source):
         raise AttachmentDownloadError("invalid_url")
     try:
-        parsed = urlsplit(urljoin(notice_url, source.strip()))
-        if (
-            parsed.scheme in ("http", "https") and parsed.hostname == "www.nowon.kr"
-            and parsed.port in (None, 80, 443)
-            and parsed.username is None and parsed.password is None
-        ):
-            url = urlunsplit((
-                "https", "www.nowon.kr", parsed.path,
-                urlencode(sorted(parse_qsl(parsed.query, keep_blank_values=True))), parsed.fragment,
-            ))
-        else:
-            raise AttachmentDownloadError("invalid_url")
+        return normalize_download_url(urljoin(notice_url, source.strip()), image=True)
     except ValueError:
         raise AttachmentDownloadError("invalid_url") from None
-    _validate_source_url(url, image=True)
-    return url
 
 
 def prepare_notice_body(
@@ -80,12 +68,15 @@ def prepare_notice_body(
     client: httpx.Client | None = None,
     max_image_bytes: int = MAX_IMAGE_BYTES,
     max_total_bytes: int = MAX_BODY_IMAGE_BYTES,
+    image_cache: dict[str, DownloadedAttachment | str] | None = None,
 ) -> PreparedNoticeBody:
     """Read img/src, download unique images, and report every failed reference.
 
     Identical URLs are fetched once. Identical returned bytes are included once,
     even when different references point at them. Budgets bound decoded bytes;
     the final Gemini caller must also budget PDFs, base64 and text together.
+    image_cache, if supplied, is scoped to this preparation and can be reused by
+    the DB file pass. Strings are safe failure codes, never URLs or provider errors.
     """
     for limit in (max_image_bytes, max_total_bytes):
         if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
@@ -98,11 +89,14 @@ def prepare_notice_body(
     outcomes: dict[str, str | None] = {}
     digests: set[bytes] = set()
     total_bytes = 0
+    cache = image_cache if image_cache is not None else {}
 
     def collect(active_client: httpx.Client) -> None:
         nonlocal total_bytes
         for index, source in enumerate(parser.sources, start=1):
             try:
+                if is_decorative_image_url(urljoin(notice_url, source.strip())):
+                    continue
                 url = _normalize_image_url(notice_url, source)
                 if url in outcomes:
                     if outcomes[url] is not None:
@@ -112,14 +106,25 @@ def prepare_notice_body(
                 if remaining <= 0:
                     raise AttachmentDownloadError("total_size_limit")
                 try:
-                    image = download_image(
-                        url, client=active_client, max_bytes=min(max_image_bytes, remaining)
+                    cached = cache.get(url)
+                    if isinstance(cached, str):
+                        raise AttachmentDownloadError(cached)
+                    image = (
+                        cached
+                        if cached is not None
+                        else download_image(
+                            url, client=active_client, max_bytes=min(max_image_bytes, remaining)
+                        )
                     )
+                    if len(image.data) > min(max_image_bytes, remaining):
+                        raise AttachmentDownloadError("too_large")
+                    cache[url] = image
                 except AttachmentDownloadError as exc:
                     reason = exc.reason_code
                     if reason == "too_large" and remaining < max_image_bytes:
                         reason = "total_size_limit"
                     outcomes[url] = reason
+                    cache[url] = reason
                     raise AttachmentDownloadError(reason) from None
                 outcomes[url] = None
                 digest = sha256(image.data).digest()
@@ -136,6 +141,4 @@ def prepare_notice_body(
         else:
             with httpx.Client() as owned_client:
                 collect(owned_client)
-    return PreparedNoticeBody(
-        html_to_notice_text(body_html), tuple(images), tuple(failures)
-    )
+    return PreparedNoticeBody(html_to_notice_text(body_html), tuple(images), tuple(failures))
