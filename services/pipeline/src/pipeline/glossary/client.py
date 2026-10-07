@@ -1,11 +1,11 @@
-"""Read dictionary search and detail APIs without inventing easier expressions."""
+"""Read every meaning from Standard Korean Dictionary and Ourmalsam APIs."""
 
 import logging
 import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from urllib.parse import parse_qs, quote, quote_plus, urlsplit
+from urllib.parse import parse_qsl, quote, quote_plus, urlsplit
 from xml.etree import ElementTree as ET
 
 import httpx
@@ -13,41 +13,16 @@ from pydantic import ValidationError
 
 from pipeline.glossary.models import (
     GlossaryEntry,
-    GlossaryLookup,
-    NormInfo,
     Provider,
     canonical_headword,
     normalize_query,
 )
 
-_HOSTS = {"opendict": "opendict.korean.go.kr", "krdict": "krdict.korean.go.kr"}
+_HOSTS = {"stdict": "stdict.korean.go.kr", "opendict": "opendict.korean.go.kr"}
 _PAGE_SIZE = 100
 _MAX_RESULTS = 1_000
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 _TIMEOUT_SECONDS = 15.0
-_QUOTED = r"[‘“\"']([^‘’“”\"']{1,80})[’”\"']"
-_QUOTED_TERMS = rf"{_QUOTED}(?:\s*(?:,|·|또는|및|와|과|이나|나)\s*{_QUOTED})*"
-_PURE_NORM = re.compile(
-    rf"(?:[‘“\"'](?P<source>[^‘’“”\"']{{1,80}})[’”\"'](?:을|를)\s*)?"
-    rf"(?P<terms>{_QUOTED_TERMS})"
-    r"(?:으)?로\s*순화(?:하였다|했다|함)?[.]?"
-)
-_RECOMMENDED_NORM = re.compile(
-    rf"[‘“\"'](?P<source>[^‘’“”\"']{{1,80}})[’”\"']\s*대신\s+"
-    rf"(?:될 수 있으면\s+)?순화한 용어\s+(?P<terms>{_QUOTED_TERMS})"
-    r"(?:을|를)\s+쓰라고 되어 있다[.]?"
-)
-_CO_USE_NORM = re.compile(
-    rf"[‘“\"'](?P<source>[^‘’“”\"']{{1,80}})[’”\"']\s*(?:과|와)\s+"
-    rf"(?P<terms>{_QUOTED_TERMS})(?:을|를)\s+함께 쓸 수 있다고 되어 있다[.]?"
-)
-# Ourmalsam uses role for these bibliographic citations as well as related clauses.
-# Recognize the observed sources exactly; an unknown role may constrain the meaning.
-_NORM_SOURCE_ROLES = {
-    "일본어 투 생활 용어 순화 고시 자료(문화체육부 고시 제1997-19호, 1997년 2월 15일)",
-    "행정 용어 순화 편람(1993년 2월 12일)",
-    "생활 용어 수정 보완 고시 자료(문화체육부 고시 제1996-13호, 1996년 3월 23일)",
-}
 
 
 class GlossaryAPIError(RuntimeError):
@@ -57,22 +32,6 @@ class GlossaryAPIError(RuntimeError):
         self.provider = provider
         self.code = code
         super().__init__(f"Dictionary lookup failed ({provider}: {code}).")
-
-
-@dataclass(frozen=True)
-class _Meaning:
-    sense_id: str
-    definition: str
-    part_of_speech: str | None = None
-    original_language: str | None = None
-
-
-@dataclass(frozen=True)
-class _SearchItem:
-    entry_id: str
-    headword: str
-    source_url: str
-    meanings: tuple[_Meaning, ...]
 
 
 class _CredentialFilter(logging.Filter):
@@ -140,59 +99,25 @@ def _ourmalsam_sense_id(parent: ET.Element) -> str:
     return value
 
 
-def _canonical_word(value: str) -> str:
-    return canonical_headword(value)
+@dataclass(frozen=True)
+class _StandardSearchItem:
+    entry_id: str
+    headword: str
+    source_url: str
+    part_of_speech: str | None
+    original_language: str | None
 
 
-def _easy_terms(headword: str, records: tuple[NormInfo, ...]) -> tuple[str, ...]:
-    """Extract quoted targets of complete, explicit official refinement relationships."""
-    result: list[str] = []
-    for record in records:
-        if (
-            record.type not in ("순화", "순화 정보", "순화어")
-            or not record.description
-            or (record.role and record.role.strip() not in _NORM_SOURCE_ROLES)
-        ):
-            # Related clauses can impose conditions. Keep the complete record instead
-            # of presenting a replacement without understanding those clauses.
-            continue
-        description = record.description.strip()
-        match = (
-            _PURE_NORM.fullmatch(description)
-            or _RECOMMENDED_NORM.fullmatch(description)
-            or _CO_USE_NORM.fullmatch(description)
-        )
-        if match is None:
-            continue
-        source = match.group("source")
-        if source and _canonical_word(source) != _canonical_word(headword):
-            continue
-        for quoted in re.finditer(_QUOTED, match.group("terms")):
-            term = quoted.group(1).strip()
-            if term and _canonical_word(term) != _canonical_word(headword) and term not in result:
-                result.append(term)
-    return tuple(result)
-
-
-def reparse_refinements(lookup: GlossaryLookup) -> GlossaryLookup:
-    """Recompute Ourmalsam targets from saved notes without another dictionary request."""
-    entries = tuple(
-        entry.model_copy(update={"easy_terms": _easy_terms(entry.headword, entry.norm_info)})
-        if entry.provider == "opendict" and entry.norm_info
-        else entry
-        for entry in lookup.entries
-    )
-    return lookup.model_copy(update={"entries": entries})
-
-
-class DictionaryClient:
-    """Look up all meanings in one official dictionary, with bounded requests."""
+class DictionaryDefinitionClient:
+    """Look up all official meanings without selecting or rewriting a word."""
 
     def __init__(
         self, provider: Provider, api_key: str, *, client: httpx.Client | None = None
     ) -> None:
         if provider not in _HOSTS:
-            raise ValueError("Unsupported dictionary provider.")
+            raise ValueError(
+                "Dictionary definitions require Standard Korean Dictionary or Ourmalsam."
+            )
         if not isinstance(api_key, str) or not api_key.strip():
             raise GlossaryAPIError(provider, "configuration")
         self.provider = provider
@@ -206,7 +131,7 @@ class DictionaryClient:
             self._client.close()
         self._closed = True
 
-    def __enter__(self) -> "DictionaryClient":
+    def __enter__(self) -> "DictionaryDefinitionClient":
         if self._closed:
             raise GlossaryAPIError(self.provider, "configuration")
         return self
@@ -215,7 +140,8 @@ class DictionaryClient:
         self.close()
 
     def _request(self, endpoint: str, params: dict[str, str]) -> ET.Element:
-        url = f"https://{_HOSTS[self.provider]}/api/{endpoint}"
+        suffix = ".do" if self.provider == "stdict" else ""
+        url = f"https://{_HOSTS[self.provider]}/api/{endpoint}{suffix}"
         params = {**params, "key": self._api_key}
         failure: str | None = None
         try:
@@ -276,7 +202,7 @@ class DictionaryClient:
         # Raise outside the handler, so even __context__ contains no original URL or body.
         if failure is not None:
             raise GlossaryAPIError(self.provider, failure)
-        error = root if root.tag == "error" else root.find("error")
+        error = root if root.tag == "error" else root.find(".//error")
         if error is not None:
             provider_code = _text(error, "error_code")
             code = {
@@ -285,65 +211,39 @@ class DictionaryClient:
                 "021": "authentication",
             }.get(provider_code, "api")
             raise GlossaryAPIError(self.provider, code)
+        if self.provider == "stdict" and root.tag == "xml":
+            children = list(root)
+            if len(children) != 1 or children[0].tag != "channel":
+                raise GlossaryAPIError(self.provider, "invalid_response")
+            root = children[0]
         if root.tag != "channel":
             raise GlossaryAPIError(self.provider, "invalid_response")
         return root
 
     def lookup(self, query: str) -> tuple[GlossaryEntry, ...]:
-        if self._closed:
-            raise GlossaryAPIError(self.provider, "configuration")
-        query = normalize_query(query)
-        try:
-            found = self._search(query)
-            result: list[GlossaryEntry] = []
-            for item in found:
-                result.extend(self._detail(item))
-            identities = [entry.identity for entry in result]
-            if len(set(identities)) != len(identities):
-                raise ValueError("Duplicate dictionary meaning.")
-            return tuple(result)
-        except (ValueError, ValidationError):
-            pass
-        raise GlossaryAPIError(self.provider, "invalid_response")
+        """Read all official meanings, retaining actual source meaning identifiers.
 
-    def lookup_definitions(self, query: str) -> tuple[GlossaryEntry, ...]:
-        """Read all Ourmalsam meanings directly from validated search responses.
-
-        Each search page is one request. Definitions, identifiers and source
-        links are already supplied by that API, so this operation needs no
-        detail requests. Missing optional metadata remains empty.
+        Ourmalsam supplies every meaning in search results. Standard Korean
+        Dictionary search supplies a representative meaning per entry; its
+        detail endpoint supplies all meanings and their ``sense_code`` values.
         """
-        if self.provider != "opendict":
-            raise ValueError("Definitions-only lookups require Ourmalsam.")
         if self._closed:
             raise GlossaryAPIError(self.provider, "configuration")
         query = normalize_query(query)
         try:
-            found = self._search(query)
-            result = tuple(
-                GlossaryEntry(
-                    provider="opendict",
-                    entry_id=item.entry_id,
-                    sense_id=meaning.sense_id,
-                    headword=item.headword,
-                    definition=meaning.definition,
-                    part_of_speech=meaning.part_of_speech,
-                    original_language=meaning.original_language,
-                    source_url=item.source_url,
-                )
-                for item in found
-                for meaning in item.meanings
-            )
-            identities = [entry.identity for entry in result]
+            if self.provider == "stdict":
+                return self._lookup_standard(query)
+            entries = tuple(self._search_item(item, query) for item in self._search_pages(query))
+            identities = [entry.identity for entry in entries]
             if len(set(identities)) != len(identities):
-                raise ValueError("Duplicate dictionary meaning.")
-            return result
+                raise ValueError("Duplicate search result.")
+            return entries
         except (ValueError, ValidationError):
             pass
         raise GlossaryAPIError(self.provider, "invalid_response")
 
-    def _search(self, query: str) -> tuple[_SearchItem, ...]:
-        results: list[_SearchItem] = []
+    def _search_pages(self, query: str) -> tuple[ET.Element, ...]:
+        results: list[ET.Element] = []
         total: int | None = None
         start = 1
         while total is None or len(results) < total:
@@ -351,14 +251,13 @@ class DictionaryClient:
                 "q": query,
                 "start": str(start),
                 "num": str(_PAGE_SIZE),
-                "sort": "dict",
-                "part": "word",
                 "advanced": "y",
                 "target": "1",
                 "method": "exact",
+                "req_type": "xml",
             }
             if self.provider == "opendict":
-                params["req_type"] = "xml"
+                params.update(sort="dict", part="word")
             root = self._request("search", params)
             page_total = int(_text(root, "total", required=True) or "")
             page_start = int(_text(root, "start", required=True) or "")
@@ -375,152 +274,141 @@ class DictionaryClient:
                 raise ValueError("Invalid pagination result count.")
             if not items and len(results) < total:
                 raise ValueError("Missing dictionary search page.")
-            for element in items:
-                results.append(self._search_item(element, query))
+            results.extend(items)
             start += len(items)
-        identities = [(item.entry_id, tuple(m.sense_id for m in item.meanings)) for item in results]
-        if len(set(identities)) != len(identities):
-            raise ValueError("Duplicate search result.")
         return tuple(results)
 
-    def _search_item(self, item: ET.Element, query: str) -> _SearchItem:
-        headword = _text(item, "word", required=True) or ""
-        if _canonical_word(headword) != _canonical_word(query):
-            raise ValueError("Exact dictionary search returned a different word.")
-        senses = item.findall("sense")
-        if not senses:
-            raise ValueError("Missing dictionary meanings.")
-        if self.provider == "krdict":
-            entry_id = _positive_id(item, "target_code")
-            source_url = _text(item, "link", required=True) or ""
-            meanings = tuple(
-                _Meaning(
-                    _positive_id(sense, "sense_order"),
-                    _text(sense, "definition", required=True) or "",
-                )
-                for sense in senses
-            )
-        else:
-            if len(senses) != 1:
-                raise ValueError("Unexpected Ourmalsam search meaning structure.")
-            sense = senses[0]
-            entry_id = _positive_id(sense, "target_code")
-            source_url = _text(sense, "link", required=True) or ""
-            meanings = (
-                _Meaning(
-                    _ourmalsam_sense_id(sense),
-                    _text(sense, "definition", required=True) or "",
-                    _text(sense, "pos"),
-                    _text(sense, "origin"),
-                ),
-            )
-        # Validate source metadata before issuing another authenticated request.
-        GlossaryEntry(
-            provider=self.provider,
-            entry_id=entry_id,
-            sense_id=meanings[0].sense_id,
-            headword=headword,
-            definition=meanings[0].definition,
-            source_url=source_url,
-        )
-        source_params = {
-            key.lower(): values for key, values in parse_qs(urlsplit(source_url).query).items()
-        }
-        id_param = "sense_no" if self.provider == "opendict" else "parawordno"
-        source_ids = source_params.get(id_param, [])
+    def _validate_source_url(self, source_url: str, entry_id: str) -> None:
+        parsed = urlsplit(source_url)
+        params = parse_qsl(parsed.query, keep_blank_values=True)
+        if (
+            parsed.scheme not in {"https", "http"}
+            or parsed.hostname != _HOSTS[self.provider]
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.port not in (None, 80, 443)
+            or any(name.lower() in {"key", "api_key"} for name, _ in params)
+        ):
+            raise ValueError("Invalid dictionary source link.")
+        id_param = "word_no" if self.provider == "stdict" else "sense_no"
+        source_ids = [value for name, value in params if name.lower() == id_param]
         if (
             len(source_ids) != 1
             or re.fullmatch(r"[0-9]+", source_ids[0]) is None
             or int(source_ids[0]) != int(entry_id)
         ):
             raise ValueError("Source link does not match dictionary entry.")
-        return _SearchItem(entry_id, headword, source_url, meanings)
 
-    def _detail(self, item: _SearchItem) -> tuple[GlossaryEntry, ...]:
-        params = {"q": item.entry_id, "method": "target_code"}
-        if self.provider == "opendict":
-            params["req_type"] = "xml"
-        root = self._request("view", params)
-        total = _text(root, "total", required=self.provider == "opendict")
-        if total is not None and int(total) != 1:
-            raise ValueError("Unexpected detail result count.")
-        items = root.findall("item")
-        if len(items) != 1 or _positive_id(items[0], "target_code") != item.entry_id:
-            raise ValueError("Detail response does not match requested identifier.")
-        words = items[0].findall("word_info")
-        if self.provider == "opendict":
-            # The official field table uses snake_case; its XML example uses camelCase.
-            words += items[0].findall("wordInfo")
-        if len(words) != 1:
-            raise ValueError("Missing detail word information.")
-        word_info = words[0]
-        headword = _text(word_info, "word", required=True) or ""
-        if headword != item.headword:
-            raise ValueError("Detail response changed the headword.")
-        senses = (
-            items[0].findall("sense_info") + items[0].findall("senseInfo")
-            if self.provider == "opendict"
-            else word_info.findall("sense_info")
+    def _search_item(self, item: ET.Element, query: str) -> GlossaryEntry:
+        headword = _text(item, "word", required=True) or ""
+        if canonical_headword(headword) != canonical_headword(query):
+            raise ValueError("Exact dictionary search returned a different word.")
+        senses = item.findall("sense")
+        if len(senses) != 1:
+            raise ValueError("Unexpected Ourmalsam search meaning structure.")
+        sense = senses[0]
+        entry_id = _positive_id(sense, "target_code")
+        source_url = _text(sense, "link", required=True) or ""
+        entry = GlossaryEntry(
+            provider=self.provider,
+            entry_id=entry_id,
+            sense_id=_ourmalsam_sense_id(sense),
+            headword=headword,
+            definition=_text(sense, "definition", required=True) or "",
+            part_of_speech=_text(sense, "pos"),
+            original_language=_text(sense, "origin"),
+            source_url=source_url,
         )
-        if not senses:
-            raise ValueError("Missing detail meanings.")
-        for sense in senses:
-            _text(sense, "definition", required=True)
-        originals = tuple(
-            _text(element, "original_language", required=True) or ""
-            for element in word_info.findall("original_language_info")
+        self._validate_source_url(source_url, entry_id)
+        return entry
+
+    def _standard_search_item(self, item: ET.Element, query: str) -> _StandardSearchItem:
+        headword = _text(item, "word", required=True) or ""
+        if canonical_headword(headword) != canonical_headword(query):
+            raise ValueError("Exact dictionary search returned a different word.")
+        entry_id = _positive_id(item, "target_code")
+        senses = item.findall("sense")
+        if len(senses) != 1:
+            raise ValueError("Unexpected standard dictionary search structure.")
+        _text(senses[0], "definition", required=True)
+        source_url = _text(senses[0], "link", required=True) or ""
+        self._validate_source_url(source_url, entry_id)
+        return _StandardSearchItem(
+            entry_id,
+            headword,
+            source_url,
+            _text(item, "pos"),
+            _text(item, "origin") or _text(senses[0], "origin"),
         )
-        original_language = ", ".join(originals) or None
+
+    def _lookup_standard(self, query: str) -> tuple[GlossaryEntry, ...]:
+        items = tuple(self._standard_search_item(item, query) for item in self._search_pages(query))
+        identities = [item.entry_id for item in items]
+        if len(set(identities)) != len(identities):
+            raise ValueError("Duplicate search result.")
         entries: list[GlossaryEntry] = []
-        for meaning in item.meanings:
-            norm_info: tuple[NormInfo, ...] = ()
-            definition = meaning.definition
-            pos = _text(word_info, "pos")
-            if self.provider == "opendict":
-                if len(senses) != 1:
-                    raise ValueError("Unexpected Ourmalsam detail meaning structure.")
-                sense = senses[0]
-                detailed_id = _ourmalsam_sense_id(sense)
-                if detailed_id != meaning.sense_id:
-                    raise ValueError("Detail response changed the sense identifier.")
-                definition = _text(sense, "definition", required=True) or ""
-                pos = _text(sense, "pos") or pos
-                norm_info = tuple(
-                    NormInfo(
-                        type=_text(norm, "type", required=True) or "",
-                        role=_text(norm, "role"),
-                        description=_text(norm, "desc"),
-                    )
-                    for norm in sense.findall("norm_info")
-                )
-            # krdict detail documents no sense_order. Keep the search's IDs/definitions;
-            # never attach a detail meaning by position or overwrite its meaning text.
-            entries.append(
-                GlossaryEntry(
-                    provider=self.provider,
-                    entry_id=item.entry_id,
-                    sense_id=meaning.sense_id,
-                    headword=headword,
-                    definition=definition,
-                    part_of_speech=pos,
-                    original_language=original_language,
-                    norm_info=norm_info,
-                    easy_terms=_easy_terms(headword, norm_info),
-                    source_url=item.source_url,
-                )
-            )
+        for item in items:
+            entries.extend(self._standard_detail(item))
+            if len(entries) > _MAX_RESULTS:
+                raise GlossaryAPIError(self.provider, "too_many_results")
+        identities = [entry.identity for entry in entries]
+        if len(set(identities)) != len(identities):
+            raise ValueError("Duplicate dictionary meaning.")
         return tuple(entries)
 
-
-class DictionaryDefinitionClient(DictionaryClient):
-    """Expose search-only Ourmalsam definitions through the shared lookup interface."""
-
-    def __init__(
-        self, provider: Provider, api_key: str, *, client: httpx.Client | None = None
-    ) -> None:
-        if provider != "opendict":
-            raise ValueError("Definitions-only lookups require Ourmalsam.")
-        super().__init__(provider, api_key, client=client)
-
-    def lookup(self, query: str) -> tuple[GlossaryEntry, ...]:
-        return self.lookup_definitions(query)
+    def _standard_detail(self, searched: _StandardSearchItem) -> tuple[GlossaryEntry, ...]:
+        root = self._request(
+            "view", {"q": searched.entry_id, "method": "target_code", "req_type": "xml"}
+        )
+        if int(_text(root, "total", required=True) or "") != 1:
+            raise ValueError("Unexpected dictionary detail count.")
+        items = root.findall("item")
+        if len(items) != 1 or _positive_id(items[0], "target_code") != searched.entry_id:
+            raise ValueError("Detail response does not match requested identifier.")
+        item = items[0]
+        words = item.findall("word_info")
+        if len(words) != 1:
+            raise ValueError("Missing dictionary word information.")
+        word = words[0]
+        headword = _text(word, "word", required=True) or ""
+        if headword != searched.headword:
+            raise ValueError("Detail response changed the headword.")
+        originals = tuple(
+            _text(original, "original_language", required=True) or ""
+            for original in word.findall("original_language_info")
+        )
+        original_language = ", ".join(originals) or searched.original_language
+        # The official example puts pos_info beside word_info; the field table
+        # lists it under word_info. Read either documented location completely.
+        positions = item.findall("pos_info") + word.findall("pos_info")
+        if not positions:
+            raise ValueError("Missing dictionary part-of-speech information.")
+        entries: list[GlossaryEntry] = []
+        for position in positions:
+            part_of_speech = _text(position, "pos") or searched.part_of_speech
+            patterns = position.findall("comm_pattern_info")
+            if not patterns:
+                raise ValueError("Missing dictionary meaning information.")
+            for pattern in patterns:
+                senses = pattern.findall("sense_info")
+                if not senses:
+                    raise ValueError("Missing dictionary meanings.")
+                for sense in senses:
+                    sense_id = _positive_id(sense, "sense_code")
+                    source_url = _text(sense, "link") or searched.source_url
+                    self._validate_source_url(source_url, searched.entry_id)
+                    entries.append(
+                        GlossaryEntry(
+                            provider="stdict",
+                            entry_id=searched.entry_id,
+                            sense_id=sense_id,
+                            headword=headword,
+                            definition=_text(sense, "definition", required=True) or "",
+                            part_of_speech=part_of_speech,
+                            original_language=original_language,
+                            source_url=source_url,
+                        )
+                    )
+                    if len(entries) > _MAX_RESULTS:
+                        raise GlossaryAPIError(self.provider, "too_many_results")
+        return tuple(entries)

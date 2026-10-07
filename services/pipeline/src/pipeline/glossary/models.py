@@ -7,14 +7,17 @@ from urllib.parse import parse_qsl, urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-Provider = Literal["onterm", "opendict", "krdict"]
-ACTIVE_PROVIDERS: tuple[Provider, ...] = ("onterm", "opendict")
+Provider = Literal["stdict", "onterm", "opendict", "krdict"]
+# Historical providers and refinement fields remain readable in saved cache rows.
+# New requests prefer Standard Korean Dictionary and then Ourmalsam.
 SOURCE_NAMES = {
+    "stdict": "국립국어원 표준국어대사전",
     "onterm": "국립국어원 온용어",
     "opendict": "국립국어원 우리말샘",
     "krdict": "국립국어원 한국어기초사전",
 }
 SOURCE_HOSTS = {
+    "stdict": "stdict.korean.go.kr",
     "onterm": "kli.korean.go.kr",
     "opendict": "opendict.korean.go.kr",
     "krdict": "krdict.korean.go.kr",
@@ -169,35 +172,3 @@ class GlossaryLookup(BaseModel):
         if any(entry.provider not in self.providers_checked for entry in self.entries):
             raise ValueError("조회하지 않은 사전의 항목이 포함되어 있습니다.")
         return self
-
-
-def active_cached_lookup(cached: GlossaryLookup | None) -> GlossaryLookup | None:
-    """Reuse active-source results without deleting historical dictionary records.
-
-    A former three-provider fallback already checked OnTerm and Ourmalsam before
-    consulting the excluded source. Its empty active-source results can therefore
-    be reused as not_found, while its excluded definitions never enter new output.
-    An excluded-only cache without those checks is not a complete active lookup.
-    """
-    if cached is None or "krdict" not in cached.providers_checked:
-        return cached
-    checked = tuple(
-        provider for provider in cached.providers_checked if provider in ACTIVE_PROVIDERS
-    )
-    entries = tuple(entry for entry in cached.entries if entry.provider in ACTIVE_PROVIDERS)
-    if not entries and checked != ACTIVE_PROVIDERS:
-        return None
-    if (
-        not entries
-        and cached.status == "found"
-        and cached.providers_checked != (*ACTIVE_PROVIDERS, "krdict")
-    ):
-        return None
-    return GlossaryLookup(
-        query=cached.query,
-        status="found" if entries else "not_found",
-        entries=entries,
-        providers_checked=checked,
-        queried_at=cached.queried_at,
-        from_cache=cached.from_cache,
-    )

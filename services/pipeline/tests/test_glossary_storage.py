@@ -12,13 +12,13 @@ from psycopg.conninfo import conninfo_to_dict
 from psycopg.pq import TransactionStatus
 from psycopg.types.json import Jsonb
 
-from pipeline.glossary.client import DictionaryClient
+from pipeline.glossary.client import DictionaryDefinitionClient
+from pipeline.glossary.dictionary_service import lookup_dictionary_definition
 from pipeline.glossary.models import GlossaryEntry, GlossaryLookup, NormInfo
-from pipeline.glossary.service import lookup_glossary
 from pipeline.storage.glossary import GlossaryStorageError, get_glossary, save_glossary
 
 _TIME = datetime(2026, 10, 5, 9, tzinfo=UTC)
-_MIGRATION = Path(__file__).resolve().parents[3] / "supabase/migrations/20261005000000_glossary.sql"
+_MIGRATIONS = Path(__file__).resolve().parents[3] / "supabase/migrations"
 
 
 def _entry(provider: str = "opendict", sense_id: str = "1", **changes) -> GlossaryEntry:
@@ -63,7 +63,7 @@ def _lookup(*entries: GlossaryEntry, **changes) -> GlossaryLookup:
             "query": "익일",
             "status": "found" if entries else "not_found",
             "entries": entries,
-            "providers_checked": ("opendict", "krdict"),
+            "providers_checked": ("stdict", "opendict"),
             "queried_at": _TIME,
             **changes,
         }
@@ -187,11 +187,53 @@ def test_save_onterm_preserves_null_definition_content_identity_and_attribution(
 
 
 def test_empty_refresh_preserves_existing_meanings() -> None:
-    conn, cursor = _mock_conn(None, ("found", _TIME))
+    conn, cursor = _mock_conn(None, ("found", _TIME), (True,))
     with pytest.raises(GlossaryStorageError, match="기존 용어 설명"):
         save_glossary(conn, _lookup(queried_at=_TIME + timedelta(days=1)))
     assert not any("delete from" in call.args[0] for call in cursor.execute.call_args_list)
     assert conn.transaction.return_value.__exit__.call_args.args[0] is GlossaryStorageError
+
+
+@pytest.mark.parametrize(
+    "providers",
+    [
+        ("onterm",),
+        ("krdict",),
+        ("onterm", "opendict"),
+        ("opendict", "krdict"),
+        ("onterm", "opendict", "krdict"),
+    ],
+)
+def test_empty_refresh_requires_both_current_dictionary_searches(providers) -> None:
+    conn, cursor = _mock_conn(None, ("found", _TIME))
+    with pytest.raises(GlossaryStorageError, match="기존 용어 설명"):
+        save_glossary(
+            conn,
+            _lookup(providers_checked=providers, queried_at=_TIME + timedelta(days=1)),
+        )
+    assert len(cursor.execute.call_args_list) == 2
+    assert conn.transaction.return_value.__exit__.call_args.args[0] is GlossaryStorageError
+
+
+def test_empty_refresh_can_replace_legacy_lookup_without_current_dictionary_links() -> None:
+    conn, cursor = _mock_conn(None, ("found", _TIME), (False,))
+    newer = _lookup(queried_at=_TIME + timedelta(days=1))
+    save_glossary(conn, newer)
+    existence_call = cursor.execute.call_args_list[2]
+    assert "select exists" in existence_call.args[0]
+    assert "provider in ('stdict', 'opendict')" in existence_call.args[0]
+    assert existence_call.args[1] == ("익일",)
+    assert cursor.execute.call_args.args[1] == (
+        "not_found",
+        ["stdict", "opendict"],
+        newer.queried_at,
+        "익일",
+    )
+    assert not any(
+        "delete from public.glossary_entries" in call.args[0]
+        for call in cursor.execute.call_args_list
+    )
+    conn.commit.assert_not_called()
 
 
 @pytest.mark.parametrize("saved_time", [_TIME, _TIME + timedelta(seconds=1)])
@@ -265,7 +307,8 @@ def glossary_db():
             if exists is None:
                 # These constant names are created only in this rollback transaction.
                 conn.execute(f"create role {role} nologin")
-        conn.execute(_MIGRATION.read_text(encoding="utf-8"))
+        for migration in sorted(_MIGRATIONS.glob("*.sql")):
+            conn.execute(migration.read_text(encoding="utf-8"))
         yield conn
     finally:
         conn.rollback()
@@ -274,13 +317,14 @@ def glossary_db():
 
 def test_db_roundtrip_distinct_senses_and_refresh(glossary_db) -> None:
     entries = (_entry(sense_id="1"), _entry(sense_id="2"), _entry("krdict"))
-    save_glossary(glossary_db, _lookup(*entries))
+    save_glossary(glossary_db, _lookup(*entries, providers_checked=("opendict", "krdict")))
     cached = get_glossary(glossary_db, " 익일 ")
     assert cached is not None
     assert cached.entries == entries
     newer = _lookup(
         entries[2],
         entries[0].model_copy(update={"definition": "갱신한 뜻풀이"}),
+        providers_checked=("opendict", "krdict"),
         queried_at=_TIME + timedelta(days=1),
     )
     save_glossary(glossary_db, newer)
@@ -300,46 +344,34 @@ def test_db_synthetic_api_to_storage_then_cache_needs_no_more_requests(glossary_
         <link>https://opendict.korean.go.kr/dictionary/view?sense_no=123</link>
       </sense></item></channel>
     """
-    detail_xml = """
-    <channel><total>1</total><item><target_code>123</target_code>
-      <word_info><word>익일</word></word_info>
-      <sense_info><sense_no>001</sense_no><definition>테스트용 뜻풀이.</definition>
-        <pos>명사</pos><norm_info><type>순화</type>
-          <desc>‘익일’을 ‘다음 날’로 순화.</desc>
-        </norm_info></sense_info>
-    </item></channel>
-    """
 
     def handler(request):
         endpoint = request.url.path.rsplit("/", 1)[-1]
         calls.append(endpoint)
-        if endpoint not in ("search", "view"):
+        if endpoint != "search":
             raise AssertionError("unexpected dictionary endpoint")
-        return httpx.Response(200, text=search_xml if endpoint == "search" else detail_xml)
+        return httpx.Response(200, text=search_xml)
 
     with (
         httpx.Client(transport=httpx.MockTransport(handler)) as http,
-        DictionaryClient("opendict", "synthetic-test-secret", client=http) as client,
+        DictionaryDefinitionClient("opendict", "synthetic-test-secret", client=http) as client,
     ):
-        onterm_client = MagicMock()
-        onterm_client.lookup.return_value = ()
-        first = lookup_glossary(
+        first = lookup_dictionary_definition(
             glossary_db,
             " 익일 ",
-            onterm_client=onterm_client,
+            stdict_client=MagicMock(lookup=MagicMock(return_value=())),
             opendict_client=client,
             clock=lambda: _TIME,
         )
     # Even this closed client must be unused when a saved result is reused.
-    second = lookup_glossary(glossary_db, "익일", opendict_client=client)
-    assert calls == ["search", "view"]
+    second = lookup_dictionary_definition(glossary_db, "익일", opendict_client=client)
+    assert calls == ["search"]
     assert first.from_cache is False and second.from_cache is True
     assert first.entries == second.entries
     assert first.entries[0].entry_id == "123" and first.entries[0].sense_id == "001"
-    assert first.entries[0].easy_terms == ("다음 날",)
+    assert first.entries[0].easy_terms == first.entries[0].norm_info == ()
     assert first.entries[0].source_name == "국립국어원 우리말샘"
-    assert first.providers_checked == ("onterm", "opendict")
-    onterm_client.lookup.assert_called_once_with("익일")
+    assert first.providers_checked == ("stdict", "opendict")
     assert glossary_db.execute("select count(*) from public.glossary_entries").fetchone()[0] == 1
 
 
@@ -401,7 +433,7 @@ def test_db_onterm_contract_rejects_invalid_rows(glossary_db, column, invalid_va
 
 @pytest.mark.parametrize("provider", ["opendict", "krdict"])
 def test_db_dictionary_definition_remains_required(glossary_db, provider) -> None:
-    save_glossary(glossary_db, _lookup(_entry(provider)))
+    save_glossary(glossary_db, _lookup(_entry(provider), providers_checked=(provider,)))
     with pytest.raises(psycopg.errors.CheckViolation):
         with glossary_db.transaction():
             glossary_db.execute(
@@ -475,41 +507,43 @@ def test_db_not_found_can_later_become_found(glossary_db) -> None:
     assert get_glossary(glossary_db, "익일").entries == (_entry(),)
 
 
-def test_db_excluded_only_cache_can_be_replaced_by_complete_active_empty_lookup(glossary_db):
-    historical = _entry("krdict")
-    save_glossary(glossary_db, _lookup(historical, providers_checked=("krdict",)))
-    onterm, opendict = MagicMock(), MagicMock()
-    onterm.lookup.return_value = opendict.lookup.return_value = ()
-    stored = lookup_glossary(
+@pytest.mark.parametrize("provider", ["onterm", "krdict"])
+def test_db_legacy_only_cache_can_be_replaced_by_completed_empty_ourmalsam_lookup(
+    glossary_db, provider
+):
+    historical = _onterm_entry() if provider == "onterm" else _entry("krdict")
+    save_glossary(glossary_db, _lookup(historical, providers_checked=(provider,)))
+    opendict = MagicMock()
+    opendict.lookup.return_value = ()
+    stored = lookup_dictionary_definition(
         glossary_db,
         "익일",
-        onterm_client=onterm,
+        stdict_client=MagicMock(lookup=MagicMock(return_value=())),
         opendict_client=opendict,
         clock=lambda: _TIME + timedelta(days=1),
     )
     assert stored.status == "not_found"
-    assert stored.providers_checked == ("onterm", "opendict")
-    onterm.lookup.assert_called_once_with("익일")
+    assert stored.providers_checked == ("stdict", "opendict")
     opendict.lookup.assert_called_once_with("익일")
-    onterm.reset_mock()
     opendict.reset_mock()
-    cached = lookup_glossary(glossary_db, "익일", onterm_client=onterm, opendict_client=opendict)
+    cached = lookup_dictionary_definition(glossary_db, "익일", opendict_client=opendict)
     assert cached.status == "not_found" and cached.from_cache
-    onterm.lookup.assert_not_called()
     opendict.lookup.assert_not_called()
     assert glossary_db.execute(
         "select headword from public.glossary_entries "
-        "where provider = 'krdict' and entry_id = %s and sense_id = %s",
-        (historical.entry_id, historical.sense_id),
+        "where provider = %s and entry_id = %s and sense_id = %s",
+        historical.identity,
     ).fetchone() == (historical.headword,)
 
 
-def test_db_active_found_cache_is_preserved_when_both_active_searches_are_empty(glossary_db):
+def test_db_mixed_legacy_ourmalsam_found_cache_is_preserved_when_ourmalsam_search_is_empty(
+    glossary_db,
+):
     save_glossary(glossary_db, _lookup(_entry(), providers_checked=("onterm", "opendict")))
     with pytest.raises(GlossaryStorageError, match="보존"):
         save_glossary(
             glossary_db,
-            _lookup(providers_checked=("onterm", "opendict"), queried_at=_TIME + timedelta(days=1)),
+            _lookup(queried_at=_TIME + timedelta(days=1)),
         )
     assert get_glossary(glossary_db, "익일").entries == (_entry(),)
 

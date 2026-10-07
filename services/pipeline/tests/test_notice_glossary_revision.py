@@ -1,35 +1,107 @@
-"""Reject work for an older collected notice while preserving the current snapshot."""
+"""Keep historical glossary results private when the collected notice changes."""
 
+import os
 from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock
+from hashlib import sha256
+from pathlib import Path
 
+import psycopg
 import pytest
-from test_notice_glossary_storage import notice_glossary_db as notice_glossary_db
+from psycopg.conninfo import conninfo_to_dict
+from psycopg.types.json import Jsonb
 
-from pipeline.glossary import notice_service
-from pipeline.glossary.models import GlossaryLookup
-from pipeline.glossary.process import process_notice_glossary
-from pipeline.storage.notice_glossary import (
-    NoticeGlossaryStorageError,
-    get_notice_glossary,
-    save_notice_glossary,
-)
+from pipeline.glossary.notice_service import load_notice_glossary_input
 
 NOW = datetime(2026, 10, 6, 12, tzinfo=UTC)
+ROOT = Path(__file__).resolve().parents[3]
 
 
-def empty_lookup(query):
-    return GlossaryLookup(
-        query=query,
-        status="not_found",
-        providers_checked=("onterm", "opendict"),
-        queried_at=NOW,
-    )
+def _safe_test_database(database_url: str) -> dict[str, str]:
+    info = conninfo_to_dict(database_url)
+    if (
+        info.get("host") not in {"localhost", "127.0.0.1", "::1"}
+        or info.get("hostaddr") not in {None, "127.0.0.1", "::1"}
+        or not info.get("dbname", "").startswith("pipeline_glossary_test_")
+    ):
+        raise ValueError("공지 용어 통합 테스트는 전용 로컬 테스트 DB에서만 실행할 수 있습니다.")
+    return info
 
 
-def result(source, *, seconds=0):
-    return process_notice_glossary(
-        source, empty_lookup, clock=lambda: NOW + timedelta(seconds=seconds)
+@pytest.fixture
+def notice_glossary_db():
+    database_url = os.getenv("GLOSSARY_TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("GLOSSARY_TEST_DATABASE_URL 미설정: 전용 PostgreSQL 테스트 미실행")
+    conn = psycopg.connect(**_safe_test_database(database_url))
+    try:
+        assert conn.execute("select to_regclass('public.notices')").fetchone()[0] is None
+        for role in ("anon", "authenticated"):
+            existing = conn.execute("select 1 from pg_roles where rolname = %s", (role,)).fetchone()
+            if existing is None:
+                conn.execute(f"create role {role} nologin")
+        conn.execute("grant usage on schema public to anon, authenticated")
+        for name in (
+            "20260922053900_init.sql",
+            "20260922053901_rls.sql",
+            "20261006000000_notice_glossary.sql",
+        ):
+            conn.execute((ROOT / "supabase/migrations" / name).read_text("utf-8"))
+        conn.execute(
+            "insert into public.notices"
+            "(category, source_board, post_sn, title, registered_on, url) "
+            "values ('nowon', '1001', 'test', 'test', current_date, "
+            "'https://www.nowon.kr/test')"
+        )
+        notice_id = conn.execute("select id from public.notices").fetchone()[0]
+        yield conn, notice_id
+    finally:
+        conn.rollback()
+        conn.close()
+
+
+def apply_public_revision_policy(conn):
+    for name in (
+        "20261007000000_notice_easy_text.sql",
+        "20261007000001_notice_glossary_current_source.sql",
+    ):
+        conn.execute((ROOT / "supabase/migrations" / name).read_text("utf-8"))
+
+
+def historical_result(source, *, seconds=0):
+    """A stored historical JSON sample, independent of the removed Python workflow."""
+    return {
+        "notice_id": source.notice_id,
+        "notice_revision": source.notice_revision,
+        "source_hash": sha256(source.text.encode("utf-8")).hexdigest(),
+        "rules_version": "historical-rls-test",
+        "generated_at": (NOW + timedelta(seconds=seconds)).isoformat(),
+        "status": "completed",
+        "original_text": source.text,
+        "easy_text": source.text,
+        "terms": [],
+        "queries": [],
+        "changes": [],
+        "pending_queries": [],
+        "new_query_count": 0,
+    }
+
+
+def write_historical_result(conn, sample):
+    conn.execute(
+        "insert into public.notice_glossary_results "
+        "(notice_id, source_hash, rules_version, generated_at, status, result) "
+        "values (%s, %s, %s, %s, %s, %s) "
+        "on conflict (notice_id) do update set "
+        "source_hash=excluded.source_hash, rules_version=excluded.rules_version, "
+        "generated_at=excluded.generated_at, status=excluded.status, result=excluded.result",
+        (
+            sample["notice_id"],
+            sample["source_hash"],
+            sample["rules_version"],
+            sample["generated_at"],
+            sample["status"],
+            Jsonb(sample),
+        ),
     )
 
 
@@ -38,156 +110,97 @@ def set_notice(conn, notice_id, title, body=None):
         "update public.notices set title = %s, body_html = %s where id = %s",
         (title, body, notice_id),
     )
-    return notice_service.load_notice_glossary_input(conn, notice_id)
+    return load_notice_glossary_input(conn, notice_id)
 
 
-def test_db_late_old_source_cannot_overwrite_current_snapshot(notice_glossary_db):
-    conn, notice_id = notice_glossary_db
-    old = set_notice(conn, notice_id, "익일")
-    current = set_notice(conn, notice_id, "공람")
-    saved = result(current)
-    save_notice_glossary(conn, saved)
-    with pytest.raises(NoticeGlossaryStorageError, match="원문이 바뀌어"):
-        save_notice_glossary(conn, result(old, seconds=1))
-    assert get_notice_glossary(conn, notice_id) == saved
-    assert (
-        conn.execute("select title from public.notices where id = %s", (notice_id,)).fetchone()[0]
-        == "공람"
-    )
-    assert conn.execute("select 1").fetchone() == (1,)  # Failed savepoint did not abort caller.
-
-
-def test_db_changed_html_with_same_plain_text_invalidates_loaded_revision(notice_glossary_db):
-    conn, notice_id = notice_glossary_db
-    old = set_notice(conn, notice_id, "안내", "<p>익일</p>")
-    current = set_notice(conn, notice_id, "안내", "<div>익일</div>")
-    assert old.text == current.text
-    assert old.notice_revision != current.notice_revision
-    saved = result(current)
-    save_notice_glossary(conn, saved)
-    with pytest.raises(NoticeGlossaryStorageError, match="원문이 바뀌어"):
-        save_notice_glossary(conn, result(old, seconds=1))
-    assert get_notice_glossary(conn, notice_id) == saved
-
-
-@pytest.mark.parametrize("seconds", [0, -1])
-@pytest.mark.parametrize("same_text", [True, False])
-def test_db_current_revision_replaces_older_source_even_without_newer_timestamp(
-    notice_glossary_db, seconds, same_text
+@pytest.mark.parametrize("role", ["anon", "authenticated"])
+@pytest.mark.parametrize(
+    "title,body",
+    [
+        ("변경된 제목", "<p>익일 안내</p>"),
+        ("안내", "<p>변경된 본문</p>"),
+        ("안내", "<div>익일 안내</div>"),
+    ],
+)
+def test_db_public_reads_hide_stale_result_until_current_revision_saved(
+    notice_glossary_db, role, title, body
 ):
     conn, notice_id = notice_glossary_db
-    old = set_notice(conn, notice_id, "안내", "<p>익일</p>")
-    save_notice_glossary(conn, result(old))
-    current = set_notice(conn, notice_id, "안내", "<div>익일</div>" if same_text else "공람")
-    saved = result(current, seconds=seconds)
-    assert current.notice_revision != old.notice_revision
-    assert (current.text == old.text) is same_text
-    save_notice_glossary(conn, saved)
-    assert get_notice_glossary(conn, notice_id) == saved
+    apply_public_revision_policy(conn)
+    original = set_notice(conn, notice_id, "안내", "<p>익일 안내</p>")
+    saved = historical_result(original)
+    write_historical_result(conn, saved)
+    conn.execute("set local role " + role)
+    assert conn.execute(
+        "select notice_id from public.notice_glossary_results where notice_id=%s", (notice_id,)
+    ).fetchall() == [(notice_id,)]
+    conn.execute("reset role")
 
-
-@pytest.mark.parametrize("seconds", [0, -1])
-def test_db_service_returns_current_html_revision_when_old_timestamp_is_not_older(
-    notice_glossary_db, seconds
-):
-    from pathlib import Path
-
-    conn, notice_id = notice_glossary_db
-    migration = (
-        Path(__file__).resolve().parents[3] / "supabase/migrations/20261005000000_glossary.sql"
-    )
-    conn.execute(migration.read_text("utf-8"))
-    old = set_notice(conn, notice_id, "안내", "<p>익일</p>")
-    save_notice_glossary(conn, result(old))
-    current = set_notice(conn, notice_id, "안내", "<div>익일</div>")
-    onterm, opendict = MagicMock(), MagicMock()
-    onterm.lookup.return_value = opendict.lookup.return_value = ()
-    saved = notice_service.process_and_store_notice_glossary(
-        conn,
-        current,
-        onterm_client=onterm,
-        opendict_client=opendict,
-        clock=lambda: NOW + timedelta(seconds=seconds),
-    )
-    assert saved.notice_revision == current.notice_revision
-    assert saved.generated_at == NOW + timedelta(seconds=seconds)
-    assert saved.status == "completed"
-    assert get_notice_glossary(conn, notice_id) == saved
-
-
-def test_db_stale_loaded_source_is_rejected_before_api_or_cache_work(
-    notice_glossary_db, monkeypatch
-):
-    conn, notice_id = notice_glossary_db
-    old = set_notice(conn, notice_id, "익일")
-    current = set_notice(conn, notice_id, "공람")
-    saved = result(current)
-    save_notice_glossary(conn, saved)
-    lookup = MagicMock(side_effect=AssertionError("stale source must not call the API"))
-    cache = MagicMock(side_effect=AssertionError("stale source must not read dictionary cache"))
-    monkeypatch.setattr(notice_service, "query_glossary", lookup)
-    monkeypatch.setattr(notice_service, "get_glossary", cache)
-    with pytest.raises(NoticeGlossaryStorageError, match="원문이 바뀌어"):
-        notice_service.process_and_store_notice_glossary(conn, old)
-    lookup.assert_not_called()
-    cache.assert_not_called()
-    assert get_notice_glossary(conn, notice_id) == saved
-
-
-def test_db_current_loaded_source_roundtrips_revision_without_changing_notice(notice_glossary_db):
-    conn, notice_id = notice_glossary_db
-    current = set_notice(conn, notice_id, "익일", "<p>원문 유지</p>")
-    before = conn.execute("select title, body_html from public.notices where id = %s", (notice_id,))
-    before = before.fetchone()
-    saved = result(current)
-    save_notice_glossary(conn, saved)
-    returned = get_notice_glossary(conn, notice_id)
-    assert returned == saved
-    assert returned.notice_revision == current.notice_revision
+    current = set_notice(conn, notice_id, title, body)
+    assert conn.execute(
+        "select result from public.notice_glossary_results where notice_id=%s", (notice_id,)
+    ).fetchone() == (saved,)  # Keep the previous internal snapshot.
+    conn.execute("set local role " + role)
     assert (
         conn.execute(
-            "select title, body_html from public.notices where id = %s", (notice_id,)
-        ).fetchone()
-        == before
+            "select notice_id from public.notice_glossary_results where notice_id=%s", (notice_id,)
+        ).fetchall()
+        == []
     )
+    conn.execute("reset role")
+
+    write_historical_result(conn, historical_result(current, seconds=1))
+    conn.execute("set local role " + role)
+    assert conn.execute(
+        "select result->>'notice_revision' from public.notice_glossary_results where notice_id=%s",
+        (notice_id,),
+    ).fetchall() == [(current.notice_revision,)]
 
 
-def test_db_notice_change_during_lookup_rolls_back_dictionary_writes_and_keeps_new_snapshot(
-    notice_glossary_db,
+@pytest.mark.parametrize("role", ["anon", "authenticated"])
+@pytest.mark.parametrize(
+    "revision",
+    ["missing", None, "", "not-a-revision", "b" * 64, "A" * 64, 123, ["b" * 64]],
+)
+def test_db_public_reads_hide_missing_invalid_or_different_source_revision(
+    notice_glossary_db, role, revision
 ):
-    from pathlib import Path
-
     conn, notice_id = notice_glossary_db
-    migration = (
-        Path(__file__).resolve().parents[3] / "supabase/migrations/20261005000000_glossary.sql"
-    )
-    conn.execute(migration.read_text("utf-8"))
-    old = set_notice(conn, notice_id, "익일")
-    newer = []
-
-    def update_during_lookup(query):
-        if not newer:
-            current = set_notice(conn, notice_id, "공람")
-            saved = result(current, seconds=1)
-            save_notice_glossary(conn, saved)
-            newer.append(saved)
-        return ()
-
-    onterm = MagicMock()
-    onterm.lookup.side_effect = update_during_lookup
-    opendict = MagicMock()
-    opendict.lookup.return_value = ()
-    with pytest.raises(NoticeGlossaryStorageError, match="원문이 바뀌어"):
-        notice_service.process_and_store_notice_glossary(
-            conn,
-            old,
-            onterm_client=onterm,
-            opendict_client=opendict,
-            clock=lambda: NOW + timedelta(seconds=2),
+    apply_public_revision_policy(conn)
+    current = set_notice(conn, notice_id, "안내", "<p>익일 안내</p>")
+    write_historical_result(conn, historical_result(current))
+    if revision == "missing":
+        conn.execute(
+            "update public.notice_glossary_results set result=result-'notice_revision' "
+            "where notice_id=%s",
+            (notice_id,),
         )
-    assert get_notice_glossary(conn, notice_id) == newer[0]
-    assert conn.execute("select count(*) from public.glossary_lookups").fetchone() == (0,)
+    else:
+        conn.execute(
+            "update public.notice_glossary_results "
+            "set result=jsonb_set(result,'{notice_revision}',%s) where notice_id=%s",
+            (Jsonb(revision), notice_id),
+        )
+    conn.execute("set local role " + role)
     assert (
-        conn.execute("select title from public.notices where id = %s", (notice_id,)).fetchone()[0]
-        == "공람"
+        conn.execute(
+            "select notice_id from public.notice_glossary_results where notice_id=%s", (notice_id,)
+        ).fetchall()
+        == []
+    )
+
+
+@pytest.mark.parametrize("role", ["anon", "authenticated"])
+def test_db_current_revision_does_not_make_hidden_notice_result_public(notice_glossary_db, role):
+    conn, notice_id = notice_glossary_db
+    apply_public_revision_policy(conn)
+    current = set_notice(conn, notice_id, "안내", "<p>익일 안내</p>")
+    write_historical_result(conn, historical_result(current))
+    conn.execute("update public.notices set is_visible=false where id=%s", (notice_id,))
+    conn.execute("set local role " + role)
+    assert (
+        conn.execute(
+            "select notice_id from public.notice_glossary_results where notice_id=%s", (notice_id,)
+        ).fetchall()
+        == []
     )

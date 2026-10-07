@@ -12,10 +12,13 @@ DEFAULT_ENV_PATH = Path(__file__).resolve().parents[3] / ".env"
 class GlossaryConfigurationError(ValueError):
     """A dictionary key needed for the current lookup is missing."""
 
+    def __init__(self, message: str, *, provider: str | None = None) -> None:
+        super().__init__(message)
+        self.provider = provider
 
-def _local_values(dotenv_path: Path) -> dict[str, str]:
+
+def _local_values(dotenv_path: Path, names: set[str]) -> dict[str, str]:
     """Read only glossary keys; environment values take precedence."""
-    names = {"ONTERM_API_KEY", "OPENDICT_API_KEY"}
     try:
         lines = dotenv_path.read_text(encoding="utf-8-sig").splitlines()
     except FileNotFoundError:
@@ -48,31 +51,39 @@ def _local_values(dotenv_path: Path) -> dict[str, str]:
 
 @dataclass(frozen=True, slots=True)
 class GlossarySettings:
-    """Use OnTerm then Ourmalsam, requiring each issued key only when it is used."""
+    """Load Standard Korean Dictionary and Ourmalsam credentials only as needed."""
 
     opendict_api_key: str = field(default="", repr=False)
-    onterm_api_key: str = field(default="", repr=False)
+    stdict_api_key: str = field(default="", repr=False)
 
     @classmethod
-    def from_env(cls, dotenv_path: Path | None = None) -> Self:
-        names = ("OPENDICT_API_KEY", "ONTERM_API_KEY")
-        env_values = {name: os.environ.get(name, "").strip() for name in names}
-        local = (
-            _local_values(dotenv_path or DEFAULT_ENV_PATH) if not all(env_values.values()) else {}
-        )
+    def from_env(cls, dotenv_path: Path | None = None, *, provider: str | None = None) -> Self:
+        key_names = {"stdict": "STDICT_API_KEY", "opendict": "OPENDICT_API_KEY"}
+        if provider is not None and provider not in key_names:
+            raise GlossaryConfigurationError("지원하지 않는 사전입니다.")
+        names = (key_names[provider],) if provider else tuple(key_names.values())
+        environment = {name: os.environ.get(name, "").strip() for name in names}
+        try:
+            local = (
+                _local_values(dotenv_path or DEFAULT_ENV_PATH, set(names))
+                if not all(environment.values())
+                else {}
+            )
+        except GlossaryConfigurationError as exc:
+            raise GlossaryConfigurationError(str(exc), provider=provider) from None
         return cls(
-            opendict_api_key=env_values[names[0]] or local.get(names[0], ""),
-            onterm_api_key=env_values[names[1]] or local.get(names[1], ""),
+            opendict_api_key=environment.get("OPENDICT_API_KEY", "")
+            or local.get("OPENDICT_API_KEY", ""),
+            stdict_api_key=environment.get("STDICT_API_KEY", "") or local.get("STDICT_API_KEY", ""),
         )
 
     def key_for(self, provider: str) -> str:
-        if provider not in ("onterm", "opendict"):
+        if provider not in ("stdict", "opendict"):
             raise GlossaryConfigurationError("지원하지 않는 사전입니다.")
-        keys = {
-            "onterm": (self.onterm_api_key, "ONTERM_API_KEY"),
-            "opendict": (self.opendict_api_key, "OPENDICT_API_KEY"),
-        }
-        key, name = keys[provider]
+        key = self.stdict_api_key if provider == "stdict" else self.opendict_api_key
+        name = "STDICT_API_KEY" if provider == "stdict" else "OPENDICT_API_KEY"
         if not key.strip():
-            raise GlossaryConfigurationError(f"services/pipeline/.env에 {name}를 설정하세요.")
+            raise GlossaryConfigurationError(
+                f"services/pipeline/.env에 {name}를 설정하세요.", provider=provider
+            )
         return key.strip()

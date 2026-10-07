@@ -10,20 +10,16 @@ import psycopg
 import pytest
 from psycopg.conninfo import conninfo_to_dict
 
-from pipeline.glossary.client import GlossaryAPIError
-from pipeline.glossary.config import GlossarySettings
-from pipeline.glossary.dictionary_service import lookup_dictionary_definition
 from pipeline.glossary.easy_language import (
+    DEFAULT_MODEL,
     PROMPT_VERSION,
     EasyLanguageAPIError,
     EasyLanguageResult,
     simplify_notice,
 )
 from pipeline.glossary.easy_language_service import simplify_and_store_notice
-from pipeline.glossary.models import GlossaryEntry, GlossaryLookup
 from pipeline.glossary.notice_service import load_notice_glossary_input
 from pipeline.glossary.source import NoticeGlossaryInput, notice_content_revision
-from pipeline.storage.glossary import GlossaryStorageError, get_glossary, save_glossary
 from pipeline.storage.notice_easy_text import (
     EasyTextStorageError,
     get_notice_easy_text,
@@ -34,8 +30,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 _NOW = datetime(2026, 10, 7, 9, tzinfo=UTC)
 
 
-@pytest.fixture
-def easy_db():
+def _easy_db_connection():
     url = os.getenv("GLOSSARY_TEST_DATABASE_URL")
     if not url:
         pytest.skip("GLOSSARY_TEST_DATABASE_URL 미설정: 로컬 DB 통합 테스트 생략")
@@ -59,7 +54,6 @@ def easy_db():
         for name in (
             "20260922053900_init.sql",
             "20260922053901_rls.sql",
-            "20261005000000_glossary.sql",
             "20261007000000_notice_easy_text.sql",
         ):
             conn.execute((_ROOT / "supabase/migrations" / name).read_text("utf-8"))
@@ -67,6 +61,11 @@ def easy_db():
     finally:
         conn.rollback()
         conn.close()
+
+
+@pytest.fixture
+def easy_db():
+    yield from _easy_db_connection()
 
 
 def _notice(conn):
@@ -89,7 +88,7 @@ def _request(**kwargs):
                     "replacement": "준비할 서류를",
                     "context": "구비서류를 지참하세요.",
                 }
-            ]
+            ],
         },
         ensure_ascii=False,
     )
@@ -97,17 +96,6 @@ def _request(**kwargs):
 
 def _result(source, now=_NOW):
     return simplify_notice(source, api_key="fake", request=_request, clock=lambda: now)
-
-
-def _entry():
-    return GlossaryEntry(
-        provider="opendict",
-        entry_id="123",
-        sense_id="001",
-        headword="산정",
-        definition="계산하여 정함.",
-        source_url="https://opendict.korean.go.kr/dictionary/view?sense_no=123",
-    )
 
 
 def test_repeated_notice_read_and_conversion_have_zero_additional_api_calls(easy_db, monkeypatch):
@@ -162,6 +150,41 @@ def test_new_prompt_replaces_old_cache_once_then_reuses_it(easy_db, old_changes)
     assert result.prompt_version == PROMPT_VERSION != previous.prompt_version
     assert result.easy_text != source.text
     assert simplify_and_store_notice(easy_db, source, request=request) == result
+    request.assert_called_once()
+
+
+@pytest.mark.parametrize("generation", ["model", "prompt"])
+@pytest.mark.parametrize("clock_ahead", [timedelta(), timedelta(hours=1)])
+def test_new_generation_replaces_old_cache_despite_equal_or_earlier_clock(
+    easy_db, monkeypatch, generation, clock_ahead
+):
+    source = _notice(easy_db)
+    old_field = "model" if generation == "model" else "prompt_version"
+    old_value = "gemini-previous-model" if generation == "model" else "easy-language-v3"
+    previous = EasyLanguageResult.model_validate(
+        {**_result(source, _NOW + clock_ahead).model_dump(), old_field: old_value}
+    )
+    save_notice_easy_text(easy_db, previous)
+    request = MagicMock(side_effect=_request)
+
+    current = simplify_and_store_notice(
+        easy_db,
+        source,
+        api_key="fake",
+        request=request,
+        clock=lambda: _NOW,
+    )
+
+    assert current.model == DEFAULT_MODEL
+    assert current.prompt_version == PROMPT_VERSION
+    assert current.generated_at == _NOW <= previous.generated_at
+    assert get_notice_easy_text(easy_db, source.notice_id) == current
+    monkeypatch.setattr(
+        "pipeline.glossary.easy_language_service.load_gemini_api_key",
+        MagicMock(side_effect=AssertionError("current cache must not read API credentials")),
+    )
+    assert simplify_and_store_notice(easy_db, source, request=request) == current
+    assert simplify_and_store_notice(easy_db, source, request=request) == current
     request.assert_called_once()
 
 
@@ -259,83 +282,3 @@ def test_input_must_match_database_notice(easy_db, with_revision):
             ),
             api_key="fake",
         )
-
-
-def test_dictionary_found_and_no_result_are_reused_without_api_or_credentials(easy_db):
-    client = MagicMock()
-    client.lookup.return_value = (_entry(),)
-    found = lookup_dictionary_definition(easy_db, "산정", opendict_client=client)
-    assert found.status == "found"
-    assert lookup_dictionary_definition(easy_db, "산정").entries == found.entries
-    assert lookup_dictionary_definition(easy_db, "산정").from_cache
-    client.lookup.assert_called_once_with("산정")
-    client.lookup.return_value = ()
-    missing = lookup_dictionary_definition(easy_db, "테스트없는용어", opendict_client=client)
-    assert missing.status == "not_found"
-    assert lookup_dictionary_definition(easy_db, "테스트없는용어").status == "not_found"
-    assert client.lookup.call_count == 2
-
-
-def test_dictionary_error_and_empty_refresh_preserve_saved_meaning(easy_db):
-    client = MagicMock()
-    client.lookup.return_value = (_entry(),)
-    lookup_dictionary_definition(easy_db, "산정", opendict_client=client, clock=lambda: _NOW)
-    stored = get_glossary(easy_db, "산정")
-    client.lookup.side_effect = GlossaryAPIError("opendict", "rate_limit")
-    with pytest.raises(GlossaryAPIError):
-        lookup_dictionary_definition(easy_db, "산정", opendict_client=client, refresh=True)
-    assert get_glossary(easy_db, "산정") == stored
-    client.lookup.side_effect = None
-    client.lookup.return_value = ()
-    with pytest.raises(GlossaryStorageError):
-        lookup_dictionary_definition(
-            easy_db,
-            "산정",
-            opendict_client=client,
-            refresh=True,
-            clock=lambda: _NOW + timedelta(hours=1),
-        )
-    assert get_glossary(easy_db, "산정") == stored
-
-
-def test_onterm_only_cache_does_not_block_ourmalsam_negative_cache(easy_db):
-    entry = GlossaryEntry(
-        provider="onterm",
-        entry_id="sha256:" + "a" * 64,
-        sense_id="content",
-        entry_id_kind="content_hash",
-        headword="산정",
-        easy_terms=("산꼭대기",),
-        source_url="https://kli.korean.go.kr/term/record",
-        source_institution="국립국어원",
-        source_glossary="테스트용 다듬은말",
-        definition=None,
-    )
-    save_glossary(
-        easy_db,
-        GlossaryLookup(
-            query="산정",
-            status="found",
-            entries=(entry,),
-            providers_checked=("onterm",),
-            queried_at=_NOW,
-        ),
-    )
-    client = MagicMock()
-    client.lookup.return_value = ()
-    result = lookup_dictionary_definition(
-        easy_db,
-        "산정",
-        opendict_client=client,
-        clock=lambda: _NOW + timedelta(hours=1),
-        settings=GlossarySettings(opendict_api_key="fake"),
-    )
-    assert result.status == "not_found" and result.providers_checked == ("opendict",)
-    assert lookup_dictionary_definition(easy_db, "산정").status == "not_found"
-    client.lookup.assert_called_once_with("산정")
-    assert (
-        easy_db.execute("select count(*) from glossary_entries where provider='onterm'").fetchone()[
-            0
-        ]
-        == 1
-    )

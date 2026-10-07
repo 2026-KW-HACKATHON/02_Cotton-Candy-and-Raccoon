@@ -25,7 +25,7 @@ def entry(**changes: object) -> GlossaryEntry:
 
 @pytest.fixture(autouse=True)
 def isolate_keys(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ("ONTERM_API_KEY", "OPENDICT_API_KEY", "KRDICT_API_KEY"):
+    for name in ("ONTERM_API_KEY", "OPENDICT_API_KEY", "KRDICT_API_KEY", "STDICT_API_KEY"):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -39,15 +39,13 @@ def test_settings_keep_keys_private_and_environment_wins(tmp_path, monkeypatch) 
     monkeypatch.setenv("OPENDICT_API_KEY", "environment-secret")
     settings = GlossarySettings.from_env(path)
     assert settings.key_for("opendict") == "environment-secret"
-    assert settings.key_for("onterm") == "second-secret"
     assert "secret" not in repr(settings)
 
 
-def test_missing_fallback_key_is_required_only_when_used(tmp_path) -> None:
+def test_missing_ourmalsam_key_is_required_only_when_used(tmp_path) -> None:
     path = tmp_path / ".env"
     path.write_text("ONTERM_API_KEY=primary\n", encoding="utf-8")
     settings = GlossarySettings.from_env(path)
-    assert settings.key_for("onterm") == "primary"
     with pytest.raises(GlossaryConfigurationError, match="OPENDICT_API_KEY"):
         settings.key_for("opendict")
 
@@ -63,47 +61,42 @@ def test_missing_file_and_wrong_file_encoding_are_safe(tmp_path) -> None:
     assert "secret" not in str(captured.value)
 
 
-def test_only_two_issued_keys_from_environment_need_no_readable_dotenv(
-    tmp_path, monkeypatch
-) -> None:
+def test_ourmalsam_key_from_environment_needs_no_readable_dotenv(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("OPENDICT_API_KEY", "first")
-    monkeypatch.setenv("ONTERM_API_KEY", "second")
     path = tmp_path / ".env"
     path.write_bytes(b"invalid\xff")
-    settings = GlossarySettings.from_env(path)
+    settings = GlossarySettings.from_env(path, provider="opendict")
     assert settings.key_for("opendict") == "first"
-    assert settings.key_for("onterm") == "second"
 
 
-def test_onterm_key_and_quoted_trailing_comments_are_loaded_without_exposure(tmp_path) -> None:
+def test_ourmalsam_quoted_key_and_trailing_comments_are_loaded_without_exposure(tmp_path) -> None:
     path = tmp_path / ".env"
     path.write_text(
-        'ONTERM_API_KEY="onterm-fake" # API key\n'
-        "OPENDICT_API_KEY='opendict#fake' # keep internal hash\n",
+        "export OPENDICT_API_KEY='opendict#fake' # keep internal hash\n",
         encoding="utf-8",
     )
     settings = GlossarySettings.from_env(path)
-    assert settings.key_for("onterm") == "onterm-fake"
     assert settings.key_for("opendict") == "opendict#fake"
     assert "fake" not in repr(settings)
 
 
-def test_legacy_krdict_settings_are_ignored_without_loading_or_requiring_a_key(
-    tmp_path, monkeypatch
+@pytest.mark.parametrize(
+    "provider,key_name", [("onterm", "ONTERM_API_KEY"), ("krdict", "KRDICT_API_KEY")]
+)
+def test_legacy_settings_are_ignored_without_loading_or_requiring_a_key(
+    tmp_path, monkeypatch, provider, key_name
 ) -> None:
     path = tmp_path / ".env"
     path.write_text(
-        "ONTERM_API_KEY=primary\nOPENDICT_API_KEY=fallback\n"
-        'KRDICT_API_KEY="legacy-secret-with-unclosed-quote\n',
+        f'OPENDICT_API_KEY=current\n{key_name}="legacy-secret-with-unclosed-quote\n',
         encoding="utf-8",
     )
-    monkeypatch.setenv("KRDICT_API_KEY", "environment-legacy-secret")
+    monkeypatch.setenv(key_name, "environment-legacy-secret")
     settings = GlossarySettings.from_env(path)
-    assert settings.key_for("onterm") == "primary"
-    assert settings.key_for("opendict") == "fallback"
-    assert not hasattr(settings, "krdict_api_key")
+    assert settings.key_for("opendict") == "current"
+    assert not hasattr(settings, f"{provider}_api_key")
     with pytest.raises(GlossaryConfigurationError, match="지원하지 않는") as caught:
-        settings.key_for("krdict")
+        settings.key_for(provider)
     assert "secret" not in repr(settings)
     assert "secret" not in str(caught.value)
 
@@ -131,7 +124,7 @@ def test_legacy_krdict_data_remains_valid_without_active_api_settings() -> None:
 @pytest.mark.parametrize("value", ['"fake-key', '"fake-key" unexpected'])
 def test_invalid_quoted_key_is_rejected_without_echoing_value(tmp_path, value) -> None:
     path = tmp_path / ".env"
-    path.write_text(f"ONTERM_API_KEY={value}\n", encoding="utf-8")
+    path.write_text(f"OPENDICT_API_KEY={value}\n", encoding="utf-8")
     with pytest.raises(GlossaryConfigurationError) as captured:
         GlossarySettings.from_env(path)
     assert "fake-key" not in str(captured.value)
@@ -227,3 +220,22 @@ def test_lookup_separates_no_result_and_invalid_found() -> None:
         GlossaryLookup(**values, status="found")
     with pytest.raises(ValidationError, match="시간대"):
         GlossaryLookup(**{**values, "queried_at": datetime(2026, 10, 5)}, status="not_found")
+
+
+def test_standard_source_attribution_and_legacy_compatibility():
+    value = entry(
+        provider="stdict", source_url="https://stdict.korean.go.kr/search/searchView.do?word_no=10"
+    )
+    assert value.source_name == "국립국어원 표준국어대사전"
+    assert value.identity == ("stdict", "10", "001")
+    assert value.license == "CC BY-SA 2.0 KR"
+
+
+def test_standard_key_does_not_parse_broken_unused_fallback(tmp_path):
+    path = tmp_path / ".env"
+    path.write_text('STDICT_API_KEY=standard\nOPENDICT_API_KEY="unclosed\n', encoding="utf-8")
+    settings = GlossarySettings.from_env(path, provider="stdict")
+    assert settings.key_for("stdict") == "standard" and not settings.opendict_api_key
+    with pytest.raises(GlossaryConfigurationError) as caught:
+        GlossarySettings.from_env(path, provider="opendict")
+    assert caught.value.provider == "opendict" and "unclosed" not in str(caught.value)

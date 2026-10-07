@@ -18,7 +18,7 @@ from pipeline.glossary.easy_language import (
 
 KEY = "fake-gemini-client-secret"
 REMOTE_TEXT = "private-provider-response"
-JSON_TEXT = '{"terms": []}'
+JSON_TEXT = '{"changes": []}'
 
 
 def completed_response() -> types.GenerateContentResponse:
@@ -139,6 +139,8 @@ def test_public_generate_content_keeps_notice_exact_and_uses_structured_schema(
     assert config.system_instruction == prompt
     assert config.response_mime_type == "application/json"
     assert config.response_json_schema == EasyLanguageResponse.model_json_schema()
+    assert set(config.response_json_schema["required"]) == {"changes"}
+    assert set(config.response_json_schema["properties"]) == {"changes"}
     assert config.candidate_count == 1
     assert isinstance(config.automatic_function_calling, types.AutomaticFunctionCallingConfig)
     assert config.automatic_function_calling.disable is True

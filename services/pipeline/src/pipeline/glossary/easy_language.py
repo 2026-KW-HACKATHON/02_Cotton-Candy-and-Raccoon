@@ -1,4 +1,4 @@
-"""Generate contextual term swaps while retaining the exact original notice."""
+"""Apply contextual easy-language swaps while retaining the exact notice."""
 
 import re
 import unicodedata
@@ -6,13 +6,21 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Self
+from urllib.parse import quote, quote_plus
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    model_validator,
+)
 
 from pipeline.glossary.source import MAX_SOURCE_CHARACTERS, NoticeGlossaryInput, source_hash
 
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
-PROMPT_VERSION = "easy-language-v4"
+PROMPT_VERSION = "easy-language-v6"
 PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "gemini_easy_language.md"
 MAX_TERM_CHARACTERS = 100
 
@@ -44,6 +52,8 @@ def _validate_term(original: str, replacement: str) -> None:
         raise ValueError("용어 바깥의 공백을 바꿀 수 없습니다.")
     if original == replacement:
         raise ValueError("바꿀 말은 원래 용어와 달라야 합니다.")
+    if original.replace(" ", "") == replacement.replace(" ", ""):
+        raise ValueError("띄어쓰기만 바꾼 항목은 쉬운말 변경이 아닙니다.")
     if any(character.isnumeric() for character in original + replacement):
         raise ValueError("숫자를 포함한 표기는 바꿀 수 없습니다.")
     if any(
@@ -73,7 +83,7 @@ class ProposedChange(BaseModel):
 
 
 class EasyLanguageResponse(BaseModel):
-    """Required changes may be empty when no confident equivalent exists."""
+    """Require contextual replacement proposals, possibly empty."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
     changes: tuple[ProposedChange, ...]
@@ -177,6 +187,57 @@ def _resolve_changes(text: str, response: EasyLanguageResponse) -> tuple[Applied
     return changes
 
 
+def _credential_forms(api_key: str) -> tuple[str, ...]:
+    secret = api_key.strip()
+    return tuple({secret, quote(secret, safe=""), quote_plus(secret)})
+
+
+def _validate_raw_credentials(
+    output: str, original_text: str, credentials: tuple[str, ...]
+) -> None:
+    if any(secret in output and secret not in original_text for secret in credentials):
+        raise ValueError("Gemini response failed credential validation.")
+
+
+def _validate_decoded_credentials(
+    response: EasyLanguageResponse, original_text: str, credentials: tuple[str, ...]
+) -> None:
+    # Original/context are later attested source copies, so an existing source
+    # credential may remain there. Never add it as replacement text.
+    added = tuple(change.replacement for change in response.changes)
+    copied = tuple(
+        text for change in response.changes for text in (change.original, change.context)
+    )
+    if any(secret in text for text in added for secret in credentials) or any(
+        secret in text and secret not in original_text for text in copied for secret in credentials
+    ):
+        raise ValueError("Gemini response failed credential validation.")
+
+
+def _validate_generated_credentials(
+    easy_text: str, changes: tuple[AppliedChange, ...], credentials: tuple[str, ...]
+) -> None:
+    # Separate replacement fragments can join through untouched punctuation to
+    # form a secret. Reject every credential occurrence touched by a replacement;
+    # exact source copies remain valid even when preceding edits shift their offset.
+    changed_spans: list[tuple[int, int]] = []
+    offset = 0
+    for change in changes:
+        start = change.start + offset
+        changed_spans.append((start, start + len(change.replacement)))
+        offset += len(change.replacement) - (change.end - change.start)
+    for secret in credentials:
+        start = easy_text.find(secret)
+        while start != -1:
+            end = start + len(secret)
+            if any(
+                start < changed_end and changed_start < end
+                for changed_start, changed_end in changed_spans
+            ):
+                raise ValueError("Gemini response failed credential validation.")
+            start = easy_text.find(secret, start + 1)
+
+
 class EasyLanguageResult(BaseModel):
     """A self-validating result that always keeps the complete, exact original."""
 
@@ -211,7 +272,7 @@ class EasyLanguageResult(BaseModel):
                         context=change.context,
                     )
                     for change in self.changes
-                )
+                ),
             ),
         )
         if (
@@ -260,6 +321,7 @@ def simplify_notice(
 
         request = generate_easy_language_json
     prompt = load_easy_language_prompt()
+    credentials = _credential_forms(api_key)
     for attempt in (1, 2):
         try:
             output = request(prompt=prompt, notice_text=source.text, api_key=api_key, model=model)
@@ -274,8 +336,12 @@ def simplify_notice(
         try:
             if not isinstance(output, str):
                 raise ValueError("Gemini JSON must be text.")
+            _validate_raw_credentials(output, source.text, credentials)
             response = EasyLanguageResponse.model_validate_json(output)
+            _validate_decoded_credentials(response, source.text, credentials)
             changes = _resolve_changes(source.text, response)
+            easy_text = apply_easy_language_changes(source.text, changes)
+            _validate_generated_credentials(easy_text, changes, credentials)
         except (ValidationError, ValueError) as error:
             if attempt == 2:
                 raise EasyLanguageValidationError(
@@ -283,19 +349,35 @@ def simplify_notice(
                 ) from None
             unchanged_term = isinstance(error, ValidationError) and any(
                 str(detail.get("ctx", {}).get("error", ""))
-                == "바꿀 말은 원래 용어와 달라야 합니다."
+                in {
+                    "바꿀 말은 원래 용어와 달라야 합니다.",
+                    "띄어쓰기만 바꾼 항목은 쉬운말 변경이 아닙니다.",
+                }
                 for detail in error.errors(include_input=False)
             )
             prompt += (
                 "\n\n이전 응답은 JSON 형식 또는 원문 위치 검사에 실패했습니다. "
                 "같은 전체 원문을 다시 읽고, 정확히 복사한 문맥과 용어만 반환하세요. "
-                "확신할 수 없는 변경은 제외하세요."
+                "changes만 반환하세요. 원문에 없는 말이나 예시의 용어를 넣지 마세요. "
+                "확신할 수 없는 변경은 제외하고, 앞뒤 문맥에 맞는 조사·어미를 포함한 "
+                "최소 구간을 고르세요. 바꾼 문장을 실제로 이어 읽어 확인하세요."
             )
             if unchanged_term:
                 # Send a fixed local hint, never model output or exception details.
                 prompt += (
-                    " original과 replacement가 같은 항목이 있어 실패했습니다. "
-                    "같은 말은 변경 목록에서 제외하고, 실제로 바꿀 다른 용어는 유지하세요."
+                    " original과 replacement가 같거나 띄어쓰기만 다른 항목이 있어 "
+                    "실패했습니다. 이 항목은 제외하고, 실제로 쉬워진 다른 변경은 유지하세요."
+                )
+            if isinstance(error, ValidationError) and any(
+                str(detail.get("ctx", {}).get("error", ""))
+                == "용어에는 글자와 일반 공백만 사용할 수 있습니다."
+                for detail in error.errors(include_input=False)
+            ):
+                prompt += (
+                    " 교체 구간에 문장부호·특수 공백이 들어 있어 실패했습니다. "
+                    "괄호·가운뎃점·줄바꿈은 context에만 복사하고 original/replacement에서는 "
+                    "빼세요. 실제 원문에서 해당 부호를 포함하지 않는 더 짧은 구간을 "
+                    "새로 고르세요. 원문 문자열 자체를 고쳐 복사하지 마세요."
                 )
             if not isinstance(error, ValidationError):
                 # Explain a known local source failure without echoing its payload.
@@ -318,7 +400,7 @@ def simplify_notice(
             notice_id=source.notice_id,
             notice_revision=source.notice_revision,
             original_text=source.text,
-            easy_text=apply_easy_language_changes(source.text, changes),
+            easy_text=easy_text,
             source_hash=source_hash(source),
             model=model,
             prompt_version=PROMPT_VERSION,

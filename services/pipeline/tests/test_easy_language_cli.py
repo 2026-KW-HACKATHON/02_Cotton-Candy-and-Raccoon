@@ -32,7 +32,7 @@ def offline(monkeypatch, tmp_path):
                         "replacement": "준비할 서류를",
                         "context": source.text,
                     }
-                ]
+                ],
             },
             ensure_ascii=False,
         )
@@ -50,7 +50,9 @@ def offline(monkeypatch, tmp_path):
     connect = MagicMock()
     conn = connect.return_value.__enter__.return_value
     monkeypatch.setattr(module, "simplify_notice", gemini)
-    monkeypatch.setattr(module, "lookup_dictionary_definition", dictionary)
+    monkeypatch.setattr(
+        "pipeline.glossary.dictionary_service.lookup_dictionary_definition", dictionary
+    )
     monkeypatch.setattr(module.psycopg, "connect", connect)
     monkeypatch.setattr(module, "load_gemini_api_key", lambda: "fake")
     monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost/test")
@@ -70,6 +72,7 @@ def test_file_mode_preserves_original_and_never_calls_dictionary(offline, capsys
     payload = json.loads(capsys.readouterr().out)
     assert payload["original_text"] == offline.source.text
     assert payload["easy_text"] == "준비할 서류를 지참하세요.\n"
+    assert not {"dictionary_terms", "dictionary_results", "dictionary_failures"} & payload.keys()
     offline.dictionary.assert_not_called()
     offline.connect.assert_not_called()
 
@@ -93,16 +96,43 @@ def test_notice_db_mode_uses_saved_service_without_eager_credentials(offline, mo
     offline.gemini.assert_not_called()
 
 
-def test_word_mode_always_uses_db_cache_and_never_reads_gemini_key(offline, monkeypatch, capsys):
-    result = MagicMock()
-    result.model_dump_json.return_value = '{"status":"not_found"}'
-    offline.dictionary.side_effect = None
-    offline.dictionary.return_value = result
+def test_file_save_mode_uses_conversion_service_and_forwards_refresh(offline, monkeypatch, capsys):
+    saved = MagicMock(return_value=offline.result)
+    monkeypatch.setattr(module, "simplify_and_store_notice", saved)
     monkeypatch.setattr(module, "load_gemini_api_key", MagicMock(side_effect=AssertionError))
-    assert module.main(["--word", "산정"]) == 0
-    offline.dictionary.assert_called_once_with(offline.conn, "산정", refresh=False)
+    assert module.main(["--input", str(offline.path), "--save", "--refresh"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["original_text"] == offline.source.text
+    assert payload["easy_text"] == offline.result.easy_text
+    assert payload["changes"] == offline.result.model_dump(mode="json")["changes"]
+    assert not {"dictionary_terms", "dictionary_results", "dictionary_failures"} & payload.keys()
+    assert "conversion" not in payload
+    saved.assert_called_once_with(
+        offline.conn, offline.source, refresh=True, model=module.DEFAULT_MODEL
+    )
     offline.gemini.assert_not_called()
-    assert json.loads(capsys.readouterr().out)["status"] == "not_found"
+    offline.dictionary.assert_not_called()
+
+
+def test_corrupt_notice_conversion_outputs_no_result(offline, monkeypatch, capsys):
+    from pipeline.storage.notice_easy_text import EasyTextStorageError
+
+    saved = MagicMock(side_effect=EasyTextStorageError("private-snapshot-details"))
+    monkeypatch.setattr(module, "simplify_and_store_notice", saved)
+    monkeypatch.setattr(module, "load_notice_glossary_input", lambda *args: offline.source)
+    assert module.main(["--notice-id", "7"]) == 1
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert "private-snapshot-details" not in output.err
+
+
+def test_word_mode_is_removed_before_database_or_network(offline):
+    with pytest.raises(SystemExit) as error:
+        module.main(["--word", "산정"])
+    assert error.value.code == 2
+    offline.dictionary.assert_not_called()
+    offline.connect.assert_not_called()
+    offline.gemini.assert_not_called()
 
 
 @pytest.mark.parametrize("error", [EasyLanguageAPIError, EasyLanguageValidationError])
@@ -121,9 +151,9 @@ def test_output_cannot_overwrite_input(offline):
     offline.gemini.assert_not_called()
 
 
-@pytest.mark.parametrize("word", ["", " ", "\t\n"])
-def test_blank_word_rejected_before_database_or_network(offline, word):
+def test_refresh_requires_database_mode_before_network(offline):
     with pytest.raises(SystemExit):
-        module.main(["--word", word])
+        module.main(["--input", str(offline.path), "--refresh"])
     offline.dictionary.assert_not_called()
     offline.connect.assert_not_called()
+    offline.gemini.assert_not_called()

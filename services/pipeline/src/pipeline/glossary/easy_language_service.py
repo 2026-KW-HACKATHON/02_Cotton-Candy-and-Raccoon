@@ -17,6 +17,7 @@ from pipeline.glossary.source import NoticeGlossaryInput, source_hash
 from pipeline.storage.notice_easy_text import (
     EasyTextStorageError,
     get_notice_easy_text,
+    get_notice_easy_text_cache_token,
     save_notice_easy_text,
 )
 from pipeline.transform.gemini_prompt import load_gemini_api_key
@@ -54,6 +55,7 @@ def simplify_and_store_notice(
         if source.text != current.text:
             raise EasyTextStorageError("저장할 입력을 DB 공지 원문과 연결할 수 없습니다.")
         source = current
+        expected_cache_token = get_notice_easy_text_cache_token(conn, source.notice_id)
         if not refresh:
             cached = get_notice_easy_text(
                 conn,
@@ -72,7 +74,7 @@ def simplify_and_store_notice(
             request=request,
             clock=clock,
         )
-        save_notice_easy_text(conn, result)
+        save_notice_easy_text(conn, result, expected_cache_token=expected_cache_token)
         saved = get_notice_easy_text(
             conn,
             source.notice_id,

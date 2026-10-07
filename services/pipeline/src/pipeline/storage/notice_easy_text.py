@@ -26,6 +26,15 @@ _NAMES = (
     "attempt_count",
     "generated_at",
 )
+# Hash the raw row so old prompt results need not pass today's result validator.
+# Epoch time keeps the token identical across connections with different time zones.
+_CACHE_TOKEN = """
+encode(sha256(convert_to(
+    ((to_jsonb(notice_easy_texts) - 'generated_at') ||
+     jsonb_build_object('generated_at', extract(epoch from notice_easy_texts.generated_at)))::text,
+    'UTF8'
+)), 'hex')
+"""
 
 
 class EasyTextStorageError(RuntimeError):
@@ -85,11 +94,36 @@ def get_notice_easy_text(
         raise EasyTextStorageError("저장된 쉬운말 결과를 검증하지 못했습니다.") from None
 
 
-def save_notice_easy_text(conn: Connection, result: EasyLanguageResult) -> None:
+def get_notice_easy_text_cache_token(conn: Connection, notice_id: int) -> str | None:
+    """Capture the raw saved state before generation, without validating its old prompt.
+
+    None means no result is stored. Keep this token inside the backend; it is
+    only permission to replace the exact snapshot that the caller read.
+    """
+    notice_id = _notice_id(notice_id)
+    with conn.cursor(row_factory=tuple_row) as cursor:
+        cursor.execute(
+            f"select {_CACHE_TOKEN} from public.notice_easy_texts where notice_id = %s",
+            (notice_id,),
+        )
+        row = cursor.fetchone()
+    return row[0] if row is not None else None
+
+
+def save_notice_easy_text(
+    conn: Connection,
+    result: EasyLanguageResult,
+    *,
+    expected_cache_token: str | None = None,
+) -> None:
     """Save after validating source revision; preserve existing results on failure.
 
     Locks the parent notice through the caller's commit so collection cannot
     change it between revision validation and saving. No commit or close here.
+    A model/prompt change needs the raw token captured before generation. It
+    may replace that exact snapshot even with an earlier worker clock, but
+    cannot overwrite work saved since then. Without a token, a different
+    generation is preserved. Older timestamps cannot replace the same generation.
     """
     try:
         result = EasyLanguageResult.model_validate(result.model_dump(mode="python"))
@@ -98,6 +132,12 @@ def save_notice_easy_text(conn: Connection, result: EasyLanguageResult) -> None:
     notice_id = _notice_id(result.notice_id)
     if result.notice_revision is None:
         raise EasyTextStorageError("쉬운말 저장에는 수집 원문 버전이 필요합니다.")
+    if expected_cache_token is not None and (
+        not isinstance(expected_cache_token, str)
+        or len(expected_cache_token) != 64
+        or any(char not in "0123456789abcdef" for char in expected_cache_token)
+    ):
+        raise EasyTextStorageError("쉬운말 저장 상태 확인값이 올바르지 않습니다.")
     if conn.autocommit:
         raise EasyTextStorageError("쉬운말 저장에는 autocommit이 꺼진 연결이 필요합니다.")
     if conn.info.transaction_status == TransactionStatus.IDLE:
@@ -133,6 +173,11 @@ def save_notice_easy_text(conn: Connection, result: EasyLanguageResult) -> None:
             "prompt_version = excluded.prompt_version, attempt_count = excluded.attempt_count, "
             "generated_at = excluded.generated_at "
             "where notice_easy_texts.notice_revision != excluded.notice_revision "
-            "or notice_easy_texts.generated_at < excluded.generated_at",
-            values,
+            "or (notice_easy_texts.model = excluded.model "
+            "and notice_easy_texts.prompt_version = excluded.prompt_version "
+            "and notice_easy_texts.generated_at < excluded.generated_at) "
+            "or ((notice_easy_texts.model != excluded.model "
+            "or notice_easy_texts.prompt_version != excluded.prompt_version) "
+            f"and {_CACHE_TOKEN} = %s::text)",
+            (*values, expected_cache_token),
         )

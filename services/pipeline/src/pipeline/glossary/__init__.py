@@ -1,5 +1,5 @@
-"""Dictionary explanations, optional official refinements and reusable storage."""
+"""Contextual Gemini conversions and reusable notice storage."""
 
-from pipeline.glossary.models import GlossaryEntry, GlossaryLookup, NormInfo
+from pipeline.glossary.easy_language import EasyLanguageResult, simplify_notice
 
-__all__ = ["GlossaryEntry", "GlossaryLookup", "NormInfo"]
+__all__ = ["EasyLanguageResult", "simplify_notice"]

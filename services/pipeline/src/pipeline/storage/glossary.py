@@ -5,12 +5,7 @@ from psycopg.pq import TransactionStatus
 from psycopg.rows import tuple_row
 from psycopg.types.json import Jsonb
 
-from pipeline.glossary.models import (
-    ACTIVE_PROVIDERS,
-    GlossaryEntry,
-    GlossaryLookup,
-    normalize_query,
-)
+from pipeline.glossary.models import GlossaryEntry, GlossaryLookup, normalize_query
 
 _LOOKUP = """
 select l.status, l.providers_checked, l.queried_at,
@@ -120,9 +115,9 @@ def _entry_values(entry: GlossaryEntry, result: GlossaryLookup) -> tuple[object,
 def save_glossary(conn: Connection, result: GlossaryLookup) -> None:
     """Save a complete successful refresh without committing the caller's work.
 
-    A newer saved lookup wins over an older response. Active dictionary meanings
-    are never replaced with an empty result. A historical excluded-only lookup
-    can become not_found after both active sources succeed with empty searches;
+    A newer saved lookup wins over an older response. Dictionary meanings are
+    never replaced with an empty result. A historical other-provider lookup
+    can become not_found after successful empty searches of both dictionaries;
     its original dictionary entry rows are preserved.
     An idle non-autocommit connection gets an outer transaction so the nested
     transaction below is a savepoint; the caller still owns its final commit.
@@ -153,16 +148,15 @@ def save_glossary(conn: Connection, result: GlossaryLookup) -> None:
         if not is_new and stored[1] >= result.queried_at:
             return
         if stored[0] == "found" and result.status == "not_found":
-            definition_only = result.providers_checked == ("opendict",)
-            if result.providers_checked != ACTIVE_PROVIDERS and not definition_only:
+            if result.providers_checked != ("stdict", "opendict"):
                 raise GlossaryStorageError("검색 결과가 없어 기존 용어 설명을 보존했습니다.")
             cursor.execute(
                 "select exists (select 1 from public.glossary_lookup_entries "
-                "where query = %s and provider = any(%s))",
-                (result.query, ["opendict"] if definition_only else list(ACTIVE_PROVIDERS)),
+                "where query = %s and provider in ('stdict', 'opendict'))",
+                (result.query,),
             )
-            active_meanings = cursor.fetchone()
-            if active_meanings is None or active_meanings[0] is not False:
+            ourmalsam_meanings = cursor.fetchone()
+            if ourmalsam_meanings is None or ourmalsam_meanings[0] is not False:
                 raise GlossaryStorageError("검색 결과가 없어 기존 용어 설명을 보존했습니다.")
 
         # Stable locking order avoids deadlocks for shared meanings in two queries.
