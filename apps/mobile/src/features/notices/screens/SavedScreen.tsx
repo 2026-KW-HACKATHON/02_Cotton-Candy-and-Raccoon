@@ -8,8 +8,18 @@ import { NoticeCard } from "../components/NoticeCard";
 import { NoticeState } from "../components/NoticeState";
 import { useNotices } from "../hooks/useNotices";
 import { useBookmarkStore } from "../store/bookmarkStore";
+import { useDisplayPreferences } from "@/shared/accessibility/displayPreferences";
+import { EasyNoticeListScreen } from "./EasyNoticeListScreen";
 
 export function SavedScreen() {
+  const mode = useDisplayPreferences((state) => state.mode);
+  return mode === "easy" ? (
+    <EasyNoticeListScreen kind="saved" />
+  ) : (
+    <StandardSavedScreen />
+  );
+}
+function StandardSavedScreen() {
   const query = useNotices();
   const ids = useBookmarkStore((state) => state.savedIds);
   const [recentFirst, setRecentFirst] = useState(true);

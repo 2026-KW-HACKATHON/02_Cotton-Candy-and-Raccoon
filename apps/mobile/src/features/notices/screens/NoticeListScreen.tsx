@@ -17,8 +17,17 @@ import {
   CATEGORIES,
   useNoticeListViewModel,
 } from "../hooks/useNoticeListViewModel";
+import { EasyNoticeListScreen } from "./EasyNoticeListScreen";
 
 export function NoticeListScreen() {
+  const mode = useDisplayPreferences((state) => state.mode);
+  return mode === "easy" ? (
+    <EasyNoticeListScreen kind="notices" />
+  ) : (
+    <StandardNoticeListScreen />
+  );
+}
+function StandardNoticeListScreen() {
   const vm = useNoticeListViewModel();
   const fontScale = useDisplayPreferences((state) => state.fontScale);
   return (

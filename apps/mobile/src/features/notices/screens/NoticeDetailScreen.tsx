@@ -12,6 +12,8 @@ import { CategoryBadge } from "../components/CategoryBadge";
 import { NoticeState } from "../components/NoticeState";
 import { useNotice } from "../hooks/useNotices";
 import { useBookmarkStore } from "../store/bookmarkStore";
+import { useDisplayPreferences } from "@/shared/accessibility/displayPreferences";
+import { EasyNoticeDetailScreen } from "./EasyNoticeDetailScreen";
 
 const SUMMARY_ICONS = [
   require("@/assets/figma/detail-imgIconSummaryCalendar.svg"),
@@ -20,6 +22,15 @@ const SUMMARY_ICONS = [
   require("@/assets/figma/detail-imgIconSummaryAlertCircle.svg"),
 ];
 export function NoticeDetailScreen() {
+  const mode = useDisplayPreferences((state) => state.mode);
+  const { id } = useLocalSearchParams<{ id: string }>();
+  return mode === "easy" ? (
+    <EasyNoticeDetailScreen key={id} />
+  ) : (
+    <StandardNoticeDetailScreen key={id} />
+  );
+}
+function StandardNoticeDetailScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const id = typeof params.id === "string" ? params.id : "";
   const query = useNotice(id);

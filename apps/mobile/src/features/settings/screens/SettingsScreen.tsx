@@ -7,13 +7,19 @@ import { Header } from "@/shared/ui/Header";
 import { AppText } from "@/shared/ui/AppText";
 import { useDisplayPreferences } from "@/shared/accessibility/displayPreferences";
 import { CARD_SHADOW, COLORS, RADIUS, SPACE } from "@/shared/theme/tokens";
+import { EasySettingsScreen } from "./EasySettingsScreen";
 
 // 슬라이더 위치와 레이블은 같은 인덱스로 연결되는 세 단계의 앱 내부 글자 배율이다.
 const FONT_SIZES = [0.9, 1, 1.15];
 const FONT_LABELS = ["작게", "보통", "크게"];
 export function SettingsScreen() {
+  const mode = useDisplayPreferences((state) => state.mode);
+  return mode === "easy" ? <EasySettingsScreen /> : <StandardSettingsScreen />;
+}
+function StandardSettingsScreen() {
   const fontScale = useDisplayPreferences((state) => state.fontScale);
   const setFontScale = useDisplayPreferences((state) => state.setFontScale);
+  const setMode = useDisplayPreferences((state) => state.setMode);
   const [infoOpen, setInfoOpen] = useState(false);
   return (
     <Screen
@@ -42,12 +48,12 @@ export function SettingsScreen() {
             </AppText>
           </View>
         </View>
-        <View
+        <Pressable
           accessibilityRole="radio"
-          accessibilityState={{ checked: false, disabled: true }}
+          onPress={() => setMode("easy")}
+          accessibilityState={{ checked: false }}
           aria-checked={false}
-          aria-disabled={true}
-          accessibilityLabel="편한 화면, 준비 중"
+          accessibilityLabel="편한 화면으로 변경"
           style={styles.option}
         >
           <Image
@@ -57,10 +63,10 @@ export function SettingsScreen() {
           <View style={{ flex: 1, gap: 3.692 }}>
             <AppText variant="bold">편한 화면</AppText>
             <AppText secondary size={11.08}>
-              큰 글씨와 간단한 구성 · 준비 중
+              큰 글씨와 간단한 구성
             </AppText>
           </View>
-        </View>
+        </Pressable>
       </View>
       <View style={styles.panel}>
         <AppText variant="bold" size={16.62}>
@@ -169,8 +175,8 @@ export function SettingsScreen() {
             </AppText>
             <AppText>우리 동네의 중요한 공문을 더 가까이, 더 쉽게</AppText>
             <AppText secondary size={12.92}>
-              버전 1.0.0 · 화면 검토용 UI{"\n"}편한 화면과 실제 서버 연동은 준비
-              중입니다.{"\n"}글자 크기 설정은 앱 실행 중에 유지됩니다.
+              버전 1.0.0 · 화면 검토용 UI{"\n"}실제 서버 연동은 준비 중입니다.
+              {"\n"}화면 방식과 글자 크기는 다음 실행에도 유지됩니다.
             </AppText>
             <Pressable
               accessibilityRole="button"

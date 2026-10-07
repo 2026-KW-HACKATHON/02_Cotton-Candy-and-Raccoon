@@ -20,8 +20,18 @@ import {
 import { NoticeState } from "../components/NoticeState";
 import { useNotices } from "../hooks/useNotices";
 import { type Notice } from "../types/notice";
+import { useDisplayPreferences } from "@/shared/accessibility/displayPreferences";
+import { EasyNoticeListScreen } from "./EasyNoticeListScreen";
 
 export function HomeScreen() {
+  const mode = useDisplayPreferences((state) => state.mode);
+  return mode === "easy" ? (
+    <EasyNoticeListScreen kind="home" />
+  ) : (
+    <StandardHomeScreen />
+  );
+}
+function StandardHomeScreen() {
   const query = useNotices();
   const [index, setIndex] = useState(0);
   const list = useRef<FlatList<Notice>>(null);
