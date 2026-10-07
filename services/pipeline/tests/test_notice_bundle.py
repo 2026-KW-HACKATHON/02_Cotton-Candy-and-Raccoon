@@ -17,18 +17,28 @@ from pipeline.storage.notice_bundle import save_notice_with_files
 def notice() -> NoticeRecord:
     post_sn = "00" + uuid4().hex
     return NoticeRecord(
-        category="nowon", dong_group=None, is_pinned=False, post_sn=post_sn,
-        title="원래 제목", department="원래 부서", registered_on=date(2026, 9, 25),
+        category="nowon",
+        dong_group=None,
+        is_pinned=False,
+        post_sn=post_sn,
+        title="원래 제목",
+        department="원래 부서",
+        registered_on=date(2026, 9, 25),
         url=f"https://www.nowon.kr/notice?q_bbscttSn={post_sn}",
-        body_html="<p>원래 본문</p>", license_type="KOGL-4",
+        body_html="<p>원래 본문</p>",
+        license_type="KOGL-4",
     )
 
 
 @pytest.fixture
 def first_file(notice: NoticeRecord) -> FileRecord:
     return FileRecord(
-        category=notice.category, post_sn=notice.post_sn, kind="attachment",
-        file_sn="10", file_id="file-a", file_name="안내.pdf",
+        category=notice.category,
+        post_sn=notice.post_sn,
+        kind="attachment",
+        file_sn="10",
+        file_id="file-a",
+        file_name="안내.pdf",
         url="https://www.nowon.kr/file?q_fileSn=10&q_fileId=file-a",
     )
 
@@ -36,8 +46,12 @@ def first_file(notice: NoticeRecord) -> FileRecord:
 @pytest.fixture
 def second_file(notice: NoticeRecord) -> FileRecord:
     return FileRecord(
-        category=notice.category, post_sn=notice.post_sn, kind="inline_image",
-        file_sn="10", file_id="file-b", file_name=None,
+        category=notice.category,
+        post_sn=notice.post_sn,
+        kind="inline_image",
+        file_sn="10",
+        file_id="file-b",
+        file_name=None,
         url="https://www.nowon.kr/file?q_fileSn=10&q_fileId=file-b",
     )
 
@@ -59,7 +73,8 @@ def db_conn():
 
 
 def test_rejects_wrong_parent_before_writing(
-    notice: NoticeRecord, first_file: FileRecord,
+    notice: NoticeRecord,
+    first_file: FileRecord,
 ) -> None:
     conn = MagicMock()
     with pytest.raises(ValueError, match="게시물 번호"):
@@ -68,13 +83,19 @@ def test_rejects_wrong_parent_before_writing(
 
 
 def test_rejects_conflicting_duplicate_before_writing(
-    notice: NoticeRecord, first_file: FileRecord,
+    notice: NoticeRecord,
+    first_file: FileRecord,
 ) -> None:
     conn = MagicMock()
     with pytest.raises(ValueError, match="충돌"):
-        save_notice_with_files(conn, notice, [
-            first_file, replace(first_file, file_sn="20"),
-        ])
+        save_notice_with_files(
+            conn,
+            notice,
+            [
+                first_file,
+                replace(first_file, file_sn="20"),
+            ],
+        )
     conn.transaction.assert_not_called()
 
 
@@ -86,7 +107,8 @@ def test_rejects_missing_file_list(notice: NoticeRecord) -> None:
 
 
 def test_new_notice_first_files_do_not_mark_modified(
-    notice: NoticeRecord, first_file: FileRecord,
+    notice: NoticeRecord,
+    first_file: FileRecord,
 ) -> None:
     conn = MagicMock()
     with (
@@ -104,14 +126,22 @@ def test_new_notice_first_files_do_not_mark_modified(
 
 
 def test_same_files_in_different_order_are_not_replaced(
-    notice: NoticeRecord, first_file: FileRecord, second_file: FileRecord,
+    notice: NoticeRecord,
+    first_file: FileRecord,
+    second_file: FileRecord,
 ) -> None:
     conn = MagicMock()
     stored = {
-        (first_file.file_id, first_file.kind):
-            (first_file.file_sn, first_file.file_name, first_file.url),
-        (second_file.file_id, second_file.kind):
-            (second_file.file_sn, second_file.file_name, second_file.url),
+        (first_file.file_key, first_file.kind): (
+            first_file.file_sn,
+            first_file.file_name,
+            first_file.url,
+        ),
+        (second_file.file_key, second_file.kind): (
+            second_file.file_sn,
+            second_file.file_name,
+            second_file.url,
+        ),
     }
     with (
         patch("pipeline.storage.notice_bundle.insert_notice_if_absent", return_value=None),
@@ -125,12 +155,17 @@ def test_same_files_in_different_order_are_not_replaced(
 
 
 def test_existing_file_change_replaces_rows_and_marks_modified(
-    notice: NoticeRecord, first_file: FileRecord,
+    notice: NoticeRecord,
+    first_file: FileRecord,
 ) -> None:
     conn = MagicMock()
-    stored = {(first_file.file_id, first_file.kind): (
-        first_file.file_sn, "이전 이름.pdf", first_file.url,
-    )}
+    stored = {
+        (first_file.file_key, first_file.kind): (
+            first_file.file_sn,
+            "이전 이름.pdf",
+            first_file.url,
+        )
+    }
     with (
         patch("pipeline.storage.notice_bundle.insert_notice_if_absent", return_value=None),
         patch("pipeline.storage.notice_bundle.save_notice", return_value=42),
@@ -149,18 +184,23 @@ def _file_rows(conn: psycopg.Connection, notice_id: int) -> list[tuple]:
     with conn.cursor() as cursor:
         cursor.execute(
             "select id, kind, file_sn, file_id, file_name, url "
-            "from notice_files where notice_id = %s order by file_id, kind", (notice_id,),
+            "from notice_files where notice_id = %s order by file_id, kind",
+            (notice_id,),
         )
         return cursor.fetchall()
 
 
 def test_new_repeat_and_order_only_preserve_rows(
-    db_conn, notice: NoticeRecord, first_file: FileRecord, second_file: FileRecord,
+    db_conn,
+    notice: NoticeRecord,
+    first_file: FileRecord,
+    second_file: FileRecord,
 ) -> None:
     notice_id = save_notice_with_files(db_conn, notice, [first_file, second_file])
     before = _file_rows(db_conn, notice_id)
     assert [(row[1], row[3]) for row in before] == [
-        ("attachment", "file-a"), ("inline_image", "file-b"),
+        ("attachment", "file-a"),
+        ("inline_image", "file-b"),
     ]
     with db_conn.cursor() as cursor:
         cursor.execute("select post_sn, is_modified from notices where id = %s", (notice_id,))
@@ -175,13 +215,18 @@ def test_new_repeat_and_order_only_preserve_rows(
 
 @pytest.mark.parametrize("change", ["add", "delete", "replace", "metadata", "empty"])
 def test_existing_file_changes_mark_modified(
-    db_conn, notice: NoticeRecord, first_file: FileRecord,
-    second_file: FileRecord, change: str,
+    db_conn,
+    notice: NoticeRecord,
+    first_file: FileRecord,
+    second_file: FileRecord,
+    change: str,
 ) -> None:
     initial = [first_file, second_file]
     notice_id = save_notice_with_files(db_conn, notice, initial)
     replacement = replace(
-        first_file, file_id="file-c", file_sn="10",
+        first_file,
+        file_id="file-c",
+        file_sn="10",
         url="https://www.nowon.kr/file?q_fileSn=10&q_fileId=file-c",
     )
     changed = {
@@ -201,7 +246,9 @@ def test_existing_file_changes_mark_modified(
 
 
 def test_existing_empty_list_then_file_addition_marks_modified(
-    db_conn, notice: NoticeRecord, first_file: FileRecord,
+    db_conn,
+    notice: NoticeRecord,
+    first_file: FileRecord,
 ) -> None:
     notice_id = save_notice_with_files(db_conn, notice, [])
     assert save_notice_with_files(db_conn, notice, [first_file]) == notice_id
@@ -211,7 +258,10 @@ def test_existing_empty_list_then_file_addition_marks_modified(
 
 
 def test_file_insert_failure_rolls_back_notice_and_file_changes(
-    db_conn, notice: NoticeRecord, first_file: FileRecord, second_file: FileRecord,
+    db_conn,
+    notice: NoticeRecord,
+    first_file: FileRecord,
+    second_file: FileRecord,
 ) -> None:
     notice_id = save_notice_with_files(db_conn, notice, [first_file])
     before = _file_rows(db_conn, notice_id)
@@ -221,7 +271,9 @@ def test_file_insert_failure_rolls_back_notice_and_file_changes(
     ):
         with pytest.raises(psycopg.IntegrityError, match="injected file failure"):
             save_notice_with_files(
-                db_conn, replace(notice, title="변경된 제목"), [second_file],
+                db_conn,
+                replace(notice, title="변경된 제목"),
+                [second_file],
             )
     assert _file_rows(db_conn, notice_id) == before
     with db_conn.cursor() as cursor:
@@ -230,7 +282,9 @@ def test_file_insert_failure_rolls_back_notice_and_file_changes(
 
 
 def test_new_notice_is_rolled_back_when_file_insert_fails(
-    db_conn, notice: NoticeRecord, first_file: FileRecord,
+    db_conn,
+    notice: NoticeRecord,
+    first_file: FileRecord,
 ) -> None:
     with patch(
         "pipeline.storage.notice_bundle._insert_file",
@@ -244,3 +298,42 @@ def test_new_notice_is_rolled_back_when_file_insert_fails(
             (notice.category, notice.post_sn),
         )
         assert cursor.fetchone() is None
+
+
+def test_files_without_ids_use_distinct_url_keys_and_preserve_nulls(
+    db_conn,
+    notice,
+    first_file,
+) -> None:
+    first = replace(first_file, file_sn=None, file_id=None, url="https://www.nowon.kr/안내.pdf")
+    second = replace(first, url="https://www.nowon.kr/다른안내.pdf")
+    image = replace(first, kind="inline_image", file_name=None)
+    notice_id = save_notice_with_files(db_conn, notice, [first, second, image])
+    rows = db_conn.execute(
+        "select file_key, kind, file_sn, file_id, url from notice_files "
+        "where notice_id = %s order by file_key, kind",
+        (notice_id,),
+    ).fetchall()
+    assert set(rows) == {
+        (file.file_key, file.kind, None, None, file.url) for file in (first, second, image)
+    }
+    before = _file_rows(db_conn, notice_id)
+    assert save_notice_with_files(db_conn, notice, [image, second, first, first]) == notice_id
+    assert _file_rows(db_conn, notice_id) == before
+    assert db_conn.execute(
+        "select is_modified from notices where id = %s",
+        (notice_id,),
+    ).fetchone() == (False,)
+
+
+def test_real_file_id_and_missing_group_are_stored_without_synthetic_id(
+    db_conn,
+    notice,
+    first_file,
+) -> None:
+    file = replace(first_file, file_sn=None)
+    notice_id = save_notice_with_files(db_conn, notice, [file])
+    assert db_conn.execute(
+        "select file_sn, file_id, file_key from notice_files where notice_id = %s",
+        (notice_id,),
+    ).fetchone() == (None, first_file.file_id, "id:" + first_file.file_id)

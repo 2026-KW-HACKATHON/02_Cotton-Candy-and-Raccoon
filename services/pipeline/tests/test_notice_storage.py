@@ -17,10 +17,16 @@ from pipeline.storage.notices import save_notice
 def record() -> NoticeRecord:
     post_sn = "00" + uuid4().hex
     return NoticeRecord(
-        category="nowon", dong_group=None, is_pinned=False, post_sn=post_sn,
-        title="안내", department="교육지원과", registered_on=date(2026, 9, 25),
+        category="nowon",
+        dong_group=None,
+        is_pinned=False,
+        post_sn=post_sn,
+        title="안내",
+        department="교육지원과",
+        registered_on=date(2026, 9, 25),
         url=f"https://www.nowon.kr/notice?q_bbscttSn={post_sn}",
-        body_html="<p>원문</p>", license_type="KOGL-4",
+        body_html="<p>원문</p>",
+        license_type="KOGL-4",
     )
 
 
@@ -45,10 +51,11 @@ def test_save_notice_binds_all_values_and_returns_id(record: NoticeRecord) -> No
     assert save_notice(conn, record) == 42
 
     sql, values = cursor.execute.call_args.args
-    assert "on conflict (category, post_sn) do update" in sql
+    assert "on conflict (category, source_board, post_sn) do update" in sql
     assert "returning id" in sql
-    assert values[3] == record.post_sn
-    assert values[6] == date(2026, 9, 25)
+    assert values[1] == "1001"
+    assert values[4] == record.post_sn
+    assert values[7] == date(2026, 9, 25)
     assert conn.commit.call_count == 0
     assert conn.rollback.call_count == 0
     assert conn.close.call_count == 0
@@ -76,13 +83,14 @@ def test_insert_repeat_department_visibility_and_timestamps(db_conn, record: Not
     with db_conn.cursor() as cursor:
         cursor.execute(
             "select category, post_sn, title, body_html, is_modified, is_visible, "
-            "created_at, updated_at from notices where id = %s", (notice_id,),
+            "created_at, updated_at from notices where id = %s",
+            (notice_id,),
         )
         initial = cursor.fetchone()
         assert initial[:6] == ("nowon", record.post_sn, "안내", "<p>원문</p>", False, True)
         cursor.execute(
-            "update notices set is_visible = false, updated_at = '2000-01-01' "
-            "where id = %s", (notice_id,),
+            "update notices set is_visible = false, updated_at = '2000-01-01' where id = %s",
+            (notice_id,),
         )
 
     assert save_notice(db_conn, record) == notice_id
@@ -90,7 +98,8 @@ def test_insert_repeat_department_visibility_and_timestamps(db_conn, record: Not
         cursor.execute(
             "select count(*), is_modified, is_visible, created_at, updated_at "
             "from notices where id = %s group by is_modified, is_visible, "
-            "created_at, updated_at", (notice_id,),
+            "created_at, updated_at",
+            (notice_id,),
         )
         count, modified, visible, created, updated = cursor.fetchone()
     assert (count, modified, visible) == (1, False, True)
@@ -103,15 +112,20 @@ def test_insert_repeat_department_visibility_and_timestamps(db_conn, record: Not
         assert cursor.fetchone() == ("새 부서", False)
 
 
-@pytest.mark.parametrize("changes", [
-    {"title": "수정된 제목"},
-    {"body_html": None},
-    {"registered_on": date(2026, 9, 26)},
-    {"url": "https://www.nowon.kr/changed"},
-    {"license_type": "KOGL-3"},
-])
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"title": "수정된 제목"},
+        {"body_html": None},
+        {"registered_on": date(2026, 9, 26)},
+        {"url": "https://www.nowon.kr/changed"},
+        {"license_type": "KOGL-3"},
+    ],
+)
 def test_five_fields_mark_modified_and_true_stays_true(
-    db_conn, record: NoticeRecord, changes: dict[str, object],
+    db_conn,
+    record: NoticeRecord,
+    changes: dict[str, object],
 ) -> None:
     notice_id = save_notice(db_conn, record)
     assert save_notice(db_conn, replace(record, **changes)) == notice_id
@@ -136,3 +150,17 @@ def test_caller_rollback_removes_uncommitted_notice(db_conn, record: NoticeRecor
             (record.category, record.post_sn),
         )
         assert cursor.fetchone() is None
+
+
+def test_nowon_and_dong_with_same_post_id_have_separate_board_keys(db_conn, record) -> None:
+    nowon_id = save_notice(db_conn, record)
+    dong = replace(record, category="dong", dong_group="wolgye1", license_type=None)
+    dong_id = save_notice(db_conn, dong)
+    assert nowon_id != dong_id
+    assert save_notice(db_conn, record) == nowon_id
+    assert save_notice(db_conn, dong) == dong_id
+    rows = db_conn.execute(
+        "select category, source_board, post_sn from notices where post_sn = %s order by category",
+        (record.post_sn,),
+    ).fetchall()
+    assert rows == [("dong", "1042", record.post_sn), ("nowon", "1001", record.post_sn)]

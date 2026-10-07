@@ -2,18 +2,20 @@
 
 Optional strings accept None, but not blank strings. Callers normalize empty
 source values to None. Dates, URLs and HTML are normalized by transform.
-FileRecord travels separately with its parent's (category, post_sn) key;
+FileRecord travels separately with its parent's (category, source_board, post_sn) key;
 storage must verify that key before resolving notice_id.
 """
 
 from dataclasses import dataclass
 from datetime import date
+from hashlib import sha256
 from typing import Literal
 
 NoticeCategory = Literal["nowon", "dong"]
 DongGroup = Literal["wolgye1", "other"]
 FileKind = Literal["attachment", "inline_image"]
 LicenseType = Literal["KOGL-1", "KOGL-2", "KOGL-3", "KOGL-4"]
+SOURCE_BOARDS: dict[NoticeCategory, str] = {"nowon": "1001", "dong": "1042"}
 
 
 def _string(name: str, value: object, *, optional: bool = False) -> None:
@@ -74,10 +76,22 @@ class RawNotice:
     body_html: str | None
     license_type: LicenseType | None
 
+    @property
+    def source_board(self) -> str:
+        """The existing adapters each collect one fixed official board."""
+        return SOURCE_BOARDS[self.category]
+
     def __post_init__(self) -> None:
         _notice_fields(
-            self.category, self.dong_group, self.is_pinned, self.post_sn,
-            self.title, self.url, self.department, self.body_html, self.license_type,
+            self.category,
+            self.dong_group,
+            self.is_pinned,
+            self.post_sn,
+            self.title,
+            self.url,
+            self.department,
+            self.body_html,
+            self.license_type,
         )
         _string("registered_on", self.registered_on)
 
@@ -97,10 +111,22 @@ class NoticeRecord:
     body_html: str | None
     license_type: LicenseType | None
 
+    @property
+    def source_board(self) -> str:
+        """Keep the board identity explicit at the storage boundary."""
+        return SOURCE_BOARDS[self.category]
+
     def __post_init__(self) -> None:
         _notice_fields(
-            self.category, self.dong_group, self.is_pinned, self.post_sn,
-            self.title, self.url, self.department, self.body_html, self.license_type,
+            self.category,
+            self.dong_group,
+            self.is_pinned,
+            self.post_sn,
+            self.title,
+            self.url,
+            self.department,
+            self.body_html,
+            self.license_type,
         )
         # datetime subclasses date, but would silently introduce a time component.
         if type(self.registered_on) is not date:
@@ -118,17 +144,34 @@ class FileRecord:
     category: NoticeCategory
     post_sn: str
     kind: FileKind
-    file_sn: str
-    file_id: str
+    file_sn: str | None
+    file_id: str | None
     file_name: str | None
     url: str
+
+    @property
+    def source_board(self) -> str:
+        return SOURCE_BOARDS[self.category]
+
+    @property
+    def file_key(self) -> str:
+        """Match the SQL identity using real IDs or the exact stored URL."""
+        if self.file_id is not None:
+            return "id:" + self.file_id
+        return "url:" + sha256(self.url.encode("utf-8")).hexdigest()
 
     def __post_init__(self) -> None:
         _choice("category", self.category, ("nowon", "dong"))
         _choice("kind", self.kind, ("attachment", "inline_image"))
         for name, value in (
-            ("post_sn", self.post_sn), ("file_sn", self.file_sn),
-            ("file_id", self.file_id), ("url", self.url),
+            ("post_sn", self.post_sn),
+            ("url", self.url),
         ):
             _string(name, value)
+        for name, value in (("file_sn", self.file_sn), ("file_id", self.file_id)):
+            _string(name, value, optional=True)
+            if value is not None and value != value.strip():
+                raise ValueError(f"{name} must not have surrounding whitespace")
+        if self.url != self.url.strip():
+            raise ValueError("url must not have surrounding whitespace")
         _string("file_name", self.file_name, optional=True)

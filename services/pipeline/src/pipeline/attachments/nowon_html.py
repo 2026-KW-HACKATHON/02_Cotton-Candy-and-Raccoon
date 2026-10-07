@@ -23,9 +23,14 @@ def _file_identity(url: str) -> tuple[str, str] | None:
     if sn_values is None and id_values is None:
         return None
     if (
-        sn_values is None or id_values is None
-        or len(sn_values) != 1 or len(id_values) != 1
-        or not sn_values[0].strip() or not id_values[0].strip()
+        sn_values is None
+        or id_values is None
+        or len(sn_values) != 1
+        or len(id_values) != 1
+        or not sn_values[0].strip()
+        or not id_values[0].strip()
+        or sn_values[0] != sn_values[0].strip()
+        or id_values[0] != id_values[0].strip()
     ):
         raise AttachmentError(
             "파일 URL의 식별 정보가 불완전하거나 중복되었습니다.",
@@ -37,11 +42,11 @@ def _file_identity(url: str) -> tuple[str, str] | None:
 def _unique_files(records: list[FileRecord]) -> dict[tuple[str, str], FileRecord]:
     files: dict[tuple[str, str], FileRecord] = {}
     for record in records:
-        key = (record.file_id, record.kind)
+        key = (record.file_key, record.kind)
         previous = files.get(key)
         if previous is not None and previous.url != record.url:
             raise AttachmentError(
-                "같은 file_id와 kind에 서로 다른 URL이 있습니다.",
+                "같은 file_key와 kind에 서로 다른 URL이 있습니다.",
                 code="file_reference_conflict",
             )
         files.setdefault(key, record)
@@ -55,14 +60,15 @@ def _normalize_nowon_file_url(url: str) -> str:
         parsed.scheme in ("http", "https")
         and parsed.hostname == "www.nowon.kr"
         and parsed.port in (None, 80, 443)
-        and parsed.username is None and parsed.password is None
+        and parsed.username is None
+        and parsed.password is None
     ):
         return urlunsplit(("https", "www.nowon.kr", parsed.path, parsed.query, parsed.fragment))
     return url
 
 
 def extract_files(notice: RawNotice) -> list[FileRecord]:
-    """Return one file reference per file_id and kind in the API body.
+    """Return one file reference per file_key and kind in the API body.
 
     URLs without both file identifiers are not file records. No network or DB
     access occurs.
@@ -85,7 +91,8 @@ def extract_files(notice: RawNotice) -> list[FileRecord]:
             parsed = urlsplit(url)
         except ValueError:
             raise AttachmentError(
-                "파일 URL 형식이 올바르지 않습니다.", code="invalid_file_url",
+                "파일 URL 형식이 올바르지 않습니다.",
+                code="invalid_file_url",
             ) from None
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
             continue
@@ -97,18 +104,21 @@ def extract_files(notice: RawNotice) -> list[FileRecord]:
         if is_attachment:
             download_name = element.get("download")
             file_name = (
-                download_name.strip() if isinstance(download_name, str) and download_name.strip()
+                download_name.strip()
+                if isinstance(download_name, str) and download_name.strip()
                 else element.get_text(" ", strip=True) or None
             )
-        files.append(FileRecord(
-            category=notice.category,
-            post_sn=notice.post_sn,
-            kind="attachment" if is_attachment else "inline_image",
-            file_sn=file_sn,
-            file_id=file_id,
-            file_name=file_name,
-            url=url,
-        ))
+        files.append(
+            FileRecord(
+                category=notice.category,
+                post_sn=notice.post_sn,
+                kind="attachment" if is_attachment else "inline_image",
+                file_sn=file_sn,
+                file_id=file_id,
+                file_name=file_name,
+                url=url,
+            )
+        )
     return list(_unique_files(files).values())
 
 
@@ -116,7 +126,8 @@ def extract_page_files(notice: RawNotice, page_html: str, page_url: str) -> list
     """Read the board's attachment row, failing if the page shape is incomplete."""
     soup = BeautifulSoup(page_html, "html.parser")
     rows = [
-        row for row in soup.select("tr")
+        row
+        for row in soup.select("tr")
         if (heading := row.find("th")) and "첨부파일" in heading.get_text(" ", strip=True)
     ]
     if len(rows) != 1:
@@ -162,15 +173,17 @@ def extract_page_files(notice: RawNotice, page_html: str, page_url: str) -> list
                 code="missing_file_identity",
             )
         file_sn, file_id = identity
-        files.append(FileRecord(
-            category=notice.category,
-            post_sn=notice.post_sn,
-            kind="attachment",
-            file_sn=file_sn,
-            file_id=file_id,
-            file_name=link.get_text(" ", strip=True) or None,
-            url=url,
-        ))
+        files.append(
+            FileRecord(
+                category=notice.category,
+                post_sn=notice.post_sn,
+                kind="attachment",
+                file_sn=file_sn,
+                file_id=file_id,
+                file_name=link.get_text(" ", strip=True) or None,
+                url=url,
+            )
+        )
     return list(_unique_files(files).values())
 
 

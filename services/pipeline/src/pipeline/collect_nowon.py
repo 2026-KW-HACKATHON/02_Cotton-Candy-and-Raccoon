@@ -26,7 +26,12 @@ from pipeline.storage.notice_bundle import save_notice_with_files
 from pipeline.transform.nowon import TransformError, transform_nowon_notice
 
 FailureStage = Literal[
-    "listing_conflict", "page_missing", "page", "attachments", "transform", "storage",
+    "listing_conflict",
+    "page_missing",
+    "page",
+    "attachments",
+    "transform",
+    "storage",
 ]
 
 
@@ -81,13 +86,13 @@ class ScheduledNowonResult:
     def complete(self) -> bool:
         """Whether this run's selected scope succeeded, not the whole API."""
         return (
-            self.listing_complete and not self.failures
-            and self.saved_count == self.selected_count
+            self.listing_complete and not self.failures and self.saved_count == self.selected_count
         )
 
 
 def _fetch_page_with_retry(
-    notice: RawNotice, settings: NowonSettings,
+    notice: RawNotice,
+    settings: NowonSettings,
 ) -> tuple[str, str]:
     for attempt in range(3):
         try:
@@ -95,32 +100,38 @@ def _fetch_page_with_retry(
         except NowonPageError as error:
             if error.rate_limited or not error.retryable or attempt == 2:
                 raise
-            sleep(0.2 * 2 ** attempt)
+            sleep(0.2 * 2**attempt)
     raise AssertionError("retry loop must return or raise")
 
 
 def _prepare_notice(
-    notice: RawNotice, settings: NowonSettings,
+    notice: RawNotice,
+    settings: NowonSettings,
 ) -> PreparedNotice:
     record = transform_nowon_notice(notice)
     try:
         body_files = extract_files(notice)
     except AttachmentError as error:
         return PreparedNotice(
-            record, [], NoticeFailure(notice.post_sn, "attachments", error.code),
+            record,
+            [],
+            NoticeFailure(notice.post_sn, "attachments", error.code),
         )
     try:
         page_url, page_html = _fetch_page_with_retry(notice, settings)
     except NowonPageMissing:
         return PreparedNotice(
-            record, [],
+            record,
+            [],
             NoticeFailure(notice.post_sn, "page_missing", "source_page_missing"),
         )
     except NowonPageError as error:
         return PreparedNotice(
-            record, [],
+            record,
+            [],
             NoticeFailure(
-                notice.post_sn, "page",
+                notice.post_sn,
+                "page",
                 "rate_limited" if error.rate_limited else "page_unavailable",
             ),
         )
@@ -129,24 +140,34 @@ def _prepare_notice(
         files = merge_files(body_files, page_files)
     except AttachmentError as error:
         return PreparedNotice(
-            record, [], NoticeFailure(notice.post_sn, "attachments", error.code),
+            record,
+            [],
+            NoticeFailure(notice.post_sn, "attachments", error.code),
         )
     return PreparedNotice(record, files, None)
 
 
 def _save_notices(
-    conn: psycopg.Connection[tuple], notices: tuple[RawNotice, ...],
-    settings: NowonSettings, database_url: str, *,
-    conflicts: set[str] | None = None, paced: bool = False,
+    conn: psycopg.Connection[tuple],
+    notices: tuple[RawNotice, ...],
+    settings: NowonSettings,
+    database_url: str,
+    *,
+    conflicts: set[str] | None = None,
+    paced: bool = False,
 ) -> tuple[int, tuple[NoticeFailure, ...]]:
     failures: list[NoticeFailure] = []
     saved_count = 0
     try:
         for index, notice in enumerate(notices):
             if conflicts and notice.post_sn in conflicts:
-                failures.append(NoticeFailure(
-                    notice.post_sn, "listing_conflict", "listing_conflict",
-                ))
+                failures.append(
+                    NoticeFailure(
+                        notice.post_sn,
+                        "listing_conflict",
+                        "listing_conflict",
+                    )
+                )
                 continue
             if paced and index:
                 sleep(1)
@@ -160,14 +181,16 @@ def _save_notices(
                 if prepared.failure.reason_code == "rate_limited":
                     failures.extend(
                         NoticeFailure(rest.post_sn, "page", "rate_limited_not_attempted")
-                        for rest in notices[index + 1:]
+                        for rest in notices[index + 1 :]
                     )
                     break
                 continue
             if conn.closed:
                 try:
                     conn = psycopg.connect(
-                        database_url, connect_timeout=5, autocommit=True,
+                        database_url,
+                        connect_timeout=5,
+                        autocommit=True,
                     )
                 except psycopg.Error:
                     failures.extend(
@@ -200,30 +223,46 @@ def collect_and_save_nowon(
     notices = listing.notices[:limit] if limit is not None else listing.notices
     limited = limit is not None and len(notices) < len(listing.notices)
     failed_pages = tuple(
-        (page.start_index, page.end_index)
-        for page in listing.pages if not page.succeeded
+        (page.start_index, page.end_index) for page in listing.pages if not page.succeeded
     )
     if not notices:
         return CollectNowonResult(
-            listing.total_count, len(listing.notices), 0, 0,
-            listing.complete, limited, failed_pages, (),
+            listing.total_count,
+            len(listing.notices),
+            0,
+            0,
+            listing.complete,
+            limited,
+            failed_pages,
+            (),
         )
 
     # autocommit keeps save_notice_with_files' transaction scoped to one notice.
     conn = psycopg.connect(database.database_url, connect_timeout=5, autocommit=True)
     saved_count, failures = _save_notices(
-        conn, notices, settings, database.database_url,
+        conn,
+        notices,
+        settings,
+        database.database_url,
         conflicts=set(listing.conflicting_post_sns),
     )
 
     return CollectNowonResult(
-        listing.total_count, len(listing.notices), len(notices), saved_count,
-        listing.complete, limited, failed_pages, failures,
+        listing.total_count,
+        len(listing.notices),
+        len(notices),
+        saved_count,
+        listing.complete,
+        limited,
+        failed_pages,
+        failures,
     )
 
 
 def _fetch_api_page_with_retry(
-    settings: NowonSettings, start: int, end: int,
+    settings: NowonSettings,
+    start: int,
+    end: int,
 ) -> NowonPage:
     for attempt in range(3):
         try:
@@ -231,24 +270,28 @@ def _fetch_api_page_with_retry(
         except NowonSourceError as error:
             if error.rate_limited or not error.retryable or attempt == 2:
                 raise
-            sleep(0.2 * 2 ** attempt)
+            sleep(0.2 * 2**attempt)
     raise AssertionError("retry loop must return or raise")
 
 
 def _known_nowon_ids(
-    conn: psycopg.Connection[tuple], notices: tuple[RawNotice, ...],
+    conn: psycopg.Connection[tuple],
+    notices: tuple[RawNotice, ...],
 ) -> set[str]:
     if not notices:
         return set()
     rows = conn.execute(
-        "SELECT post_sn FROM notices WHERE category = 'nowon' AND post_sn = ANY(%s)",
+        "SELECT post_sn FROM notices WHERE category = 'nowon' "
+        "AND source_board = '1001' AND post_sn = ANY(%s)",
         ([notice.post_sn for notice in notices],),
     ).fetchall()
     return {row[0] for row in rows}
 
 
 def collect_and_save_nowon_scheduled(
-    settings: NowonSettings, database: DatabaseSettings, *,
+    settings: NowonSettings,
+    database: DatabaseSettings,
+    *,
     mode: Literal["new", "refresh"],
 ) -> ScheduledNowonResult:
     """Process 50 API rows on first run, then 10 recent rows by schedule."""
@@ -323,7 +366,8 @@ def collect_and_save_nowon_scheduled(
             try:
                 latest = _fetch_api_page_with_retry(settings, 1, 1)
                 if (
-                    latest.total_count != first.total_count or not latest.notices
+                    latest.total_count != first.total_count
+                    or not latest.notices
                     or latest.notices[0].post_sn != first.notices[0].post_sn
                 ):
                     listing_complete = False
@@ -337,13 +381,28 @@ def collect_and_save_nowon_scheduled(
     except (psycopg.Error, NowonSourceError):
         conn.close()
         raise
-    saved_count, failures = _save_notices(
-        conn, chosen, settings, database.database_url,
-        conflicts=conflicts, paced=True,
-    ) if chosen else (0, ())
+    saved_count, failures = (
+        _save_notices(
+            conn,
+            chosen,
+            settings,
+            database.database_url,
+            conflicts=conflicts,
+            paced=True,
+        )
+        if chosen
+        else (0, ())
+    )
     if not chosen:
         conn.close()
     return ScheduledNowonResult(
-        mode, first.total_count, len(chosen), saved_count, pages_read,
-        initial_baseline, listing_complete, tuple(failed_ranges), failures,
+        mode,
+        first.total_count,
+        len(chosen),
+        saved_count,
+        pages_read,
+        initial_baseline,
+        listing_complete,
+        tuple(failed_ranges),
+        failures,
     )

@@ -6,10 +6,10 @@ from pipeline.models import NoticeRecord
 
 UPSERT_NOTICE = """
 insert into notices (
-    category, dong_group, is_pinned, post_sn, title, department,
+    category, source_board, dong_group, is_pinned, post_sn, title, department,
     registered_on, url, body_html, license_type
-) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-on conflict (category, post_sn) do update set
+) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+on conflict (category, source_board, post_sn) do update set
     dong_group = excluded.dong_group,
     is_pinned = excluded.is_pinned,
     title = excluded.title,
@@ -32,19 +32,27 @@ returning id
 
 INSERT_NOTICE_IF_ABSENT = """
 insert into notices (
-    category, dong_group, is_pinned, post_sn, title, department,
+    category, source_board, dong_group, is_pinned, post_sn, title, department,
     registered_on, url, body_html, license_type
-) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-on conflict (category, post_sn) do nothing
+) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+on conflict (category, source_board, post_sn) do nothing
 returning id
 """
 
 
 def _values(record: NoticeRecord) -> tuple[object, ...]:
     return (
-        record.category, record.dong_group, record.is_pinned, record.post_sn,
-        record.title, record.department, record.registered_on, record.url,
-        record.body_html, record.license_type,
+        record.category,
+        record.source_board,
+        record.dong_group,
+        record.is_pinned,
+        record.post_sn,
+        record.title,
+        record.department,
+        record.registered_on,
+        record.url,
+        record.body_html,
+        record.license_type,
     )
 
 
