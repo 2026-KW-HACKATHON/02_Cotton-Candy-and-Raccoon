@@ -17,13 +17,9 @@ from pipeline.storage.notice_bundle import save_notice_with_files
 def notice() -> NoticeRecord:
     post_sn = "00" + uuid4().hex
     return NoticeRecord(
-        category="nowon",
-        dong_group=None,
-        is_pinned=False,
-        post_sn=post_sn,
-        title="원래 제목",
-        department="원래 부서",
-        registered_on=date(2026, 9, 25),
+        source_board="1001",
+        category="nowon", dong_group=None, is_pinned=False, post_sn=post_sn,
+        title="원래 제목", department="원래 부서", registered_on=date(2026, 9, 25),
         url=f"https://www.nowon.kr/notice?q_bbscttSn={post_sn}",
         body_html="<p>원래 본문</p>",
         license_type="KOGL-4",
@@ -33,12 +29,9 @@ def notice() -> NoticeRecord:
 @pytest.fixture
 def first_file(notice: NoticeRecord) -> FileRecord:
     return FileRecord(
-        category=notice.category,
-        post_sn=notice.post_sn,
-        kind="attachment",
-        file_sn="10",
-        file_id="file-a",
-        file_name="안내.pdf",
+        source_board=notice.source_board,
+        category=notice.category, post_sn=notice.post_sn, kind="attachment",
+        file_sn="10", file_id="file-a", file_name="안내.pdf",
         url="https://www.nowon.kr/file?q_fileSn=10&q_fileId=file-a",
     )
 
@@ -46,12 +39,9 @@ def first_file(notice: NoticeRecord) -> FileRecord:
 @pytest.fixture
 def second_file(notice: NoticeRecord) -> FileRecord:
     return FileRecord(
-        category=notice.category,
-        post_sn=notice.post_sn,
-        kind="inline_image",
-        file_sn="10",
-        file_id="file-b",
-        file_name=None,
+        source_board=notice.source_board,
+        category=notice.category, post_sn=notice.post_sn, kind="inline_image",
+        file_sn="10", file_id="file-b", file_name=None,
         url="https://www.nowon.kr/file?q_fileSn=10&q_fileId=file-b",
     )
 
@@ -132,16 +122,10 @@ def test_same_files_in_different_order_are_not_replaced(
 ) -> None:
     conn = MagicMock()
     stored = {
-        (first_file.file_key, first_file.kind): (
-            first_file.file_sn,
-            first_file.file_name,
-            first_file.url,
-        ),
-        (second_file.file_key, second_file.kind): (
-            second_file.file_sn,
-            second_file.file_name,
-            second_file.url,
-        ),
+        (first_file.file_key, first_file.kind):
+            (first_file.file_sn, first_file.file_id, first_file.file_name, first_file.url),
+        (second_file.file_key, second_file.kind):
+            (second_file.file_sn, second_file.file_id, second_file.file_name, second_file.url),
     }
     with (
         patch("pipeline.storage.notice_bundle.insert_notice_if_absent", return_value=None),
@@ -159,13 +143,9 @@ def test_existing_file_change_replaces_rows_and_marks_modified(
     first_file: FileRecord,
 ) -> None:
     conn = MagicMock()
-    stored = {
-        (first_file.file_key, first_file.kind): (
-            first_file.file_sn,
-            "이전 이름.pdf",
-            first_file.url,
-        )
-    }
+    stored = {(first_file.file_key, first_file.kind): (
+        first_file.file_sn, first_file.file_id, "이전 이름.pdf", first_file.url,
+    )}
     with (
         patch("pipeline.storage.notice_bundle.insert_notice_if_absent", return_value=None),
         patch("pipeline.storage.notice_bundle.save_notice", return_value=42),

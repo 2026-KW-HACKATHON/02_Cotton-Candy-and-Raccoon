@@ -7,7 +7,7 @@ from psycopg import Connection
 from pipeline.models import FileRecord, NoticeRecord
 from pipeline.storage.notices import insert_notice_if_absent, save_notice
 
-StoredFile = tuple[str | None, str | None, str]
+StoredFile = tuple[str | None, str | None, str | None, str]
 
 
 def _new_files(
@@ -33,12 +33,13 @@ def _new_files(
 def _stored_files(conn: Connection, notice_id: int) -> dict[tuple[str, str], StoredFile]:
     with conn.cursor() as cursor:
         cursor.execute(
-            "select file_key, kind, file_sn, file_name, url from notice_files where notice_id = %s",
+            "select file_key, kind, file_sn, file_id, file_name, url "
+            "from notice_files where notice_id = %s",
             (notice_id,),
         )
         return {
-            (file_key, kind): (file_sn, file_name, url)
-            for file_key, kind, file_sn, file_name, url in cursor.fetchall()
+            (file_key, kind): (file_sn, file_id, file_name, url)
+            for file_key, kind, file_sn, file_id, file_name, url in cursor.fetchall()
         }
 
 
@@ -74,7 +75,8 @@ def save_notice_with_files(
         raise ValueError("파일 목록 수집이 완료되지 않았습니다.")
     incoming = _new_files(notice, files)
     incoming_values = {
-        key: (file.file_sn, file.file_name, file.url) for key, file in incoming.items()
+        key: (file.file_sn, file.file_id, file.file_name, file.url)
+        for key, file in incoming.items()
     }
 
     with conn.transaction():

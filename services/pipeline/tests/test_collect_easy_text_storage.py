@@ -82,6 +82,7 @@ def committed_easy_db() -> Iterator[DatabaseSettings]:
 def _notice(source: str, post_sn: str) -> RawNotice:
     return RawNotice(
         category="nowon" if source == "nowon" else "dong",
+        source_board="1001" if source == "nowon" else "1042",
         dong_group=None if source == "nowon" else "wolgye1",
         is_pinned=False,
         post_sn=post_sn,

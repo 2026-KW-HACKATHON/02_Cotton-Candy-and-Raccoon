@@ -118,6 +118,7 @@ def _parse_root(content: bytes) -> ElementTree.Element:
 
 def _parse_row(row: ElementTree.Element) -> RawNotice:
     return RawNotice(
+        source_board="1001",
         category="nowon",
         dong_group=None,
         is_pinned=False,

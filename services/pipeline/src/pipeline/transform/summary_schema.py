@@ -1,6 +1,7 @@
 """Validate the JSON contract for a resident-facing notice summary."""
 
 import re
+from dataclasses import dataclass
 from datetime import date
 from typing import Annotated, Literal
 
@@ -13,10 +14,26 @@ def _single_line(value: str) -> str:
     return value
 
 
-MAX_SHORT_TEXT_LENGTH = 15
-ShortText = Annotated[
-    str, Field(min_length=1, max_length=MAX_SHORT_TEXT_LENGTH), AfterValidator(_single_line)
-]
+FIELD_TEXT_LIMITS = {
+    "summary": 40,
+    "audience": 40,
+    "action": 60,
+    "notes": 60,
+    "dates.label": 30,
+    "dates.text": 30,
+    "publisher": 30,
+    "applicable_area": 30,
+    "location": 30,
+    "status_detail": 30,
+    "changed_details": 30,
+    "topics.title": 20,
+    "topics.summary": 40,
+    "uncertainties": 15,
+}
+MAX_NOTES_ITEMS = 5
+SingleLineText = Annotated[str, Field(min_length=1), AfterValidator(_single_line)]
+NoteText = Annotated[SingleLineText, Field(max_length=FIELD_TEXT_LIMITS["notes"])]
+UncertaintyText = Annotated[SingleLineText, Field(max_length=FIELD_TEXT_LIMITS["uncertainties"])]
 Category = Literal["application", "event", "living", "obligation", "news", "mixed", "unknown"]
 
 
@@ -34,8 +51,8 @@ class DateEntry(BaseModel):
         "result",
         "other",
     ]
-    label: ShortText | None
-    text: ShortText | None
+    label: SingleLineText | None = Field(max_length=FIELD_TEXT_LIMITS["dates.label"])
+    text: SingleLineText | None = Field(max_length=FIELD_TEXT_LIMITS["dates.text"])
     start_date: str | None
     end_date: str | None
     start_time: str | None
@@ -61,9 +78,17 @@ class DateEntry(BaseModel):
 class Topic(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    title: ShortText
+    title: SingleLineText = Field(max_length=FIELD_TEXT_LIMITS["topics.title"])
     category: Category
-    summary: ShortText
+    summary: SingleLineText = Field(max_length=FIELD_TEXT_LIMITS["topics.summary"])
+
+
+@dataclass(frozen=True, slots=True)
+class MediaSource:
+    """A reference to one visual block actually included in this request."""
+
+    source_id: str
+    source_type: Literal["document", "image"]
 
 
 class Evidence(BaseModel):
@@ -89,6 +114,10 @@ class Evidence(BaseModel):
         "uncertainties",
     ]
     excerpt: str = Field(min_length=1)
+    source_type: Literal["text", "document", "image"] = "text"
+    source_id: SingleLineText | None = None
+    page: int | None = Field(default=None, ge=1)
+    verification: Literal["text_matched", "file_reference_only"] | None = None
 
     @field_validator("excerpt")
     @classmethod
@@ -104,14 +133,14 @@ class NoticeSummary(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     category: Category
-    summary: ShortText
-    publisher: ShortText | None
-    applicable_area: ShortText | None
-    audience: ShortText | None
+    summary: SingleLineText = Field(max_length=FIELD_TEXT_LIMITS["summary"])
+    publisher: SingleLineText | None = Field(max_length=FIELD_TEXT_LIMITS["publisher"])
+    applicable_area: SingleLineText | None = Field(max_length=FIELD_TEXT_LIMITS["applicable_area"])
+    audience: SingleLineText | None = Field(max_length=FIELD_TEXT_LIMITS["audience"])
     audience_scope: Literal["general", "conditional", "specific", "unknown"]
-    action: ShortText | None
+    action: SingleLineText | None = Field(max_length=FIELD_TEXT_LIMITS["action"])
     action_requirement: Literal["required", "optional", "recommended", "none", "unknown"]
-    location: ShortText | None
+    location: SingleLineText | None = Field(max_length=FIELD_TEXT_LIMITS["location"])
     dates: list[DateEntry]
     status: Literal[
         "upcoming",
@@ -125,31 +154,66 @@ class NoticeSummary(BaseModel):
         "not_applicable",
         "unknown",
     ]
-    status_detail: ShortText | None
+    status_detail: SingleLineText | None = Field(max_length=FIELD_TEXT_LIMITS["status_detail"])
     notice_update: Literal["new", "modified", "extended", "cancelled", "unknown"]
-    changed_details: ShortText | None
-    notes: list[ShortText]
+    changed_details: SingleLineText | None = Field(max_length=FIELD_TEXT_LIMITS["changed_details"])
+    notes: list[NoteText] = Field(max_length=MAX_NOTES_ITEMS)
     topics: list[Topic]
-    uncertainties: list[ShortText]
+    uncertainties: list[UncertaintyText]
     evidence: list[Evidence]
 
 
 class SummaryValidationError(ValueError):
     """The model returned JSON that cannot safely be used as a notice summary."""
 
+    def __init__(self, message: str, *, reason_code: str = "response_validation_failed") -> None:
+        self.reason_code = reason_code
+        super().__init__(message)
+
+
+def evidence_reference_valid(
+    item: Evidence, *, sources: list[str], media_sources: tuple[MediaSource, ...] = ()
+) -> bool:
+    """Check text literally, or only the supplied file reference and page format.
+
+    A PDF page number is a positive reference, not a locally verified page count.
+    File quotes cannot be checked against the binary contents by this function.
+    """
+    if item.source_type == "text":
+        return (
+            item.source_id is None
+            and item.page is None
+            and any(item.excerpt in source for source in sources)
+        )
+    if item.source_type == "document" and item.page is None:
+        return False
+    if item.source_type == "image" and item.page is not None:
+        return False
+    return any(
+        item.source_id == source.source_id and item.source_type == source.source_type
+        for source in media_sources
+    )
+
 
 def validate_evidence(
-    summary: NoticeSummary, *, body_text: str, attachment_texts: list[str]
+    summary: NoticeSummary,
+    *,
+    body_text: str,
+    attachment_texts: list[str],
+    media_sources: tuple[MediaSource, ...] = (),
 ) -> None:
-    """Check that each quoted excerpt actually occurs in the supplied source text."""
+    """Validate each reference without presenting file quotes as text-matched."""
     sources = [body_text, *attachment_texts]
     for item in summary.evidence:
         if getattr(summary, item.field) in (None, []):
             raise SummaryValidationError(f"Evidence points to an empty field: {item.field}")
-        if not any(item.excerpt in source for source in sources):
+        if not evidence_reference_valid(item, sources=sources, media_sources=media_sources):
             raise SummaryValidationError(f"Evidence excerpt not found in source: {item.field}")
+        expected = "text_matched" if item.source_type == "text" else "file_reference_only"
+        if item.verification is not None and item.verification != expected:
+            raise SummaryValidationError(f"Invalid evidence verification: {item.field}")
 
-    if not any(source.strip() for source in sources):
+    if not any(source.strip() for source in sources) and not media_sources:
         if (
             summary.category != "unknown"
             or summary.summary != "공지 확인 불가"
@@ -161,11 +225,12 @@ def validate_evidence(
             raise SummaryValidationError("A notice without readable text must remain unknown")
         return
 
-    if summary.category == "unknown":
-        if summary.action is not None or summary.dates or summary.notes:
-            raise SummaryValidationError("Unknown notice cannot claim actions or dates")
-
-    required = set() if summary.category == "unknown" else {"summary"}
+    partial_headline = summary.summary == "원문 확인 필요"
+    if partial_headline and "원문 확인 필요" not in summary.uncertainties:
+        raise SummaryValidationError("A partial summary must include a review instruction")
+    required = set() if partial_headline else {"summary"}
+    if partial_headline and summary.category != "unknown":
+        required.add("category")
     for field in ("applicable_area", "audience", "action", "location", "dates", "notes", "topics"):
         if getattr(summary, field) not in (None, []):
             required.add(field)

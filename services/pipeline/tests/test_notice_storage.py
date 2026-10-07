@@ -17,13 +17,9 @@ from pipeline.storage.notices import save_notice
 def record() -> NoticeRecord:
     post_sn = "00" + uuid4().hex
     return NoticeRecord(
-        category="nowon",
-        dong_group=None,
-        is_pinned=False,
-        post_sn=post_sn,
-        title="안내",
-        department="교육지원과",
-        registered_on=date(2026, 9, 25),
+        source_board="1001",
+        category="nowon", dong_group=None, is_pinned=False, post_sn=post_sn,
+        title="안내", department="교육지원과", registered_on=date(2026, 9, 25),
         url=f"https://www.nowon.kr/notice?q_bbscttSn={post_sn}",
         body_html="<p>원문</p>",
         license_type="KOGL-4",
@@ -53,7 +49,7 @@ def test_save_notice_binds_all_values_and_returns_id(record: NoticeRecord) -> No
     sql, values = cursor.execute.call_args.args
     assert "on conflict (category, source_board, post_sn) do update" in sql
     assert "returning id" in sql
-    assert values[1] == "1001"
+    assert values[1] == record.source_board
     assert values[4] == record.post_sn
     assert values[7] == date(2026, 9, 25)
     assert conn.commit.call_count == 0
@@ -154,7 +150,9 @@ def test_caller_rollback_removes_uncommitted_notice(db_conn, record: NoticeRecor
 
 def test_nowon_and_dong_with_same_post_id_have_separate_board_keys(db_conn, record) -> None:
     nowon_id = save_notice(db_conn, record)
-    dong = replace(record, category="dong", dong_group="wolgye1", license_type=None)
+    dong = replace(
+        record, category="dong", source_board="1042", dong_group="wolgye1", license_type=None,
+    )
     dong_id = save_notice(db_conn, dong)
     assert nowon_id != dong_id
     assert save_notice(db_conn, record) == nowon_id

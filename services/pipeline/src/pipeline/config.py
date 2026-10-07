@@ -130,6 +130,29 @@ class NowonSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class SeoulNewsSettings:
+    """SeoulNewsList credentials, independent of legacy SEOUL_API_KEY and DB."""
+
+    seoul_news_api_key: str = field(repr=False)
+    http_connect_timeout_seconds: float
+    http_read_timeout_seconds: float
+
+    @classmethod
+    def from_env(cls) -> Self:
+        key = os.getenv("SEOUL_NEWS_API_KEY", "").strip()
+        if not key:
+            raise ConfigError("필수 환경 변수가 없습니다: SEOUL_NEWS_API_KEY")
+        return cls(
+            seoul_news_api_key=key,
+            http_connect_timeout_seconds=_positive_float("HTTP_CONNECT_TIMEOUT_SECONDS", 5.0),
+            http_read_timeout_seconds=_positive_float("HTTP_READ_TIMEOUT_SECONDS", 20.0),
+        )
+
+    def redact(self, message: str) -> str:
+        return _redact(message, {self.seoul_news_api_key})
+
+
+@dataclass(frozen=True, slots=True)
 class WolgyeSettings:
     """Timeouts for the public Wolgye 1-dong HTML board; no API key is used."""
 

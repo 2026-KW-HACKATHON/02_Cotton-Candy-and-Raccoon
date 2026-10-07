@@ -10,6 +10,7 @@ from pipeline.models import FileRecord, NoticeRecord, RawNotice
 @pytest.fixture
 def raw_notice() -> RawNotice:
     return RawNotice(
+        source_board="1001",
         category="nowon",
         dong_group=None,
         is_pinned=False,
@@ -26,6 +27,7 @@ def raw_notice() -> RawNotice:
 @pytest.fixture
 def notice() -> NoticeRecord:
     return NoticeRecord(
+        source_board="1001",
         category="nowon",
         dong_group=None,
         is_pinned=False,
@@ -42,6 +44,7 @@ def notice() -> NoticeRecord:
 @pytest.fixture
 def file_record() -> FileRecord:
     return FileRecord(
+        source_board="1001",
         category="nowon",
         post_sn="001234",
         kind="attachment",
@@ -63,7 +66,7 @@ def test_valid_models_preserve_source_values_and_keys(
     assert raw_notice.url == "http://www.nowon.kr:80/example"
     assert notice.registered_on == date(2026, 9, 24)
     assert file_record.file_sn == "0001"
-    other_source = replace(file_record, category="dong")
+    other_source = replace(file_record, category="dong", source_board="1042")
     assert (other_source.category, other_source.post_sn) == ("dong", "001234")
     assert (file_record.category, file_record.post_sn) != (
         other_source.category,
@@ -94,6 +97,9 @@ def test_post_sn_rejects_non_string(
         ("notice", "url"),
         ("file_record", "post_sn"),
         ("file_record", "url"),
+        ("raw_notice", "source_board"),
+        ("notice", "source_board"),
+        ("file_record", "source_board"),
     ],
 )
 @pytest.mark.parametrize("value", ["", " \t\n", None, 123])
@@ -192,13 +198,14 @@ def test_notice_enforces_db_shape(notice: NoticeRecord, raw_notice: RawNotice) -
         with pytest.raises(ValueError, match="nowon"):
             replace(notice, dong_group=group)
         for pinned in (True, False):
-            record = replace(notice, category="dong", dong_group=group, is_pinned=pinned)
+            record = replace(notice, category="dong", source_board="1042",
+                             dong_group=group, is_pinned=pinned)
             assert record.dong_group == group
             assert record.is_pinned is pinned
     with pytest.raises(ValueError, match="dong"):
-        replace(notice, category="dong")
+        replace(notice, category="dong", source_board="1042")
     # Source shape may be incomplete; transform must resolve it before storage.
-    assert replace(raw_notice, category="dong").dong_group is None
+    assert replace(raw_notice, category="dong", source_board="1042").dong_group is None
 
 
 def test_inline_image_accepts_missing_name(file_record: FileRecord) -> None:
@@ -226,11 +233,12 @@ def test_notice_excludes_storage_managed_fields(notice: NoticeRecord) -> None:
     assert not names & {"id", "created_at", "updated_at", "is_modified", "is_visible"}
 
 
-def test_fixed_collector_board_identity(raw_notice, notice, file_record) -> None:
+def test_explicit_source_board_identity(raw_notice, notice, file_record) -> None:
     assert raw_notice.source_board == notice.source_board == file_record.source_board == "1001"
-    assert replace(raw_notice, category="dong").source_board == "1042"
-    assert replace(notice, category="dong", dong_group="wolgye1").source_board == "1042"
-    assert replace(file_record, category="dong").source_board == "1042"
+    assert replace(raw_notice, category="dong", source_board="1042").source_board == "1042"
+    dong_notice = replace(notice, category="dong", source_board="1042", dong_group="wolgye1")
+    assert dong_notice.source_board == "1042"
+    assert replace(file_record, category="dong", source_board="1042").source_board == "1042"
 
 
 @pytest.mark.parametrize("field_name", ["file_sn", "file_id"])

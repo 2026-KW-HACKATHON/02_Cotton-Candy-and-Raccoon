@@ -123,6 +123,7 @@ def test_collection_without_flag_creates_no_processor(
 def _raw(source: str) -> RawNotice:
     return RawNotice(
         category="nowon" if source == "nowon" else "dong",
+        source_board="1001" if source == "nowon" else "1042",
         dong_group=None if source == "nowon" else "wolgye1",
         is_pinned=False,
         post_sn="123",
@@ -201,3 +202,25 @@ def test_collect_one_storage_failure_never_calls_processor(
         assert main(["collect-one", "--source", source, "--easy-text"]) == 1
     processor.assert_not_called()
     assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize("command", ["collect-one", "collect"])
+def test_seoul_easy_text_option_is_rejected_before_collection(
+    capsys: pytest.CaptureFixture[str],
+    command: str,
+) -> None:
+    with (
+        patch("pipeline.cli.collect_and_save_one") as single,
+        patch("pipeline.cli.collect_seoul_scheduled") as scheduled,
+        patch("pipeline.cli.AfterCollectEasyText") as processor,
+        patch("pipeline.cli.SeoulNewsSettings.from_env") as settings,
+    ):
+        assert main([command, "--source", "seoul", "--easy-text"]) == 2
+    single.assert_not_called()
+    scheduled.assert_not_called()
+    processor.assert_not_called()
+    settings.assert_not_called()
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert "서울시" in output.err
+    assert "--easy-text" in output.err

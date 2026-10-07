@@ -11,20 +11,34 @@ from pipeline.attachments.nowon_html import (
     extract_files,
     extract_page_files,
     merge_files,
+    recover_masked_body_urls,
 )
+from pipeline.attachments.seoul_html import SeoulAttachmentError
 from pipeline.collect_nowon import collect_and_save_nowon, collect_and_save_nowon_scheduled
+from pipeline.collect_seoul import SeoulStorageError, collect_and_save_one, prepare_one
+from pipeline.collect_seoul_scheduled import collect_scheduled as collect_seoul_scheduled
 from pipeline.collect_wolgye1 import (
     collect_and_save_wolgye1,
     collect_and_save_wolgye1_scheduled,
     collect_one_wolgye1,
 )
-from pipeline.config import ConfigError, DatabaseSettings, NowonSettings, Settings, WolgyeSettings
+from pipeline.config import (
+    ConfigError,
+    DatabaseSettings,
+    NowonSettings,
+    SeoulNewsSettings,
+    Settings,
+    WolgyeSettings,
+)
 from pipeline.sources.nowon_api import NowonSourceError, collect_one
 from pipeline.sources.nowon_page import NowonPageError, fetch_notice_page
+from pipeline.sources.seoul_api import SeoulSourceError
+from pipeline.sources.seoul_api import collect_one as collect_one_seoul
 from pipeline.sources.wolgye1_board import WolgyeSourceError
 from pipeline.storage.notice_bundle import save_notice_with_files
 from pipeline.transform.dong import DongTransformError
 from pipeline.transform.nowon import TransformError, transform_nowon_notice
+from pipeline.transform.seoul import SeoulTransformError
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -33,11 +47,25 @@ def build_parser() -> argparse.ArgumentParser:
     check = subparsers.add_parser("check-config", help="validate required environment variables")
     check.add_argument(
         "--source",
-        choices=["nowon", "wolgye1"],
+        choices=["nowon", "wolgye1", "seoul"],
         help="check only this source's settings",
     )
+    inspect = subparsers.add_parser("inspect-one", help="read one API row without DB writes")
+    inspect.add_argument("--source", choices=["nowon", "seoul"], required=True)
+    prepared = subparsers.add_parser(
+        "inspect-prepared",
+        help="prepare one notice without DB writes",
+    )
+    prepared.add_argument("--source", choices=["seoul"], required=True)
+    prepared.add_argument(
+        "--source-board",
+        choices=["21", "22", "23", "24", "25", "26", "27", "30"],
+    )
+    prepared.add_argument("--index", type=int, default=1, help="1-based API row, not post_sn")
     collect = subparsers.add_parser("collect-one", help="collect and save one notice to DB")
-    collect.add_argument("--source", choices=["nowon", "wolgye1"], required=True)
+    collect.add_argument("--source", choices=["nowon", "wolgye1", "seoul"], required=True)
+    collect.add_argument("--source-board", choices=["21", "22", "23", "24", "25", "26", "27", "30"])
+    collect.add_argument("--index", type=int, default=1, help="Seoul API row index")
     collect.add_argument("--post-sn", help="select a Wolgye 1-dong post on the chosen list page")
     collect.add_argument("--page", type=int, default=1, help="Wolgye 1-dong list page (default: 1)")
     collect.add_argument(
@@ -49,7 +77,12 @@ def build_parser() -> argparse.ArgumentParser:
         "collect",
         help="collect and save source notices independently to DB",
     )
-    collect_many.add_argument("--source", choices=["nowon", "wolgye1"], required=True)
+    collect_many.add_argument("--source", choices=["nowon", "wolgye1", "seoul"], required=True)
+    collect_many.add_argument(
+        "--source-board",
+        choices=["21", "22", "23", "24", "25", "26", "27", "30"],
+        help="Seoul board only; omit to process all eight boards",
+    )
     collect_many.add_argument(
         "--limit",
         type=int,
@@ -81,12 +114,22 @@ def _exit_code(complete: bool, processor: AfterCollectEasyText | None) -> int:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
+    if args.command in ("collect", "collect-one") and args.source == "seoul" and args.easy_text:
+        print(
+            "설정 오류: 서울시 수집 후 쉬운말 자동 처리는 아직 지원하지 않습니다. "
+            "--easy-text는 nowon·wolgye1 출처에서 사용하세요.",
+            file=sys.stderr,
+        )
+        return 2
+
     if args.command == "check-config":
         try:
             if args.source == "nowon":
                 NowonSettings.from_env()
             elif args.source == "wolgye1":
                 WolgyeSettings.from_env()
+            elif args.source == "seoul":
+                SeoulNewsSettings.from_env()
             else:
                 Settings.from_env()
         except ConfigError as error:
@@ -95,7 +138,77 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("환경 변수 형식을 확인했습니다. API 인증과 DB 연결은 확인하지 않았습니다.")
         return 0
 
+    if args.command == "inspect-prepared":
+        if args.index < 1:
+            print("설정 오류: --index는 1 이상의 정수여야 합니다.", file=sys.stderr)
+            return 2
+        try:
+            settings = SeoulNewsSettings.from_env()
+            record, files = prepare_one(settings, source_board=args.source_board, index=args.index)
+        except ConfigError as error:
+            print(f"설정 오류: {error}", file=sys.stderr)
+            return 2
+        except (
+            SeoulSourceError,
+            SeoulAttachmentError,
+            SeoulTransformError,
+        ) as error:
+            print(settings.redact(f"서울시 수집·변환 실패: {error}"), file=sys.stderr)
+            return 1
+        print(
+            json.dumps(
+                {
+                    "source": "seoul",
+                    "source_board": record.source_board,
+                    "post_sn": record.post_sn,
+                    "title": record.title,
+                    "registered_on": record.registered_on.isoformat(),
+                    "url": record.url,
+                    "license_type": record.license_type,
+                    "body_html_length": len(record.body_html or ""),
+                    "attachment_count": sum(f.kind == "attachment" for f in files),
+                    "inline_image_count": sum(f.kind == "inline_image" for f in files),
+                    "stored": False,
+                },
+                ensure_ascii=True,
+            )
+        )
+        return 0
+
+    if args.command == "inspect-one":
+        try:
+            if args.source == "seoul":
+                raw = collect_one_seoul(SeoulNewsSettings.from_env())
+            else:
+                raw = collect_one(NowonSettings.from_env())
+        except ConfigError as error:
+            print(f"설정 오류: {error}", file=sys.stderr)
+            return 2
+        except (SeoulSourceError, NowonSourceError) as error:
+            print(f"API 수집 실패: {error}", file=sys.stderr)
+            return 1
+        print(
+            json.dumps(
+                {
+                    "source": args.source,
+                    "source_board": raw.source_board,
+                    "post_sn": raw.post_sn,
+                    "title": raw.title,
+                    "registered_on": raw.registered_on,
+                    "body_html_length": len(raw.body_html or ""),
+                    "stored": False,
+                },
+                ensure_ascii=True,
+            )
+        )
+        return 0
+
     if args.command == "collect":
+        if args.source == "seoul":
+            return _collect_seoul(args)
+        if args.source_board is not None:
+            print("설정 오류: --source-board는 seoul 출처에만 사용할 수 있습니다.", file=sys.stderr)
+            return 2
         if args.limit is not None and args.limit < 1:
             print("설정 오류: --limit은 1 이상의 정수여야 합니다.", file=sys.stderr)
             return 2
@@ -253,6 +366,57 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _exit_code(result.complete, processor)
 
     if args.command == "collect-one":
+        if args.source == "seoul":
+            if args.index < 1 or args.post_sn is not None or args.page != 1:
+                print("설정 오류: 서울시는 --index와 --source-board를 사용하세요.", file=sys.stderr)
+                return 2
+            try:
+                settings = SeoulNewsSettings.from_env()
+                database = DatabaseSettings.from_env()
+            except ConfigError as error:
+                print(f"설정 오류: {error}", file=sys.stderr)
+                return 2
+            try:
+                notice_id, record, files = collect_and_save_one(
+                    settings,
+                    database,
+                    source_board=args.source_board,
+                    index=args.index,
+                )
+            except (
+                SeoulSourceError,
+                SeoulAttachmentError,
+                SeoulTransformError,
+                SeoulStorageError,
+            ) as error:
+                print(settings.redact(f"수집·저장 실패: {error}"), file=sys.stderr)
+                return 1
+            print(
+                json.dumps(
+                    {
+                        "notice_id": notice_id,
+                        "category": record.category,
+                        "source_board": record.source_board,
+                        "post_sn": record.post_sn,
+                        "title": record.title,
+                        "registered_on": record.registered_on.isoformat(),
+                        "url": record.url,
+                        "license_type": record.license_type,
+                        "body_html_length": len(record.body_html or ""),
+                        "attachment_count": sum(f.kind == "attachment" for f in files),
+                        "inline_image_count": sum(f.kind == "inline_image" for f in files),
+                        "stored": True,
+                    },
+                    ensure_ascii=True,
+                )
+            )
+            return 0
+        if args.source_board is not None or args.index != 1:
+            print(
+                "설정 오류: --source-board·--index는 seoul 출처에만 사용할 수 있습니다.",
+                file=sys.stderr,
+            )
+            return 2
         if args.source == "wolgye1":
             if args.page < 1 or (args.page != 1 and args.post_sn is None):
                 print(
@@ -315,8 +479,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         try:
             notice = collect_one(settings)
-            body_files = extract_files(notice)
             page_url, page_html = fetch_notice_page(notice, settings)
+            notice = recover_masked_body_urls(notice, page_html)
+            body_files = extract_files(notice)
             page_files = extract_page_files(notice, page_html, page_url)
             files = merge_files(body_files, page_files)
             record = transform_nowon_notice(notice)
@@ -362,3 +527,50 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _exit_code(True, processor)
 
     return 2
+
+
+def _collect_seoul(args: argparse.Namespace) -> int:
+    if args.mode is None or args.limit is not None:
+        print("설정 오류: 서울시는 --mode가 필요하며 --limit은 미지원입니다.", file=sys.stderr)
+        return 2
+    try:
+        settings = SeoulNewsSettings.from_env()
+        database = DatabaseSettings.from_env()
+        result = collect_seoul_scheduled(
+            settings,
+            database,
+            mode=args.mode,
+            source_board=args.source_board,
+        )
+    except (ConfigError, ValueError) as error:
+        print(f"서울시 수집 실패: {error}", file=sys.stderr)
+        return 1 if isinstance(error, SeoulStorageError) else 2
+    print(
+        json.dumps(
+            {
+                "mode": result.mode,
+                "selected_count": sum(b.selected_count for b in result.boards),
+                "saved_count": sum(b.saved_count for b in result.boards),
+                "complete": result.complete,
+                "boards": [
+                    {
+                        "source_board": b.source_board,
+                        "total_count": b.total_count,
+                        "selected_count": b.selected_count,
+                        "saved_count": b.saved_count,
+                        "pages_read": b.pages_read,
+                        "initial_baseline": b.initial_baseline,
+                        "listing_complete": b.listing_complete,
+                        "complete": b.complete,
+                        "failures": [
+                            {"post_sn": f.post_sn, "stage": f.stage, "reason_code": f.reason_code}
+                            for f in b.failures
+                        ],
+                    }
+                    for b in result.boards
+                ],
+            },
+            ensure_ascii=True,
+        )
+    )
+    return 0 if result.complete else 1

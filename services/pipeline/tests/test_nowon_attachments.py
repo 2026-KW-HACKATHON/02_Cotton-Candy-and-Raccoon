@@ -11,17 +11,11 @@ from pipeline.models import RawNotice
 
 def notice(html: str | None, *, category: str = "nowon") -> RawNotice:
     return RawNotice(
-        category=category,
-        dong_group=None,
-        is_pinned=False,
-        post_sn="001234",
-        title="Sample",
-        department=None,
-        registered_on="2026-09-23",
-        url=(
-            "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do"
-            "?q_bbsCode=1001&q_estnColumn1=11&q_bbscttSn=001234"
-        ),
+        source_board="1001" if category == "nowon" else "1042",
+        category=category, dong_group=None, is_pinned=False, post_sn="001234",
+        title="Sample", department=None, registered_on="2026-09-23",
+        url=("https://www.nowon.kr/www/user/bbs/BD_selectBbs.do"
+             "?q_bbsCode=1001&q_estnColumn1=11&q_bbscttSn=001234"),
         body_html=html,
         license_type="KOGL-4",
     )
@@ -235,6 +229,9 @@ def test_cli_identifier_conflict_fails_without_partial_summary(
         '<img src="/file?q_fileSn=1&amp;q_fileId=abc"><img src="/file?q_fileSn=2&amp;q_fileId=abc">'
     )
     monkeypatch.setattr("pipeline.cli.collect_one", lambda settings: source)
+    monkeypatch.setattr("pipeline.cli.fetch_notice_page", lambda notice, settings: (
+        notice.url, "",
+    ))
     assert main(["collect-one", "--source", "nowon"]) == 1
     output = capsys.readouterr()
     assert output.out == ""

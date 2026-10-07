@@ -12,6 +12,7 @@ from pipeline.attachments.nowon_html import (
     extract_files,
     extract_page_files,
     merge_files,
+    recover_masked_body_urls,
 )
 from pipeline.config import DatabaseSettings, NowonSettings
 from pipeline.models import FileRecord, NoticeRecord, RawNotice
@@ -111,14 +112,6 @@ def _prepare_notice(
 ) -> PreparedNotice:
     record = transform_nowon_notice(notice)
     try:
-        body_files = extract_files(notice)
-    except AttachmentError as error:
-        return PreparedNotice(
-            record,
-            [],
-            NoticeFailure(notice.post_sn, "attachments", error.code),
-        )
-    try:
         page_url, page_html = _fetch_page_with_retry(notice, settings)
     except NowonPageMissing:
         return PreparedNotice(
@@ -137,6 +130,9 @@ def _prepare_notice(
             ),
         )
     try:
+        notice = recover_masked_body_urls(notice, page_html)
+        body_files = extract_files(notice)
+        record = transform_nowon_notice(notice)
         page_files = extract_page_files(notice, page_html, page_url)
         files = merge_files(body_files, page_files)
     except AttachmentError as error:
@@ -309,7 +305,8 @@ def collect_and_save_nowon_scheduled(
     conn = psycopg.connect(database.database_url, connect_timeout=5, autocommit=True)
     try:
         initial_baseline = not conn.execute(
-            "SELECT EXISTS (SELECT 1 FROM notices WHERE category = 'nowon')",
+            "SELECT EXISTS (SELECT 1 FROM notices WHERE category = 'nowon' "
+            "AND source_board = '1001')",
         ).fetchone()[0]
         first = _fetch_api_page_with_retry(settings, 1, 50)
         target = min(50 if initial_baseline else 10, first.total_count)

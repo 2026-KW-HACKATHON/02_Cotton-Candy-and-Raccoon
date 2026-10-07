@@ -379,6 +379,7 @@ def collect_and_save_wolgye1_scheduled(
             mode == "new"
             and not conn.execute(
                 "SELECT EXISTS (SELECT 1 FROM notices WHERE category = 'dong' "
+                "AND source_board = '1042' "
                 "AND dong_group = 'wolgye1' AND NOT is_pinned)",
             ).fetchone()[0]
         )

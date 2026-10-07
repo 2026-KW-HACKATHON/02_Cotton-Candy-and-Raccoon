@@ -28,6 +28,7 @@ def _entry(post_sn: str, department: str, pinned: bool) -> BoardEntry:
 
 def _notice(entry: BoardEntry) -> RawNotice:
     return RawNotice(
+        source_board="1042",
         category="dong", dong_group="wolgye1", is_pinned=entry.is_pinned,
         post_sn=entry.post_sn, title="제목", department="월계1동 행정민원팀",
         registered_on="2026-09-28", url=entry.url, body_html="<p>본문</p>",
@@ -37,6 +38,7 @@ def _notice(entry: BoardEntry) -> RawNotice:
 
 def _record() -> NoticeRecord:
     return NoticeRecord(
+        source_board="1042",
         category="dong", dong_group="wolgye1", is_pinned=False,
         post_sn="001234", title="제목", department="월계1동 행정민원팀",
         registered_on=date(2026, 9, 28),
@@ -102,9 +104,9 @@ def test_cli_saves_complete_notice_with_both_file_roles(
     monkeypatch.delenv("NOWON_NOTICE_API_KEY", raising=False)
     record = _record()
     files = [
-        FileRecord("dong", "001234", "inline_image", "1", "image-a", None,
+        FileRecord("dong", "1042", "001234", "inline_image", "1", "image-a", None,
                    "https://www.nowon.kr/file?x=1"),
-        FileRecord("dong", "001234", "attachment", "2", "file-b", "안내.pdf",
+        FileRecord("dong", "1042", "001234", "attachment", "2", "file-b", "안내.pdf",
                    "https://www.nowon.kr/file?x=2"),
     ]
     conn = MagicMock()
@@ -507,7 +509,7 @@ def test_real_db_multi_save_repeat_and_failed_detail(
 
     def files(notice: RawNotice, _html: str) -> list[FileRecord]:
         return [FileRecord(
-            "dong", notice.post_sn, "attachment", "42", notice.post_sn, "file.pdf",
+            "dong", "1042", notice.post_sn, "attachment", "42", notice.post_sn, "file.pdf",
             f"https://www.nowon.kr/file?q_fileSn=42&q_fileId={notice.post_sn}",
         )]
 

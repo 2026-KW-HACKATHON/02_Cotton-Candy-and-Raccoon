@@ -16,6 +16,7 @@ NORMALIZED_URL = SOURCE_URL.replace("http://www.nowon.kr:80", "https://www.nowon
 @pytest.fixture
 def raw_notice() -> RawNotice:
     return RawNotice(
+        source_board="1001",
         category="nowon", dong_group=None, is_pinned=False, post_sn="001234",
         title="안내", department="교육지원과", registered_on="2026-09-25",
         url=SOURCE_URL, body_html="<p>본문 &amp; 안내</p>", license_type="KOGL-4",
@@ -63,7 +64,8 @@ def test_invalid_urls_are_rejected_without_echoing_them(
 
 
 @pytest.mark.parametrize("changes", [
-    {"category": "dong"}, {"dong_group": "wolgye1"}, {"is_pinned": True},
+    {"category": "dong", "source_board": "1042"},
+    {"dong_group": "wolgye1"}, {"is_pinned": True},
     {"license_type": "KOGL-2"}, {"license_type": None},
 ])
 def test_wrong_nowon_shape_or_license_is_rejected(

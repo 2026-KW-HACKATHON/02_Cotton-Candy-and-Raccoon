@@ -6,16 +6,15 @@ FileRecord travels separately with its parent's (category, source_board, post_sn
 storage must verify that key before resolving notice_id.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from hashlib import sha256
 from typing import Literal
 
-NoticeCategory = Literal["nowon", "dong"]
+NoticeCategory = Literal["nowon", "dong", "seoul"]
 DongGroup = Literal["wolgye1", "other"]
 FileKind = Literal["attachment", "inline_image"]
 LicenseType = Literal["KOGL-1", "KOGL-2", "KOGL-3", "KOGL-4"]
-SOURCE_BOARDS: dict[NoticeCategory, str] = {"nowon": "1001", "dong": "1042"}
 
 
 def _string(name: str, value: object, *, optional: bool = False) -> None:
@@ -33,6 +32,15 @@ def _choice(name: str, value: object, choices: tuple[str, ...]) -> None:
         raise ValueError(f"{name} has an unsupported value")
 
 
+def _source_board(category: NoticeCategory, source_board: str) -> None:
+    _choice("category", category, ("nowon", "dong", "seoul"))
+    _string("source_board", source_board)
+    boards = {"nowon": ("1001",), "dong": ("1042",),
+              "seoul": ("21", "22", "23", "24", "25", "26", "27", "30")}
+    if source_board not in boards[category]:
+        raise ValueError("source_board does not match category")
+
+
 def _notice_fields(
     category: NoticeCategory,
     dong_group: DongGroup | None,
@@ -44,7 +52,7 @@ def _notice_fields(
     body_html: str | None,
     license_type: LicenseType | None,
 ) -> None:
-    _choice("category", category, ("nowon", "dong"))
+    _choice("category", category, ("nowon", "dong", "seoul"))
     if dong_group is not None:
         _choice("dong_group", dong_group, ("wolgye1", "other"))
     if type(is_pinned) is not bool:
@@ -66,6 +74,7 @@ class RawNotice:
     """
 
     category: NoticeCategory
+    source_board: str
     dong_group: DongGroup | None
     is_pinned: bool
     post_sn: str
@@ -76,12 +85,8 @@ class RawNotice:
     body_html: str | None
     license_type: LicenseType | None
 
-    @property
-    def source_board(self) -> str:
-        """The existing adapters each collect one fixed official board."""
-        return SOURCE_BOARDS[self.category]
-
     def __post_init__(self) -> None:
+        _source_board(self.category, self.source_board)
         _notice_fields(
             self.category,
             self.dong_group,
@@ -97,10 +102,42 @@ class RawNotice:
 
 
 @dataclass(frozen=True, slots=True)
+class RawSeoulNotice:
+    """SeoulNewsList fields before source URL, license and date normalization.
+
+    POST_CONTENT is the full supplied HTML; POST_EXCERPT is kept separately.
+    No invented LINK/license or manager name/phone is added to this contract.
+    """
+
+    source_board: str
+    post_sn: str
+    blog_name: str
+    title: str
+    registered_on: str
+    modified_on: str | None
+    post_status: str
+    department: str | None
+    body_html: str | None = field(repr=False)
+    excerpt_html: str | None = field(repr=False)
+    thumbnail_url: str | None
+
+    def __post_init__(self) -> None:
+        _source_board("seoul", self.source_board)
+        for name in ("post_sn", "blog_name", "title", "registered_on"):
+            _string(name, getattr(self, name))
+        if not self.post_sn.isascii() or not self.post_sn.isdecimal():
+            raise ValueError("post_sn must contain ASCII digits")
+        _choice("post_status", self.post_status, ("publish",))
+        for name in ("modified_on", "department", "body_html", "excerpt_html", "thumbnail_url"):
+            _string(name, getattr(self, name), optional=True)
+
+
+@dataclass(frozen=True, slots=True)
 class NoticeRecord:
     """Normalized notice input; generated IDs and sync state belong to storage."""
 
     category: NoticeCategory
+    source_board: str
     dong_group: DongGroup | None
     is_pinned: bool
     post_sn: str
@@ -111,12 +148,8 @@ class NoticeRecord:
     body_html: str | None
     license_type: LicenseType | None
 
-    @property
-    def source_board(self) -> str:
-        """Keep the board identity explicit at the storage boundary."""
-        return SOURCE_BOARDS[self.category]
-
     def __post_init__(self) -> None:
+        _source_board(self.category, self.source_board)
         _notice_fields(
             self.category,
             self.dong_group,
@@ -131,8 +164,10 @@ class NoticeRecord:
         # datetime subclasses date, but would silently introduce a time component.
         if type(self.registered_on) is not date:
             raise TypeError("registered_on must be a date, not a datetime or string")
-        if self.category == "nowon" and (self.dong_group is not None or self.is_pinned):
-            raise ValueError("nowon requires dong_group=None and is_pinned=False")
+        if self.category in ("nowon", "seoul") and (
+            self.dong_group is not None or self.is_pinned
+        ):
+            raise ValueError(f"{self.category} requires dong_group=None and is_pinned=False")
         if self.category == "dong" and self.dong_group is None:
             raise ValueError("dong requires dong_group")
 
@@ -142,6 +177,7 @@ class FileRecord:
     """File metadata linked by source key; storage resolves the DB notice_id."""
 
     category: NoticeCategory
+    source_board: str
     post_sn: str
     kind: FileKind
     file_sn: str | None
@@ -149,29 +185,25 @@ class FileRecord:
     file_name: str | None
     url: str
 
-    @property
-    def source_board(self) -> str:
-        return SOURCE_BOARDS[self.category]
-
-    @property
-    def file_key(self) -> str:
-        """Match the SQL identity using real IDs or the exact stored URL."""
-        if self.file_id is not None:
-            return "id:" + self.file_id
-        return "url:" + sha256(self.url.encode("utf-8")).hexdigest()
-
     def __post_init__(self) -> None:
-        _choice("category", self.category, ("nowon", "dong"))
+        _source_board(self.category, self.source_board)
         _choice("kind", self.kind, ("attachment", "inline_image"))
         for name, value in (
             ("post_sn", self.post_sn),
             ("url", self.url),
         ):
             _string(name, value)
+        _string("file_name", self.file_name, optional=True)
         for name, value in (("file_sn", self.file_sn), ("file_id", self.file_id)):
             _string(name, value, optional=True)
             if value is not None and value != value.strip():
                 raise ValueError(f"{name} must not have surrounding whitespace")
         if self.url != self.url.strip():
             raise ValueError("url must not have surrounding whitespace")
-        _string("file_name", self.file_name, optional=True)
+
+    @property
+    def file_key(self) -> str:
+        """Derive the DB key from the actual ID or the already-normalized URL."""
+        if self.file_id is not None:
+            return "id:" + self.file_id
+        return "url:" + sha256(self.url.encode("utf-8")).hexdigest()
