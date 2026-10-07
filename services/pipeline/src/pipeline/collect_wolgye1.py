@@ -1,5 +1,6 @@
 """Collect verified Wolgye 1-dong notices and save them independently."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from time import sleep
 from typing import Literal
@@ -237,6 +238,7 @@ def _save_entries(
     *,
     conflicts: tuple[str, ...] = (),
     paced: bool = False,
+    after_save: Callable[[int], None] | None = None,
 ) -> tuple[int, tuple[WolgyeFailure, ...]]:
     failures: list[WolgyeFailure] = []
     saved_count = 0
@@ -290,11 +292,13 @@ def _save_entries(
                     )
                     break
             try:
-                save_notice_with_files(conn, record, files)
+                notice_id = save_notice_with_files(conn, record, files)
             except (psycopg.Error, ValueError):
                 failures.append(WolgyeFailure(entry.post_sn, "storage", "db_save_failed"))
                 continue
             saved_count += 1
+            if after_save is not None:
+                after_save(notice_id)
     finally:
         conn.close()
     return saved_count, tuple(failures)
@@ -305,6 +309,7 @@ def collect_and_save_wolgye1(
     database: DatabaseSettings,
     *,
     limit: int | None = None,
+    after_save: Callable[[int], None] | None = None,
 ) -> CollectWolgyeResult:
     """Save complete notices independently without any bulk visibility changes."""
     listing = collect_wolgye_listing(settings, limit=limit)
@@ -329,6 +334,7 @@ def collect_and_save_wolgye1(
         settings,
         database.database_url,
         conflicts=listing.conflicting_post_sns,
+        after_save=after_save,
     )
     return CollectWolgyeResult(
         listing.total_count,
@@ -362,6 +368,7 @@ def collect_and_save_wolgye1_scheduled(
     database: DatabaseSettings,
     *,
     mode: Literal["new", "refresh"],
+    after_save: Callable[[int], None] | None = None,
 ) -> ScheduledWolgyeResult:
     """Check new regular posts or refresh five regular posts and all pinned posts."""
     if mode not in ("new", "refresh"):
@@ -473,6 +480,7 @@ def collect_and_save_wolgye1_scheduled(
             database.database_url,
             conflicts=tuple(conflicts),
             paced=True,
+            after_save=after_save,
         )
         if chosen
         else (0, ())

@@ -1,5 +1,6 @@
 """Collect and persist Nowon notices one complete notice at a time."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from time import sleep
 from typing import Literal
@@ -155,6 +156,7 @@ def _save_notices(
     *,
     conflicts: set[str] | None = None,
     paced: bool = False,
+    after_save: Callable[[int], None] | None = None,
 ) -> tuple[int, tuple[NoticeFailure, ...]]:
     failures: list[NoticeFailure] = []
     saved_count = 0
@@ -199,11 +201,13 @@ def _save_notices(
                     )
                     break
             try:
-                save_notice_with_files(conn, prepared.record, prepared.files)
+                notice_id = save_notice_with_files(conn, prepared.record, prepared.files)
             except (psycopg.Error, ValueError):
                 failures.append(NoticeFailure(notice.post_sn, "storage", "db_save_failed"))
                 continue
             saved_count += 1
+            if after_save is not None:
+                after_save(notice_id)
     finally:
         conn.close()
     return saved_count, tuple(failures)
@@ -214,6 +218,7 @@ def collect_and_save_nowon(
     database: DatabaseSettings,
     *,
     limit: int | None = None,
+    after_save: Callable[[int], None] | None = None,
 ) -> CollectNowonResult:
     """Save complete notices independently; never change visibility in bulk."""
     if limit is not None and (type(limit) is not int or limit < 1):
@@ -245,6 +250,7 @@ def collect_and_save_nowon(
         settings,
         database.database_url,
         conflicts=set(listing.conflicting_post_sns),
+        after_save=after_save,
     )
 
     return CollectNowonResult(
@@ -293,6 +299,7 @@ def collect_and_save_nowon_scheduled(
     database: DatabaseSettings,
     *,
     mode: Literal["new", "refresh"],
+    after_save: Callable[[int], None] | None = None,
 ) -> ScheduledNowonResult:
     """Process 50 API rows on first run, then 10 recent rows by schedule."""
     if mode not in ("new", "refresh"):
@@ -389,6 +396,7 @@ def collect_and_save_nowon_scheduled(
             database.database_url,
             conflicts=conflicts,
             paced=True,
+            after_save=after_save,
         )
         if chosen
         else (0, ())
