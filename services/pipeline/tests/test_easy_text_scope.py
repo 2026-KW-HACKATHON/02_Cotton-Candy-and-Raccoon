@@ -11,7 +11,12 @@ from psycopg.types.json import Jsonb
 from pydantic import ValidationError
 from test_easy_text_storage import _easy_db_connection
 
-from pipeline.glossary.easy_language import EasyLanguageResult, simplify_notice
+from pipeline.glossary.easy_language import (
+    EasyLanguageResult,
+    EasyLanguageValidationError,
+    NoNoticeBodyError,
+    simplify_notice,
+)
 from pipeline.glossary.easy_language_service import simplify_and_store_notice
 from pipeline.glossary.notice_service import load_notice_glossary_input
 from pipeline.glossary.source import NoticeGlossaryInput, StoredNoticeInput, notice_content_revision
@@ -96,6 +101,13 @@ def test_fresh_save_and_cache_publish_known_scope_without_second_api_call(
     source = _insert_notice(easy_db, body_html)
     request = MagicMock(side_effect=_request)
 
+    if not expected:
+        with pytest.raises(NoNoticeBodyError):
+            simplify_and_store_notice(easy_db, source, api_key="fake", request=request)
+        assert get_notice_easy_text(easy_db, source.notice_id) is None
+        request.assert_not_called()
+        return
+
     first = simplify_and_store_notice(easy_db, source, api_key="fake", request=request)
     assert (first.body_text_present, first.attachment_content_included) == (expected, False)
     assert _raw_scope(easy_db, source.notice_id) == (expected, False)
@@ -109,7 +121,7 @@ def test_fresh_save_and_cache_publish_known_scope_without_second_api_call(
     request.assert_called_once()
 
 
-def test_title_replacement_does_not_mislabel_body_scope(easy_db) -> None:
+def test_title_replacement_is_rejected_without_storing_success(easy_db) -> None:
     source = _insert_notice(easy_db, "<p>본문</p>")
 
     def title_change(**_kwargs: object) -> str:
@@ -118,13 +130,13 @@ def test_title_replacement_does_not_mislabel_body_scope(easy_db) -> None:
             ensure_ascii=False,
         )
 
-    saved = simplify_and_store_notice(
-        easy_db, source, api_key="fake", request=title_change, clock=lambda: _NOW
-    )
-
-    assert saved.original_text == "익일 안내\n본문"
-    assert saved.easy_text == "다음 날 안내\n본문"
-    assert _raw_scope(easy_db, source.notice_id) == (True, False)
+    request = MagicMock(side_effect=title_change)
+    with pytest.raises(EasyLanguageValidationError):
+        simplify_and_store_notice(
+            easy_db, source, api_key="fake", request=request, clock=lambda: _NOW
+        )
+    assert request.call_count == 2
+    assert get_notice_easy_text(easy_db, source.notice_id) is None
 
 
 def test_getter_derives_legacy_scope_without_mutating_sql(easy_db) -> None:
@@ -142,7 +154,7 @@ def test_getter_derives_legacy_scope_without_mutating_sql(easy_db) -> None:
     assert _raw_scope(easy_db, source.notice_id) == (None, None)
 
 
-@pytest.mark.parametrize("body_html,expected", [(None, False), ("<p>본문</p>", True)])
+@pytest.mark.parametrize("body_html,expected", [("<p>본문</p>", True)])
 def test_legacy_unknown_scope_is_filled_on_cache_hit_without_gemini(
     easy_db, monkeypatch, body_html: str | None, expected: bool
 ) -> None:
@@ -167,7 +179,7 @@ def test_legacy_unknown_scope_is_filled_on_cache_hit_without_gemini(
 
 
 def test_changed_parent_cannot_receive_legacy_scope(easy_db) -> None:
-    source = _insert_notice(easy_db, None)
+    source = _insert_notice(easy_db, "<p>이전 본문</p>")
     save_notice_easy_text(easy_db, _result(source))
     easy_db.execute(
         "update public.notice_easy_texts set body_text_present = null, "
@@ -187,9 +199,9 @@ def test_changed_parent_cannot_receive_legacy_scope(easy_db) -> None:
     assert get_notice_easy_text(easy_db, source.notice_id) is None
 
 
-@pytest.mark.parametrize("claimed_scope", [(True, False), (False, True), (True, True)])
+@pytest.mark.parametrize("claimed_scope", [(False, False), (False, True), (True, True)])
 def test_save_rejects_forged_or_incorrect_scope(easy_db, claimed_scope) -> None:
-    source = _insert_notice(easy_db, None)
+    source = _insert_notice(easy_db, "<p>본문</p>")
     forged = EasyLanguageResult.model_validate(
         {
             **_result(source).model_dump(),
@@ -218,7 +230,7 @@ def test_result_model_rejects_partial_or_nonboolean_scope(flags) -> None:
 
 @pytest.mark.parametrize("flags", [(None, False), (True, None), (False, True)])
 def test_sql_check_rejects_partial_or_attachment_included_scope(easy_db, flags) -> None:
-    source = _insert_notice(easy_db, None)
+    source = _insert_notice(easy_db, "<p>본문</p>")
     save_notice_easy_text(easy_db, _result(source))
 
     with pytest.raises(psycopg.errors.CheckViolation):
@@ -228,11 +240,11 @@ def test_sql_check_rejects_partial_or_attachment_included_scope(easy_db, flags) 
                 "attachment_content_included = %s where notice_id = %s",
                 (*flags, source.notice_id),
             )
-    assert _raw_scope(easy_db, source.notice_id) == (False, False)
+    assert _raw_scope(easy_db, source.notice_id) == (True, False)
 
 
 def test_scope_fill_requires_unchanged_cache_token(easy_db) -> None:
-    source = _insert_notice(easy_db, None)
+    source = _insert_notice(easy_db, "<p>본문</p>")
     save_notice_easy_text(easy_db, _result(source))
     easy_db.execute(
         "update public.notice_easy_texts set body_text_present = null, "
@@ -252,9 +264,9 @@ def test_scope_fill_requires_unchanged_cache_token(easy_db) -> None:
 
 
 def test_old_worker_source_change_clears_scope_then_cache_fills_without_api(easy_db) -> None:
-    source = _insert_notice(easy_db, None)
+    source = _insert_notice(easy_db, "<p>이전 본문</p>")
     save_notice_easy_text(easy_db, _result(source))
-    assert _raw_scope(easy_db, source.notice_id) == (False, False)
+    assert _raw_scope(easy_db, source.notice_id) == (True, False)
     new_html = "<p>추가된 본문</p>"
     new_text = "익일 안내\n추가된 본문"
     easy_db.execute(

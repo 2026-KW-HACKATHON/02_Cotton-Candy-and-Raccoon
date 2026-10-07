@@ -56,6 +56,7 @@ def _easy_db_connection():
             "20260922053901_rls.sql",
             "20261007000000_notice_easy_text.sql",
             "20261007000004_notice_easy_text_scope.sql",
+            "20261007000005_notice_easy_text_body_only.sql",
         ):
             conn.execute((_ROOT / "supabase/migrations" / name).read_text("utf-8"))
         yield conn

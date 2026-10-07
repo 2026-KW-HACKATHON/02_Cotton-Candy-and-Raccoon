@@ -41,6 +41,24 @@ class StoredNoticeInput(NoticeGlossaryInput):
     notice_id: int = Field(gt=0, strict=True)
     notice_revision: str = Field(pattern=r"^[0-9a-f]{64}$", strict=True)
     body_text_present: bool = Field(strict=True)
+    title: str = Field(strict=True)
+
+    @model_validator(mode="after")
+    def validate_title_boundary(self) -> Self:
+        if self.body_text_present:
+            if (
+                not self.text.startswith(self.title + "\n")
+                or not self.text[self.body_start :].strip()
+            ):
+                raise ValueError("본문 입력과 원문 제목의 경계가 일치하지 않습니다.")
+        elif self.text != self.title:
+            raise ValueError("본문 없는 입력에는 원문 제목만 있어야 합니다.")
+        return self
+
+    @property
+    def body_start(self) -> int:
+        """Keep result offsets in the complete original while sending only its body."""
+        return len(self.title) + (1 if self.body_text_present else 0)
 
 
 def source_hash(source: NoticeGlossaryInput | str) -> str:

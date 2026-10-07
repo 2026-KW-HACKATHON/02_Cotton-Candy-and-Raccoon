@@ -10,6 +10,7 @@ from pipeline.glossary.easy_language import (
     DEFAULT_MODEL,
     PROMPT_VERSION,
     EasyLanguageResult,
+    NoNoticeBodyError,
     simplify_notice,
 )
 from pipeline.glossary.notice_service import load_notice_glossary_input
@@ -55,6 +56,8 @@ def simplify_and_store_notice(
             raise EasyTextStorageError("공지 원문이 바뀌었습니다. 최신 공지로 다시 요청하세요.")
         if source.text != current.text:
             raise EasyTextStorageError("저장할 입력을 DB 공지 원문과 연결할 수 없습니다.")
+        if not current.body_text_present:
+            raise NoNoticeBodyError("변환할 본문 텍스트가 없습니다.")
         source = current
         expected_cache_token = get_notice_easy_text_cache_token(conn, source.notice_id)
         if not refresh:

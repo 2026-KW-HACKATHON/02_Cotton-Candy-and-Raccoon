@@ -25,7 +25,7 @@ from pipeline.glossary.source import (
 )
 
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
-PROMPT_VERSION = "easy-language-v6"
+PROMPT_VERSION = "easy-language-v7"
 PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "gemini_easy_language.md"
 MAX_TERM_CHARACTERS = 100
 
@@ -48,6 +48,10 @@ class EasyLanguageAPIError(RuntimeError):
 
 class EasyLanguageValidationError(ValueError):
     """Gemini failed JSON or literal source validation on both attempts."""
+
+
+class NoNoticeBodyError(ValueError):
+    """A stored notice has no body text; its title is never converted instead."""
 
 
 def _validate_term(original: str, replacement: str) -> None:
@@ -192,6 +196,23 @@ def _resolve_changes(text: str, response: EasyLanguageResponse) -> tuple[Applied
     return changes
 
 
+def _resolve_body_changes(
+    text: str, response: EasyLanguageResponse, title: str | None
+) -> tuple[AppliedChange, ...]:
+    """Validate model excerpts inside the body, retaining complete-original offsets."""
+    if title is None:
+        return _resolve_changes(text, response)
+    prefix = title + "\n"
+    if not text.startswith(prefix) or not text[len(prefix) :].strip():
+        raise ValueError("쉬운말 변환에는 제목과 구분된 본문이 필요합니다.")
+    return tuple(
+        change.model_copy(
+            update={"start": change.start + len(prefix), "end": change.end + len(prefix)}
+        )
+        for change in _resolve_changes(text[len(prefix) :], response)
+    )
+
+
 def _credential_forms(api_key: str) -> tuple[str, ...]:
     secret = api_key.strip()
     return tuple({secret, quote(secret, safe=""), quote_plus(secret)})
@@ -250,6 +271,8 @@ class EasyLanguageResult(BaseModel):
     notice_id: int | None = Field(default=None, gt=0, strict=True)
     notice_revision: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$", strict=True)
     original_text: str = Field(min_length=1, max_length=MAX_SOURCE_CHARACTERS, strict=True)
+    # Derived from the DB source, never from Gemini. Not a separate DB column.
+    original_title: str | None = Field(default=None, strict=True)
     easy_text: str = Field(min_length=1, strict=True)
     source_hash: str = Field(pattern=r"^[0-9a-f]{64}$", strict=True)
     model: str = Field(min_length=1, strict=True)
@@ -273,7 +296,7 @@ class EasyLanguageResult(BaseModel):
             raise ValueError("모델과 프롬프트 버전이 필요합니다.")
         if self.source_hash != source_hash(source):
             raise ValueError("보관한 원문과 원문 해시가 일치하지 않습니다.")
-        resolved = _resolve_changes(
+        resolved = _resolve_body_changes(
             source.text,
             EasyLanguageResponse(
                 changes=tuple(
@@ -285,6 +308,7 @@ class EasyLanguageResult(BaseModel):
                     for change in self.changes
                 ),
             ),
+            self.original_title,
         )
         if (
             self.changes != resolved
@@ -317,12 +341,19 @@ def simplify_notice(
 ) -> EasyLanguageResult:
     """Retry invalid JSON/spans once; API failures never become successful empty work.
 
-    Both attempts send the same complete original as ``notice_text``. The model
+    DB inputs send the same body on both attempts; the title stays outside Gemini.
+    Direct text inputs have no known title boundary and are treated as body text. The model
     chooses contextual equivalents; local validation checks literal spans and
     protected formats, but cannot prove that two Korean expressions mean the same.
     """
     if not isinstance(source, NoticeGlossaryInput):
         raise EasyLanguageConfigurationError("A validated notice source is required.")
+    if isinstance(source, StoredNoticeInput) and not source.body_text_present:
+        raise NoNoticeBodyError("변환할 본문 텍스트가 없습니다.")
+    title = source.title if isinstance(source, StoredNoticeInput) else None
+    request_text = (
+        source.text[source.body_start :] if isinstance(source, StoredNoticeInput) else source.text
+    )
     if not isinstance(api_key, str) or not api_key.strip():
         raise EasyLanguageConfigurationError("GEMINI_API_KEY is required.")
     if not isinstance(model, str) or not model.strip():
@@ -335,7 +366,7 @@ def simplify_notice(
     credentials = _credential_forms(api_key)
     for attempt in (1, 2):
         try:
-            output = request(prompt=prompt, notice_text=source.text, api_key=api_key, model=model)
+            output = request(prompt=prompt, notice_text=request_text, api_key=api_key, model=model)
         except EasyLanguageConfigurationError:
             raise EasyLanguageConfigurationError(
                 "Gemini easy-language configuration failed."
@@ -347,10 +378,10 @@ def simplify_notice(
         try:
             if not isinstance(output, str):
                 raise ValueError("Gemini JSON must be text.")
-            _validate_raw_credentials(output, source.text, credentials)
+            _validate_raw_credentials(output, request_text, credentials)
             response = EasyLanguageResponse.model_validate_json(output)
-            _validate_decoded_credentials(response, source.text, credentials)
-            changes = _resolve_changes(source.text, response)
+            _validate_decoded_credentials(response, request_text, credentials)
+            changes = _resolve_body_changes(source.text, response, title)
             easy_text = apply_easy_language_changes(source.text, changes)
             _validate_generated_credentials(easy_text, changes, credentials)
         except (ValidationError, ValueError) as error:
@@ -411,6 +442,7 @@ def simplify_notice(
             notice_id=source.notice_id,
             notice_revision=source.notice_revision,
             original_text=source.text,
+            original_title=title,
             easy_text=easy_text,
             source_hash=source_hash(source),
             model=model,

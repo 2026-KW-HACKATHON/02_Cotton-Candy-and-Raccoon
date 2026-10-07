@@ -46,6 +46,7 @@ def database() -> Iterator[psycopg.Connection]:
             "20261007000001_notice_glossary_current_source.sql",
             "20261007000003_standard_dictionary.sql",
             "20261007000004_notice_easy_text_scope.sql",
+            "20261007000005_notice_easy_text_body_only.sql",
         ]
         for path in files:
             conn.execute(path.read_text(encoding="utf-8"))

@@ -177,10 +177,15 @@ def test_direct_text_provenance_stays_unknown_and_old_result_json_remains_readab
 
 @pytest.mark.parametrize("body", [False, True])
 def test_db_provenance_changes_only_local_result_metadata_not_gemini_input(body) -> None:
+    from pipeline.glossary.easy_language import NoNoticeBodyError
     from pipeline.glossary.source import StoredNoticeInput
 
     source = StoredNoticeInput(
-        notice_id=22, notice_revision="a" * 64, text="공지 제목", body_text_present=body
+        notice_id=22,
+        notice_revision="a" * 64,
+        text="공지 제목\n본문 안내" if body else "공지 제목",
+        title="공지 제목",
+        body_text_present=body,
     )
     request = []
 
@@ -188,10 +193,16 @@ def test_db_provenance_changes_only_local_result_metadata_not_gemini_input(body)
         request.append(kwargs)
         return response_json()
 
+    if not body:
+        with pytest.raises(NoNoticeBodyError):
+            simplify_notice(source, api_key=API_KEY, request=call)
+        assert request == []
+        return
     result = simplify_notice(source, api_key=API_KEY, request=call)
     assert result.body_text_present is body
     assert result.attachment_content_included is False
-    assert request[0]["notice_text"] == source.text
+    assert request[0]["notice_text"] == "본문 안내"
+    assert result.original_title == "공지 제목"
     assert "body_text_present" not in request[0]
     assert "attachment_content_included" not in request[0]
     assert result.prompt_version == PROMPT_VERSION
@@ -621,7 +632,7 @@ def test_prompt_loads_exact_text_and_rejects_missing_or_empty_file(tmp_path, mon
 
 def test_prompt_keeps_contextual_minimal_changes_without_dictionary_selection() -> None:
     prompt = load_easy_language_prompt()
-    assert PROMPT_VERSION == "easy-language-v6"
+    assert PROMPT_VERSION == "easy-language-v7"
     assert "문맥" in prompt
     assert "조사" in prompt and "어미" in prompt
     assert "최소" in prompt

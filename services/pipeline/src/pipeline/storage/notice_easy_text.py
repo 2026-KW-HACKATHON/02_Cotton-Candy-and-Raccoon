@@ -88,12 +88,18 @@ def get_notice_easy_text(
     body = html_to_notice_text(body_html)
     if payload["original_text"] != title + ("\n" + body if body else ""):
         raise EasyTextStorageError("저장된 쉬운말 원문이 DB 공지와 일치하지 않습니다.")
+    # Older workers could convert the title. Keep those rows for history, but
+    # never return them as a body-only conversion or reuse a title-only result.
+    if not isinstance(payload["easy_text"], str):
+        raise EasyTextStorageError("저장된 쉬운말 결과의 형식이 올바르지 않습니다.")
+    if not body or not payload["easy_text"].startswith(title + "\n"):
+        return None
     scope = (payload["body_text_present"], payload["attachment_content_included"])
     if scope != (None, None) and scope != (bool(body), False):
         raise EasyTextStorageError("저장된 쉬운말 처리 범위가 DB 원문과 일치하지 않습니다.")
     # Old rows stay unknown in SQL until a validated service read fills them.
     # A backend read can already derive truthful scope from the verified parent.
-    payload.update(body_text_present=bool(body), attachment_content_included=False)
+    payload.update(original_title=title, body_text_present=True, attachment_content_included=False)
     try:
         result = EasyLanguageResult.model_validate(payload)
         if result.notice_id != notice_id:
@@ -150,6 +156,8 @@ def fill_notice_easy_text_scope(
         body = html_to_notice_text(body_html)
         if result.original_text != title + ("\n" + body if body else ""):
             raise EasyTextStorageError("처리 범위를 확인할 DB 공지 원문이 일치하지 않습니다.")
+        if not body or result.original_title != title:
+            raise EasyTextStorageError("제목을 보존한 본문 결과에만 처리 범위를 보충합니다.")
         cursor.execute(
             "update public.notice_easy_texts "
             "set body_text_present = %s, attachment_content_included = false "
@@ -214,6 +222,10 @@ def save_notice_easy_text(
         current_text = title + ("\n" + body if body else "")
         if result.original_text != current_text:
             raise EasyTextStorageError("쉬운말 원문이 저장된 DB 공지와 일치하지 않습니다.")
+        if not body:
+            raise EasyTextStorageError("본문 없는 공지는 쉬운말 성공 결과로 저장하지 않습니다.")
+        if result.original_title is not None and result.original_title != title:
+            raise EasyTextStorageError("쉬운말 결과의 원문 제목이 DB 공지와 일치하지 않습니다.")
         scope = (result.body_text_present, result.attachment_content_included)
         if scope != (None, None) and scope != (bool(body), False):
             raise EasyTextStorageError("쉬운말 처리 범위가 DB 원문과 일치하지 않습니다.")
@@ -222,6 +234,7 @@ def save_notice_easy_text(
         result = EasyLanguageResult.model_validate(
             {
                 **result.model_dump(),
+                "original_title": title,
                 "body_text_present": bool(body),
                 "attachment_content_included": False,
             }

@@ -1,6 +1,7 @@
 """Convert notice terms with Gemini and reuse saved notice conversions."""
 
 import argparse
+import json
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -14,6 +15,7 @@ from pipeline.glossary.easy_language import (
     EasyLanguageAPIError,
     EasyLanguageConfigurationError,
     EasyLanguageValidationError,
+    NoNoticeBodyError,
     simplify_notice,
 )
 from pipeline.glossary.easy_language_service import simplify_and_store_notice
@@ -67,6 +69,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             rendered = result.model_dump_json(indent=2)
             if args.output:
                 args.output.write_text(rendered, encoding="utf-8")
+    except NoNoticeBodyError:
+        rendered = json.dumps(
+            {"notice_id": source.notice_id, "status": "skipped", "reason_code": "no_body_text"},
+            ensure_ascii=False,
+            indent=2,
+        )
+        if args.output:
+            try:
+                args.output.write_text(rendered, encoding="utf-8")
+            except OSError:
+                print("출력 파일을 기록하지 못했습니다.", file=sys.stderr)
+                return 2
+        print(rendered)
+        return 0
     except (EasyLanguageAPIError, EasyLanguageValidationError):
         print("API 응답 처리에 실패했습니다. 성공 결과를 만들지 않았습니다.", file=sys.stderr)
         return 1

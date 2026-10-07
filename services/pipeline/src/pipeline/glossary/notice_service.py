@@ -29,4 +29,5 @@ def load_notice_glossary_input(conn: Connection, notice_id: int) -> StoredNotice
         text=text,
         notice_revision=notice_content_revision(title, body_html),
         body_text_present=bool(body),
+        title=title,
     )
