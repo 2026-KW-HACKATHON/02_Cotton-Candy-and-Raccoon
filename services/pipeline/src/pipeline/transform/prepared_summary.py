@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from pydantic import ValidationError
+
 from pipeline.transform.gemini_input import GeminiInputError, validate_gemini_input
 from pipeline.transform.notice_input import NoticeInput
 from pipeline.transform.summary_schema import MediaSource, NoticeSummary
@@ -55,6 +57,8 @@ class SummaryPreparationError(ValueError):
 
 def prepare_gemini_request(
     prepared: PreparedSummaryLike,
+    *,
+    notice: NoticeInput | None = None,
 ) -> tuple[list[dict[str, str]], tuple[MediaSource, ...]]:
     """Copy prepared blocks and append a stable ordinal file-reference manifest.
 
@@ -63,6 +67,16 @@ def prepare_gemini_request(
     """
     if prepared.failures:
         raise SummaryPreparationError("input_preparation_failed")
+    # The public summarizer supplies its already validated request snapshot.
+    # Standalone preparation also avoids rereading mutable notice properties
+    # after to_gemini_input runs.
+    if notice is None:
+        try:
+            notice = NoticeInput.model_validate(
+                prepared.notice.model_dump(mode="python", warnings=False)
+            )
+        except ValidationError:
+            raise SummaryPreparationError("invalid_prepared_input") from None
     try:
         value = prepared.to_gemini_input()
     except ValueError:
@@ -80,7 +94,7 @@ def prepare_gemini_request(
         source_id = f"media_{len(media) + 1}"
         media.append(MediaSource(source_id=source_id, source_type=source_type))
         descriptions.append(f"{source_id}: {source_type}, {block['mime_type']}")
-    if not (prepared.notice.body_text.strip() or prepared.notice.attachments or media):
+    if not (notice.body_text.strip() or notice.attachments or media):
         raise SummaryPreparationError("summary_source_has_no_content")
     if descriptions:
         blocks.append(

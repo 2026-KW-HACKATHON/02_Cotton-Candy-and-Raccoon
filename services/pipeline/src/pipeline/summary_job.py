@@ -9,6 +9,8 @@ from psycopg import Connection
 
 from pipeline.storage.summaries import (
     StoredPreparedSummary,
+    SummaryExecutionSuperseded,
+    begin_summary_execution,
     record_summary_failure,
     save_prepared_summary,
 )
@@ -49,6 +51,17 @@ class StoredSummaryFailure:
     result: None = field(default=None, init=False)
 
 
+@dataclass(frozen=True, slots=True)
+class StoredSummarySuperseded:
+    """A later registered execution owns the row; this outcome was not saved."""
+
+    notice_id: int
+    warnings: tuple[PreparationIssueLike, ...]
+    reason_code: str = field(default="summary_execution_superseded", init=False)
+    status: Literal["superseded"] = field(default="superseded", init=False)
+    result: None = field(default=None, init=False)
+
+
 def _failure_code(error: Exception) -> str:
     if isinstance(error, GeminiConfigurationError):
         return "configuration_error"
@@ -63,21 +76,34 @@ def summarize_and_save_prepared_notice(
     *,
     deadline_resolver: DeadlineResolver = compute_deadline_on,
     api_key: str | None = None,
-) -> StoredPreparedSummary | StoredSummaryFailure:
+    attempt_increment: int = 1,
+    expected_source_revision: int | None = None,
+) -> StoredPreparedSummary | StoredSummaryFailure | StoredSummarySuperseded:
     """Run one summary execution and write its completed result or failure.
 
     The caller owns preparation, source_hash, attachment_status, model/prompt
     version metadata and the DB connection/commit. #14's deadline calculation is
     the default resolver; tests can inject one without calling it on review rows.
     The supplied metadata must describe the actual request. This function performs
-    no source query, downloads, extraction, SQL migration, or execution scheduling.
-    It writes only after summarization finishes, and opens no DB transaction around
-    Gemini. Internal shape retries still count as one summary execution.
+    no source-content fetch, downloads, extraction, SQL migration, or execution scheduling.
+    It registers an execution token before Gemini without committing caller data.
+    Use autocommit (or explicitly commit low-level registration before Gemini) for
+    short token registration. A caller transaction otherwise holds the per-notice
+    source/registry locks until commit/rollback, blocking source edits and overlapping executions.
+    Guarded completion must match the captured source revision as well as its token.
+    Source changes invalidate previously published summaries immediately. A caller
+    must capture notices.content_revision with the source and pass it as
+    expected_source_revision to reject an already stale prepared input before
+    Gemini. Legacy callers omitting it retain compatibility, without protection
+    against changes that occurred before registration.
+    Internal shape retries still count as one summary execution. An external
+    pending start uses increment=1; finish that execution here with increment=0.
     A known processing failure returns status=failed/result=None after recording it,
     so raising the API exception does not accidentally roll back the failure row.
     Same-source summary rows retain their public data and status on failure.
     Changed-source failures withhold stale public data and mark needs_review.
-    needs_review publishes no result and never calls the deadline resolver.
+    needs_review retains generated content for display with a warning and never
+    calls the sorting deadline resolver.
     The caller commits both outcome types before reporting durable storage; DB or
     programming failures still raise and must be rolled back.
     """
@@ -85,6 +111,7 @@ def summarize_and_save_prepared_notice(
         notice_id=prepared.notice_id,
         status="pending",
         metadata=metadata,
+        attempt_increment=attempt_increment,
     )
     if checked.metadata.prompt_version != SUMMARY_PROMPT_VERSION:
         raise SummaryRecordError("prompt_version_mismatch")
@@ -93,6 +120,15 @@ def summarize_and_save_prepared_notice(
     warnings = tuple(prepared.warnings)
     if not callable(deadline_resolver):
         raise SummaryRecordError("invalid_deadline_resolver")
+    try:
+        if expected_source_revision is None:
+            execution_token = begin_summary_execution(conn, checked.notice_id)
+        else:
+            execution_token = begin_summary_execution(
+                conn, checked.notice_id, expected_source_revision=expected_source_revision
+            )
+    except SummaryExecutionSuperseded:
+        return StoredSummarySuperseded(notice_id=checked.notice_id, warnings=warnings)
     try:
         result = summarize_prepared_notice(prepared, model=checked.metadata.model, api_key=api_key)
     except (
@@ -106,12 +142,17 @@ def summarize_and_save_prepared_notice(
         # pretending this failure record was saved; ordinary programming bugs are
         # not mistaken for model failures.
         reason_code = _failure_code(error)
-        record_summary_failure(
-            conn,
-            checked.notice_id,
-            checked.metadata,
-            reason_code=reason_code,
-        )
+        try:
+            record_summary_failure(
+                conn,
+                checked.notice_id,
+                checked.metadata,
+                reason_code=reason_code,
+                attempt_increment=checked.attempt_increment,
+                execution_token=execution_token,
+            )
+        except SummaryExecutionSuperseded:
+            return StoredSummarySuperseded(notice_id=checked.notice_id, warnings=warnings)
         return StoredSummaryFailure(
             notice_id=checked.notice_id,
             reason_code=reason_code,
@@ -128,10 +169,15 @@ def summarize_and_save_prepared_notice(
     if record.status == "summarized":
         assert record.result is not None
         deadline_on = deadline_resolver(record.result)
-    return save_prepared_summary(
-        conn,
-        result,
-        checked.metadata,
-        deadline_on=deadline_on,
-        generated_at=generated_at,
-    )
+    try:
+        return save_prepared_summary(
+            conn,
+            result,
+            checked.metadata,
+            deadline_on=deadline_on,
+            generated_at=generated_at,
+            attempt_increment=checked.attempt_increment,
+            execution_token=execution_token,
+        )
+    except SummaryExecutionSuperseded:
+        return StoredSummarySuperseded(notice_id=checked.notice_id, warnings=warnings)

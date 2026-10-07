@@ -896,6 +896,7 @@ def test_summarizer_validates_response_without_using_a_real_key(
     )
     example_summary["summary"] = "온라인 신청"
     example_summary["action"] = "온라인 신청"
+    example_summary["card_summaries"]["action"] = "온라인으로 신청할 수 있어요."
     example_summary["dates"] = []
     example_summary["evidence"] = [
         {"field": "summary", "excerpt": "온라인 신청"},

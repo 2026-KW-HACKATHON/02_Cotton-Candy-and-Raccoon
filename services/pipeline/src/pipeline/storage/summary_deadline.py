@@ -11,7 +11,8 @@ DEADLINE_KINDS = frozenset({"application", "submission", "payment"})
 def compute_deadline_on(summary: NoticeSummary) -> date | None:
     """Return the latest application/submission/payment end date, or NULL.
 
-    The storage job calls this only after the summary passes the publication gate.
+    The storage job calls this only for a verified summarized result. Review dates
+    remain in their cards but do not establish a sorting deadline.
     Event/operation dates, start-only dates and category_code cannot set a deadline.
     """
     if not isinstance(summary, NoticeSummary):

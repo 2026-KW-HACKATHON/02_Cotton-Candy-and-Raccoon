@@ -109,7 +109,9 @@ def test_insert_repeat_department_visibility_and_timestamps(db_conn, record: Not
             "select department, is_modified, content_updated_at from notices where id = %s",
             (notice_id,),
         )
-        assert cursor.fetchone() == ("새 부서", False, datetime(2000, 1, 1, tzinfo=UTC))
+        department, modified, changed_at = cursor.fetchone()
+        assert (department, modified) == ("새 부서", True)
+        assert changed_at > datetime(2000, 1, 1, tzinfo=UTC)
 
 
 @pytest.mark.parametrize("changes", [

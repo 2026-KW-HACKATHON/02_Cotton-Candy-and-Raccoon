@@ -63,18 +63,19 @@ def _summary_snapshot(value: NoticeSummary) -> NoticeSummary:
         raise SummaryRecordError("invalid_summary_result") from None
 
 
-def _requires_review(summary: NoticeSummary, metadata: "SummaryMetadata") -> bool:
-    """Only text-matched claims may be published, including every date reference.
+def summary_requires_review(summary: NoticeSummary, *, attachment_status: AttachmentStatus) -> bool:
+    """Decide whether the AI summary needs an original-notice warning.
 
     Evidence does not identify individual array entries. A text match for one
     date cannot validate a different date supported only by a file reference.
-    Consequently any file-only or unchecked reference requires review.
+    Consequently any file-only or unchecked reference requires review. This flag
+    does not discard the generated content or prevent its display with a warning.
     """
     if (
         summary.category == "unknown"
         or summary.category_code is None
         or summary.uncertainties
-        or metadata.attachment_status in {"partial", "unread"}
+        or attachment_status in {"partial", "unread"}
         or any(
             item.source_type != "text" or item.verification != "text_matched"
             for item in summary.evidence
@@ -132,8 +133,10 @@ class SummaryMetadata:
 class SummaryRecord:
     """A summary write or execution failure for a notice_summaries row.
 
-    Only summarized rows contain public result JSON. needs_review tells the app
-    to show an original-notice instruction, with no result or deadline. Failure
+    summarized and needs_review rows retain generated public result JSON.
+    needs_review tells the app to display that content with an original-notice
+    warning, without a sorting deadline. A review row may have no result after
+    source invalidation or when created under the earlier storage contract. Failure
     writes preserve existing data when the source is unchanged. A changed source
     invalidates the old public summary, retaining its input/version metadata.
 
@@ -151,6 +154,7 @@ class SummaryRecord:
     generated_at: datetime | None = None
     last_error_code: str | None = None
     attempt_increment: int = 1
+    execution_token: int | None = None
 
     def __post_init__(self) -> None:
         if type(self.notice_id) is not int or not 0 < self.notice_id <= 2**63 - 1:
@@ -168,6 +172,10 @@ class SummaryRecord:
         object.__setattr__(self, "metadata", metadata)
         if type(self.attempt_increment) is not int or self.attempt_increment not in {0, 1}:
             raise SummaryRecordError("invalid_attempt_increment")
+        if self.execution_token is not None and (
+            type(self.execution_token) is not int or not 0 < self.execution_token <= 2**63 - 1
+        ):
+            raise SummaryRecordError("invalid_execution_token")
         if self.deadline_on is not None and type(self.deadline_on) is not date:
             raise SummaryRecordError("invalid_deadline_on")
         if self.generated_at is not None and (
@@ -184,11 +192,11 @@ class SummaryRecord:
                 raise SummaryRecordError("summary_generated_at_required")
             if self.last_error_code is not None:
                 raise SummaryRecordError("unexpected_error_code")
-            if _requires_review(snapshot, self.metadata):
+            if summary_requires_review(snapshot, attachment_status=self.metadata.attachment_status):
                 raise SummaryRecordError("summary_requires_review")
         elif self.status == "needs_review":
             if self.result is not None:
-                raise SummaryRecordError("unexpected_summary_result")
+                object.__setattr__(self, "result", _summary_snapshot(self.result))
             if self.generated_at is None:
                 raise SummaryRecordError("summary_generated_at_required")
             if self.last_error_code is not None:
@@ -216,14 +224,14 @@ def build_summary_record(
     deadline_on: date | None,
     generated_at: datetime,
     attempt_increment: int = 1,
+    execution_token: int | None = None,
 ) -> SummaryRecord:
     """Map a prepared result to #14's row contract without IO.
 
-    Only results supported by text-matched evidence can be published as summarized.
     File-only, unchecked, unknown/uncertain, or incompletely read results become
-    needs_review: the app must show "원문을 확인하세요" instead of summary content.
-    Its public result and deadline are NULL. The original prepared result remains
-    caller data in memory; this function does not persist internal review content.
+    needs_review. Both completed states retain the generated summary for display;
+    review content must carry "원문 확인 요함" and has no sorting deadline.
+    Only text-matched results can be recorded as summarized without that warning.
     Preparation warnings alone do not change status.
     """
     if not isinstance(result, PreparedSummaryResult):
@@ -241,15 +249,18 @@ def build_summary_record(
         metadata=metadata,
         generated_at=generated_at,
         attempt_increment=attempt_increment,
+        execution_token=execution_token,
     )
-    if _requires_review(snapshot, checked.metadata):
-        return checked
+    needs_review = summary_requires_review(
+        snapshot, attachment_status=checked.metadata.attachment_status
+    )
     return SummaryRecord(
         notice_id=checked.notice_id,
-        status="summarized",
+        status="needs_review" if needs_review else "summarized",
         metadata=checked.metadata,
         result=snapshot,
-        deadline_on=deadline_on,
+        deadline_on=None if needs_review else deadline_on,
         generated_at=checked.generated_at,
         attempt_increment=checked.attempt_increment,
+        execution_token=checked.execution_token,
     )

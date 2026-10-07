@@ -46,6 +46,12 @@ def _file_output(kind: str = "image") -> dict[str, Any]:
             {"title": "음악 교실", "category": "event", "summary": "가족과 함께하는 음악 체험"},
         ],
         uncertainties=[],
+        card_summaries={
+            "audience": "지역 주민이 대상이에요.",
+            "deadline": "문화 프로그램은 2026년 10월 10일 10:00부터 11:00까지예요.",
+            "action": "온라인으로 예약한 뒤 월계문화센터를 방문해 주세요.",
+            "notes": "일부 프로그램은 사전 예약이 필요해요. 참가비는 프로그램별로 달라요.",
+        },
         evidence=[
             {
                 "field": field,

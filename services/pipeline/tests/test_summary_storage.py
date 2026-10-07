@@ -245,17 +245,19 @@ def test_uncertain_or_incompletely_read_summary_cannot_be_claimed_as_summarized(
 
 
 @pytest.mark.parametrize("attachment_status", ["none", "all_read", "partial", "unread"])
-def test_review_state_publishes_no_summary_category_or_deadline(
+def test_review_state_preserves_summary_and_category_without_a_sorting_deadline(
     attachment_status: str,
 ) -> None:
     record = _record(
         "needs_review",
         metadata=_metadata(attachment_status=attachment_status),
+        result=_summary(uncertainties=["원문 확인 필요"]),
     )
     conn, cursor = _connection()
     save_notice_summary(conn, record)
     values = cursor.execute.call_args.args[1]
-    assert values[2:6] == (None, None, None, None)
+    assert values[2].obj == record.result.model_dump(mode="json")
+    assert values[3:6] == ("application", 27, None)
     assert values[6] == attachment_status
 
 
@@ -283,10 +285,25 @@ def test_result_states_require_summary_and_generation_time_without_failure_code(
     assert failure.value.reason_code == reason_code
 
 
-@pytest.mark.parametrize("result", [_summary(), {}])
-def test_review_state_rejects_any_public_summary_payload(result: Any) -> None:
-    with pytest.raises(SummaryRecordError, match="unexpected_summary_result"):
+@pytest.mark.parametrize("result", [{}, "invalid"])
+def test_review_state_rejects_invalid_summary_payload(result: Any) -> None:
+    with pytest.raises(SummaryRecordError, match="summary_result_required"):
         _record("needs_review", result=result)
+
+
+def test_review_without_generated_content_remains_compatible_with_invalidated_rows() -> None:
+    conn, cursor = _connection()
+    save_notice_summary(conn, _record("needs_review"))
+    assert cursor.execute.call_args.args[1][2:6] == (None, None, None, None)
+
+
+def test_review_unknown_classification_retains_json_without_inventing_category_columns() -> None:
+    summary = _summary(category="unknown", category_code=None)
+    conn, cursor = _connection()
+    save_notice_summary(conn, _record("needs_review", result=summary))
+    values = cursor.execute.call_args.args[1]
+    assert values[2].obj == summary.model_dump(mode="json")
+    assert values[3:6] == (None, None, None)
 
 
 @pytest.mark.parametrize(

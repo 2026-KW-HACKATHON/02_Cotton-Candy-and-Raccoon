@@ -13,7 +13,9 @@ from pipeline.storage.summaries import (
     save_notice_summary,
     save_prepared_summary,
 )
+from pipeline.storage.summary_view import build_notice_summary_view
 from pipeline.transform.prepared_summary import PreparedSummaryResult
+from pipeline.transform.summary_cards import build_summary_cards
 from pipeline.transform.summary_schema import MediaSource, NoticeSummary
 
 
@@ -97,7 +99,10 @@ def test_success_then_timeout_preserves_result_status_deadline_and_all_summary_c
 def test_failure_preserves_every_existing_row_state(
     summary_db: psycopg.Connection, existing_status: str
 ) -> None:
-    save_notice_summary(summary_db, _record(existing_status))
+    changes = {"result": _summary(uncertainties=["원문 확인 필요"])} if (
+        existing_status == "needs_review"
+    ) else {}
+    save_notice_summary(summary_db, _record(existing_status, **changes))
     before = _stored(summary_db)
     _failure(summary_db)
     after = _stored(summary_db)
@@ -148,7 +153,7 @@ def test_success_after_failure_replaces_summary_columns_and_clears_failure_code(
     [("document", False), ("image", False), ("document", True)],
     ids=["first-pdf", "first-image", "success-then-pdf-review"],
 )
-def test_file_only_prepared_summary_stores_review_with_no_public_content(
+def test_file_only_prepared_summary_preserves_content_through_database_and_public_cards(
     summary_db: psycopg.Connection, source_type: str, replace_success: bool
 ) -> None:
     if replace_success:
@@ -178,13 +183,22 @@ def test_file_only_prepared_summary_stores_review_with_no_public_content(
     row = _stored(summary_db)
     assert stored.status == row["status"] == "needs_review"
     assert stored.deadline_on is row["deadline_on"] is None
-    assert row["result"] is None
-    assert row["category"] is None
-    assert row["category_code"] is None
+    assert row["result"] == result.summary.model_dump(mode="json")
+    assert row["category"] == "application"
+    assert row["category_code"] == 27
     assert row["generated_at"] == GENERATED_AT
     assert row["attempt_count"] == (2 if replace_success else 1)
-    # Unverified content survives only in the pipeline caller's in-memory data.
+    # The persisted result supplies the app's cards, with a separate display warning.
     assert stored.result.summary.model_dump(mode="json") == result.summary.model_dump(mode="json")
+    view = build_notice_summary_view(
+        status=row["status"], result=row["result"], attachment_status=row["attachment_status"]
+    )
+    expected = build_summary_cards(result.summary)
+    assert view.message == "원문 확인 요함"
+    assert view.content.headline.text == f"{expected.headline.text} (원문 확인 요함)"
+    assert view.content.headline.value == expected.headline.value
+    assert view.content.cards == expected.cards
+    assert view.content.metadata == expected.metadata
 
 
 def test_changed_source_failure_withholds_stale_summary_and_retries_to_new_source(

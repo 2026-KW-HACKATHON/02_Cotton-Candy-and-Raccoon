@@ -256,8 +256,11 @@ def _save_entries(
                     )
                 except psycopg.Error:
                     failures.extend(
-                        WolgyeFailure(remaining.post_sn, "storage", "db_unavailable")
-                        for remaining in selected[index:]
+                        WolgyeFailure(
+                            remaining.post_sn, "storage",
+                            "db_unavailable" if offset == 0 else "db_unavailable_not_attempted",
+                        )
+                        for offset, remaining in enumerate(selected[index:])
                     )
                     break
             try:
@@ -288,8 +291,12 @@ def collect_and_save_wolgye1(
         conn, selected, settings, database.database_url,
         conflicts=listing.conflicting_post_sns,
     )
+    skipped = {
+        failure.post_sn for failure in failures
+        if failure.stage == "listing_conflict" or failure.reason_code.endswith("_not_attempted")
+    }
     return CollectWolgyeResult(
-        listing.total_count, len(listing.entries), len(selected), saved_count,
+        listing.total_count, len(listing.entries), len(selected) - len(skipped), saved_count,
         listing.complete, listing.limited, listing.failed_pages,
         listing.duplicate_count, failures,
     )

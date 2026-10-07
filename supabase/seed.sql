@@ -76,7 +76,7 @@ from notices n where n.category = 'dong' and n.source_board = '1042'
   and n.post_sn = '20260901000000002';
 
 -- #14: 네 상태와 부분 읽기, 숨김 공지의 요약을 함께 확인한다.
--- 검토/최초 실패/대기에는 공개 요약을 저장하지 않는다.
+-- 생성 결과가 없는 기존 검토 행과 최초 실패/대기는 요약 없이 유지한다.
 insert into notice_summaries
   (notice_id, status, attachment_status, source_hash, model, prompt_version,
    attempt_count, last_error_code, generated_at)

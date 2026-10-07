@@ -11,7 +11,7 @@ from pipeline.transform.gemini_input import (
     validate_gemini_request_size,
 )
 from pipeline.transform.gemini_logging import private_gemini_logging
-from pipeline.transform.summary_schema import NoticeSummary
+from pipeline.transform.summary_schema import GeminiNoticeSummary
 
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
 REQUEST_TIMEOUT_MS = 60_000
@@ -77,7 +77,12 @@ def _transport_reason(error: BaseException) -> str:
 def generate_summary_json(
     *, prompt: str, notice_text: GeminiInput, api_key: str, model: str = DEFAULT_MODEL
 ) -> str:
-    """Request JSON without retaining the interaction on Gemini's server."""
+    """Request JSON without retaining the interaction on Gemini's server.
+
+    The locked Interactions SDK maps public retry attempts=1 to one retry, so
+    one logical call can send two HTTP attempts. summarize.py permits at most
+    two logical calls for response correction, for at most four HTTP attempts.
+    """
     if not api_key.strip():
         raise GeminiRequestError("GEMINI_API_KEY is required.", reason_code="missing_api_key")
     if not prompt.strip():
@@ -88,7 +93,7 @@ def generate_summary_json(
     response_format = {
         "type": "text",
         "mime_type": "application/json",
-        "schema": NoticeSummary.model_json_schema(),
+        "schema": GeminiNoticeSummary.model_json_schema(),
     }
     try:
         validated_input = validate_gemini_input(notice_text)
@@ -106,7 +111,12 @@ def generate_summary_json(
             private_gemini_logging(),
             genai.Client(
                 api_key=api_key,
-                http_options=types.HttpOptions(timeout=REQUEST_TIMEOUT_MS),
+                http_options=types.HttpOptions(
+                    timeout=REQUEST_TIMEOUT_MS,
+                    # Without this explicit option the locked Interactions SDK
+                    # sends up to four HTTP attempts for a single logical call.
+                    retry_options=types.HttpRetryOptions(attempts=1),
+                ),
             ) as client,
         ):
             interaction = client.interactions.create(

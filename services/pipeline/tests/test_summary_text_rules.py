@@ -247,6 +247,12 @@ def test_repeated_overlong_action_is_removed_without_truncating_valid_source_cla
         action_requirement="optional",
         notes=[note],
         uncertainties=[],
+        card_summaries={
+            "audience": f"{audience}이 대상이에요.",
+            "deadline": None,
+            "action": "담당 부서 누리집에서 서류를 제출해 주세요.",
+            "notes": "대상 조건과 제출 서류는 공지 원문에서 확인해 주세요.",
+        },
         evidence=[
             {"field": "summary", "excerpt": "청년 지원사업 모집"},
             {"field": "audience", "excerpt": audience},
@@ -285,6 +291,10 @@ def test_excess_notes_get_one_retry_and_do_not_discard_other_valid_claims(
         summary="주민 공지",
         notes=notes,
         uncertainties=[],
+        card_summaries={
+            "audience": None, "deadline": None, "action": None,
+            "notes": "준비 서류 0, 1, 2, 3, 4, 5를 확인해 주세요.",
+        },
         evidence=[
             {"field": "summary", "excerpt": "주민 공지"},
             *({"field": "notes", "excerpt": note} for note in notes),

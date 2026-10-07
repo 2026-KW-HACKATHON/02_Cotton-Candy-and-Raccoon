@@ -25,14 +25,28 @@ def captures() -> dict[str, Any]:
     return json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
 
 
-def _current_contract_raw(raw: str) -> str:
+def _current_contract_raw(raw: str, *, fresh_response: bool = False) -> str:
     """Adapt historical replay shape without editing captures or inferring a field.
 
     The old prompt never requested category_code. Use null only for these offline
     grounding regressions; production continues to require the new response key.
+    Fresh API mocks also need prose for known source fields. These quoted test
+    cards adapt the contract only; they are not captured historical AI prose.
     """
     data = json.loads(raw)
     data.setdefault("category_code", None)
+    if fresh_response:
+        data["card_summaries"] = {
+            "audience": f"“{data['audience']}”가 대상이에요." if data.get("audience") else None,
+            "deadline": " ".join(
+                "일정은 “" + " / ".join(str(value) for value in entry.values() if value)
+                + "”를 확인해 주세요." for entry in data.get("dates", [])
+            ) or None,
+            "action": f"“{data['action']}”를 진행해 주세요." if data.get("action") else None,
+            "notes": " ".join(
+                f"“{note}”를 확인해 주세요." for note in data.get("notes", [])
+            ) or None,
+        }
     return json.dumps(data, ensure_ascii=False)
 
 
@@ -146,7 +160,10 @@ def test_historical_text_responses_replay_with_unknown_field_and_without_api(
 ) -> None:
     case = captures["cases"][case_name]
     notice = NoticeInput.model_validate(case["notice"])
-    responses = iter(_current_contract_raw(response["raw"]) for response in case["responses"])
+    responses = iter(
+        _current_contract_raw(response["raw"], fresh_response=True)
+        for response in case["responses"]
+    )
     calls: list[dict[str, Any]] = []
 
     def generate(**kwargs: Any) -> str:

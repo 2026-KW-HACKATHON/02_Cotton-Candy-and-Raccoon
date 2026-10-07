@@ -42,6 +42,11 @@ def _output(notice: NoticeInput, *notes: str) -> dict[str, Any]:
         audience_scope="conditional",
         notice_update="new",
         notes=list(notes),
+        card_summaries={
+            "audience": "노원구 거주 초등학생이 대상이에요.",
+            "deadline": None, "action": None,
+            "notes": " ".join(f"“{note}”를 확인해 주세요." for note in notes) or None,
+        },
         uncertainties=[],
         evidence=[
             {"field": "summary", "excerpt": TITLE},
@@ -364,6 +369,7 @@ def test_notes_retry_cannot_remove_verified_audience_location_dates_or_status(
             {"field": "dates", "excerpt": schedule},
         ]
     )
+    initial["card_summaries"]["deadline"] = "신청은 10월 1일부터 10월 10일까지예요."
     correction = _output(notice, COST)
     correction.update(audience=None, audience_scope="unknown", notice_update="unknown")
     correction["evidence"] = [
@@ -395,7 +401,9 @@ def test_notes_retry_keeps_an_existing_cancellation_rule_when_adding_cost(
 
     assert len(requests) == 2
     assert result.notes == [restriction, COST]
-    assert result.uncertainties == []
+    # The corrected card contains only the cost, so the preserved restriction
+    # needs a public review warning even though both original notes survive.
+    assert result.uncertainties == [REVIEW_NOTE]
     assert all(
         any(item.field == "notes" and note in item.excerpt for item in result.evidence)
         for note in result.notes
@@ -536,6 +544,7 @@ def test_family_audience_title_does_not_suppress_explicit_cost_coverage(
     correction = deepcopy(initial)
     if repaired:
         correction["notes"] = [cost]
+        correction["card_summaries"]["notes"] = f"“{cost}”를 확인해 주세요."
         correction["evidence"].append({"field": "notes", "excerpt": cost})
     requests = _mock_responses(monkeypatch, initial, correction)
 

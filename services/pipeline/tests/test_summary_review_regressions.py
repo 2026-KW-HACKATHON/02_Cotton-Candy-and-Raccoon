@@ -1,4 +1,4 @@
-"""Keep unverified claims out of issue #14's publicly readable summary rows."""
+"""Preserve review content while retaining the verified/unverified distinction."""
 
 import json
 from datetime import UTC, date, datetime
@@ -89,12 +89,12 @@ def _file_evidence(field: str = "summary", kind: str = "document") -> dict[str, 
     )
 
 
-def _assert_review_not_published(result: PreparedSummaryResult) -> None:
+def _assert_review_content_preserved(result: PreparedSummaryResult) -> None:
     record = build_summary_record(
         result, _metadata(), deadline_on=DEADLINE, generated_at=GENERATED_AT
     )
     assert record.status == "needs_review"
-    assert record.result is None
+    assert record.result.model_dump(mode="json") == result.summary.model_dump(mode="json")
     assert record.deadline_on is None
     conn = MagicMock()
     cursor = conn.cursor.return_value.__enter__.return_value
@@ -107,13 +107,15 @@ def _assert_review_not_published(result: PreparedSummaryResult) -> None:
     assert stored.result.summary.model_dump(mode="json") == result.summary.model_dump(mode="json")
     values = cursor.execute.call_args.args[1]
     assert values[:2] == (17, "needs_review")
-    assert values[2:6] == (None, None, None, None)
+    assert values[2].obj == result.summary.model_dump(mode="json")
+    assert values[3] == (None if result.summary.category == "unknown" else result.summary.category)
+    assert values[4:6] == (result.summary.category_code, None)
     assert values[12] == GENERATED_AT
 
 
 @pytest.mark.parametrize("kind", ["document", "image"])
-def test_file_only_summary_requires_original_notice_without_public_content(kind: str) -> None:
-    _assert_review_not_published(_result(_summary(evidence=[_file_evidence(kind=kind)])))
+def test_file_only_summary_preserves_public_content_with_review_status(kind: str) -> None:
+    _assert_review_content_preserved(_result(_summary(evidence=[_file_evidence(kind=kind)])))
 
 
 @pytest.mark.parametrize("include_text_dates", [False, True], ids=["file-dates", "mixed-dates"])
@@ -126,7 +128,7 @@ def test_file_application_dates_require_review_even_when_other_claims_match_text
         dates.insert(0, _date_entry("첫 신청 기간"))
         evidence.insert(1, _evidence("dates"))
     result = _result(_summary(category="application", dates=dates, evidence=evidence))
-    _assert_review_not_published(result)
+    _assert_review_content_preserved(result)
     monkeypatch.setattr(summary_job, "summarize_prepared_notice", lambda *_args, **_kwargs: result)
     conn = MagicMock()
     conn.cursor.return_value.__enter__.return_value.fetchone.return_value = (17,)
@@ -151,7 +153,7 @@ def test_unverified_or_missing_evidence_cannot_claim_summarized_status(
     evidence: list[dict[str, Any]],
 ) -> None:
     summary = _summary(evidence=evidence)
-    _assert_review_not_published(_result(summary))
+    _assert_review_content_preserved(_result(summary))
     with pytest.raises(SummaryRecordError, match="summary_requires_review"):
         SummaryRecord(
             notice_id=17,
@@ -176,7 +178,7 @@ def test_unverified_or_missing_evidence_cannot_claim_summarized_status(
 )
 def test_each_populated_claim_requires_its_own_text_evidence(field: str, value: Any) -> None:
     result = _result(_summary(**{field: value}))
-    _assert_review_not_published(result)
+    _assert_review_content_preserved(result)
     matched = _result(
         _summary(
             **{field: value}, evidence=[_evidence(), _evidence("category_code"), _evidence(field)]
@@ -232,15 +234,15 @@ def test_mutating_an_approved_record_cannot_bypass_review_before_sql(mutation: s
     conn.cursor.assert_not_called()
 
 
-def test_mutating_review_record_to_include_public_content_is_rejected_before_sql() -> None:
+def test_mutating_review_record_to_schema_invalid_content_is_rejected_before_sql() -> None:
     record = build_summary_record(
         _result(_summary(evidence=[_file_evidence()])),
         _metadata(),
         deadline_on=DEADLINE,
         generated_at=GENERATED_AT,
     )
-    object.__setattr__(record, "result", _summary())
+    record.result.category_code = "27"
     conn = MagicMock()
-    with pytest.raises(SummaryRecordError, match="unexpected_summary_result"):
+    with pytest.raises(SummaryRecordError, match="invalid_summary_result"):
         save_notice_summary(conn, record)
     conn.cursor.assert_not_called()

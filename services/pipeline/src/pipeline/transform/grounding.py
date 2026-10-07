@@ -13,6 +13,7 @@ from pipeline.transform.file_only_summary import (
 from pipeline.transform.notice_input import KST, NoticeInput
 from pipeline.transform.summary_schema import (
     FIELD_TEXT_LIMITS,
+    CardSummaries,
     DateEntry,
     Evidence,
     MediaSource,
@@ -152,6 +153,7 @@ def unknown_summary(notice: NoticeInput, *, has_media: bool = False) -> NoticeSu
         topics=[],
         uncertainties=[REVIEW_NOTE],
         evidence=[],
+        card_summaries=CardSummaries(audience=None, deadline=None, action=None, notes=None),
     )
 
 
@@ -200,31 +202,37 @@ def _explicit_ongoing_intake(excerpt: str) -> bool:
     )
 
 
-def _summary_supported(value: str, evidence: list[Evidence]) -> bool:
+def _summary_context_supported(value: str, excerpt: str) -> bool | None:
+    """Return None for no ordered match, False for an explicitly negated match."""
     tokens = re.findall(r"[가-힣A-Za-z0-9]+", value)
+    if not tokens:
+        return None
+    position = 0
+    first_position = None
+    for token in tokens:
+        found = excerpt.find(token, position)
+        if found < 0:
+            return None
+        if first_position is None:
+            first_position = found
+        position = found + len(token)
+    matched = excerpt[first_position:position]
+    if re.search(r"불가능|불가|금지|아니|아닙|않|없|취소|중단|못", matched) and not re.search(
+        r"불가능|불가|금지|아니|아닙|않|없|취소|중단|못", value
+    ):
+        return False
+    after = excerpt[position : position + 20]
+    return not re.match(
+        r"\s*(?:은|는|을|를|이|가)?\s*(?:하지\s*마|하지\s*않|하지\s*못|할\s*수\s*없|하실\s*수\s*없|안\s*(?:되|됩)|불가|금지|아님|아닙|아니|않|없|취소|중단|못)",
+        after,
+    )
 
-    def in_order(excerpt: str) -> bool:
-        position = 0
-        first_position = None
-        for token in tokens:
-            found = excerpt.find(token, position)
-            if found < 0:
-                return False
-            if first_position is None:
-                first_position = found
-            position = found + len(token)
-        matched = excerpt[first_position:position]
-        if re.search(r"불가능|불가|금지|아니|아닙|않|없|취소|중단|못", matched) and not re.search(
-            r"불가능|불가|금지|아니|아닙|않|없|취소|중단|못", value
-        ):
-            return False
-        after = excerpt[position : position + 20]
-        return not re.match(
-            r"\s*(?:은|는|을|를|이|가)?\s*(?:하지\s*마|하지\s*않|하지\s*못|할\s*수\s*없|하실\s*수\s*없|안\s*(?:되|됩)|불가|금지|아님|아닙|아니|않|없|취소|중단|못)",
-            after,
-        )
 
-    return bool(tokens) and any(in_order(excerpt) for excerpt in _excerpts(evidence, "summary"))
+def _summary_supported(value: str, evidence: list[Evidence]) -> bool:
+    return any(
+        _summary_context_supported(value, excerpt) is True
+        for excerpt in _excerpts(evidence, "summary")
+    )
 
 
 def _category_supported(
@@ -1011,9 +1019,9 @@ def ground_summary(
 ) -> NoticeSummary:
     """Produce the strict comparison result for internal verification.
 
-    The caller may preserve uncertain claims in memory with
-    preserve_uncertain_summary. Storage gates public output: needs_review means
-    the app shows an original-notice instruction and no model claims.
+    The caller preserves uncertain claims with preserve_uncertain_summary.
+    Storage retains those claims as needs_review; the public view displays the
+    generated summary and cards with an original-notice warning.
     """
     if is_file_only_notice(notice, media_sources):
         return preserve_file_only_summary(summary, notice, media_sources)
@@ -1027,10 +1035,18 @@ def ground_summary(
             }
         )
         for item in summary.evidence
-        if evidence_reference_valid(item, sources=sources, media_sources=media_sources)
+        if evidence_reference_valid(
+            item, sources=sources, media_sources=media_sources, title=notice.title
+        )
     ]
+    text_evidence = [item for item in evidence if item.source_type == "text"]
     context_evidence = _source_line_evidence(
-        [item for item in evidence if item.source_type == "text"], sources
+        text_evidence, sources
+    ) + _source_line_evidence(
+        # A title cannot rescue a quote that the surrounding body negates. Only
+        # title-exclusive headline/classification quotes need title context.
+        [item for item in text_evidence if not evidence_reference_valid(item, sources=sources)],
+        [notice.title],
     ) + [item for item in evidence if item.source_type != "text"]
     data = summary.model_dump()
     changed = len(evidence) != len(summary.evidence)
@@ -1042,7 +1058,16 @@ def ground_summary(
         data["publisher"] = None
         changed = True
 
-    if not _summary_supported(data["summary"], context_evidence):
+    title_only_headline = any(
+        item.field == "summary" and not evidence_reference_valid(item, sources=sources)
+        for item in text_evidence
+    )
+    title_conflict = title_only_headline and any(
+        _summary_context_supported(data["summary"], line) is False
+        for source in sources
+        for line in source.splitlines()
+    )
+    if title_conflict or not _summary_supported(data["summary"], context_evidence):
         data["summary"] = REVIEW_NOTE
         changed = True
     if not _category_supported(
@@ -1104,7 +1129,15 @@ def ground_summary(
         data["audience_scope"] = "unknown"
         changed = True
     if data["action"] is None:
-        data["action_requirement"] = "unknown"
+        # News has no resident action by contract. A rejected action or category
+        # must not be turned into a verified claim that no action is required.
+        data["action_requirement"] = (
+            "none"
+            if summary.action is None
+            and summary.action_requirement == "none"
+            and data["category"] == "news"
+            else "unknown"
+        )
     else:
         if not _action_requirement_supported(
             data["action"], data["action_requirement"], evidence, sources
@@ -1284,6 +1317,7 @@ def ground_summary(
         body_text=notice.body_text,
         attachment_texts=[attachment.text for attachment in notice.attachments],
         media_sources=media_sources,
+        title=notice.title,
     )
     return grounded
 
@@ -1321,7 +1355,6 @@ def preserve_uncertain_summary(
     sources = [
         notice.body_text,
         *(attachment.text for attachment in notice.attachments),
-        *(value for value in (notice.title, notice.publisher, notice.department) if value),
     ]
     evidence = []
     cited_fields = set()
@@ -1331,7 +1364,9 @@ def preserve_uncertain_summary(
             continue
         if item.field == "publisher" and notice.publisher:
             continue
-        valid = evidence_reference_valid(item, sources=sources, media_sources=media_sources)
+        valid = evidence_reference_valid(
+            item, sources=sources, media_sources=media_sources, title=notice.title
+        )
         verification = (
             ("text_matched" if item.source_type == "text" else "file_reference_only")
             if valid

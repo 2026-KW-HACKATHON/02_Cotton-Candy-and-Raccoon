@@ -129,7 +129,7 @@ def test_job_uses_default_deadline_rule_for_verified_results(
     assert stored.status == "summarized"
     assert stored.deadline_on == date(2026, 10, 20)
     assert (
-        conn.cursor.return_value.__enter__.return_value.execute.call_args.args[1][5]
+        conn.cursor.return_value.__enter__.return_value.execute.call_args.args[1][7]
         == stored.deadline_on
     )
 
@@ -145,7 +145,9 @@ def test_job_rejects_metadata_for_another_prompt_before_calling_gemini(monkeypat
 
 
 @pytest.mark.parametrize("reason", ["unknown-code", "missing-code-evidence", "file-code-evidence"])
-def test_unverified_subject_cannot_publish_summary_or_deadline(reason: str) -> None:
+def test_unverified_subject_preserves_review_summary_without_a_sorting_deadline(
+    reason: str,
+) -> None:
     data = _summary().model_dump(mode="json")
     if reason == "unknown-code":
         data["category_code"] = None
@@ -164,4 +166,5 @@ def test_unverified_subject_cannot_publish_summary_or_deadline(reason: str) -> N
         result, _metadata(), deadline_on=date(2026, 10, 20), generated_at=GENERATED_AT
     )
     assert record.status == "needs_review"
-    assert record.result is record.deadline_on is None
+    assert record.result.model_dump(mode="json") == result.summary.model_dump(mode="json")
+    assert record.deadline_on is None

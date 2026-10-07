@@ -1,4 +1,4 @@
-"""Validate #14's real table constraints, incremental migration, and app RLS."""
+"""Validate summary/review constraints, incremental migrations, and app RLS."""
 
 from datetime import UTC, datetime
 
@@ -16,6 +16,7 @@ PUBLIC_COLUMNS = (
     "category_code",
     "deadline_on",
     "result",
+    "card_summaries",
     "attachment_status",
     "generated_at",
 )
@@ -28,6 +29,7 @@ PRIVATE_COLUMNS = (
     "updated_at",
 )
 SUBJECT_CODES = (21, 22, 23, 24, 25, 26, 27, 30)
+CARD_SLOTS = ("audience", "deadline", "action", "notes")
 
 
 def insert_notice(
@@ -73,6 +75,203 @@ def insert_summary(db: psycopg.Connection, notice_id: int, **overrides: object) 
         f"insert into notice_summaries ({columns}) values ({','.join(['%s'] * len(values))})",
         tuple(values.values()),
     )
+
+
+@pytest.mark.parametrize("status", ["summarized", "needs_review"])
+@pytest.mark.parametrize(
+    "cards",
+    [
+        dict.fromkeys(CARD_SLOTS),
+        {"audience": "주민", "deadline": "10월 31일까지", "action": "신청", "notes": "무료"},
+        {"audience": " 주민 ", "deadline": None, "action": "방문 신청", "notes": None},
+        {"audience": None, "deadline": None, "action": None, "notes": "안내 " * 80},
+    ],
+)
+def test_card_summaries_generated_without_changing_original_result(
+    db: psycopg.Connection,
+    status: str,
+    cards: dict,
+) -> None:
+    key = insert_notice(db)
+    result = summary_json(db)
+    result["card_summaries"] = cards
+    insert_summary(db, key, status=status, result=result)
+    assert db.execute(
+        "select result,card_summaries from notice_summaries where notice_id=%s", (key,)
+    ).fetchone() == (result, cards)
+
+
+@pytest.mark.parametrize("status", ["summarized", "needs_review"])
+@pytest.mark.parametrize("explicit_null", [False, True])
+def test_legacy_missing_or_null_cards_remain_sql_null(
+    db: psycopg.Connection,
+    status: str,
+    explicit_null: bool,
+) -> None:
+    key = insert_notice(db)
+    result = summary_json(db)
+    result.pop("card_summaries", None)
+    if explicit_null:
+        result["card_summaries"] = None
+    insert_summary(db, key, status=status, result=result)
+    assert db.execute(
+        "select result,card_summaries from notice_summaries where notice_id=%s", (key,)
+    ).fetchone() == (result, None)
+
+
+@pytest.mark.parametrize("status", ["pending", "needs_review", "failed"])
+def test_rows_without_result_have_no_generated_cards(db: psycopg.Connection, status: str) -> None:
+    key = insert_notice(db)
+    insert_summary(
+        db,
+        key,
+        status=status,
+        result=None,
+        category=None,
+        category_code=None,
+        generated_at=datetime(2026, 10, 6, tzinfo=UTC) if status == "needs_review" else None,
+        last_error_code="api_timeout" if status == "failed" else None,
+    )
+    assert db.execute(
+        "select result,card_summaries from notice_summaries where notice_id=%s", (key,)
+    ).fetchone() == (None, None)
+
+
+def test_card_column_is_stored_generated_and_cannot_be_written(db: psycopg.Connection) -> None:
+    generated, expression, data_type = db.execute(
+        "select is_generated,generation_expression,data_type from information_schema.columns "
+        "where table_schema='public' and table_name='notice_summaries' "
+        "and column_name='card_summaries'"
+    ).fetchone()
+    assert generated == "ALWAYS"
+    assert "NULLIF" in expression.upper()
+    assert "result" in expression and "card_summaries" in expression
+    assert data_type == "jsonb"
+    assert db.execute(
+        "select attgenerated from pg_attribute "
+        "where attrelid='notice_summaries'::regclass and attname='card_summaries'"
+    ).fetchone() == ("s",)
+    key = insert_notice(db)
+    insert_summary(db, key)
+    with pytest.raises(psycopg.errors.GeneratedAlways):
+        db.execute(
+            "update notice_summaries set card_summaries=%s where notice_id=%s",
+            (Jsonb(dict.fromkeys(CARD_SLOTS)), key),
+        )
+
+
+def test_generated_cards_follow_result_updates_and_changed_source_invalidation(
+    db: psycopg.Connection,
+) -> None:
+    key = insert_notice(db)
+    result = summary_json(db)
+    result["card_summaries"] = dict.fromkeys(CARD_SLOTS)
+    insert_summary(db, key, result=result)
+    cards = {"audience": "주민", "deadline": None, "action": "신청", "notes": "신분증 지참"}
+    result["card_summaries"] = cards
+    db.execute("update notice_summaries set result=%s where notice_id=%s", (Jsonb(result), key))
+    assert db.execute(
+        "select result,card_summaries from notice_summaries where notice_id=%s", (key,)
+    ).fetchone() == (result, cards)
+    db.execute(
+        "update notice_summaries set status='needs_review',result=null,category=null,"
+        "category_code=null,deadline_on=null,last_error_code='api_timeout' where notice_id=%s",
+        (key,),
+    )
+    assert db.execute(
+        "select result,card_summaries from notice_summaries where notice_id=%s", (key,)
+    ).fetchone() == (None, None)
+
+
+@pytest.mark.parametrize("status", ["summarized", "needs_review"])
+@pytest.mark.parametrize("cards", [[], "", "text", 27, 27.5, True])
+def test_non_object_card_summaries_rejected(
+    db: psycopg.Connection,
+    status: str,
+    cards: object,
+) -> None:
+    key = insert_notice(db)
+    result = summary_json(db)
+    result["card_summaries"] = cards
+    with pytest.raises(psycopg.errors.CheckViolation):
+        insert_summary(db, key, status=status, result=result)
+
+
+@pytest.mark.parametrize("status", ["summarized", "needs_review"])
+@pytest.mark.parametrize("slot", CARD_SLOTS)
+def test_missing_card_slot_rejected_even_when_other_slots_are_null(
+    db: psycopg.Connection,
+    status: str,
+    slot: str,
+) -> None:
+    key = insert_notice(db)
+    cards = dict.fromkeys(CARD_SLOTS)
+    del cards[slot]
+    result = summary_json(db)
+    result["card_summaries"] = cards
+    with pytest.raises(psycopg.errors.CheckViolation):
+        insert_summary(db, key, status=status, result=result)
+
+
+@pytest.mark.parametrize("status", ["summarized", "needs_review"])
+@pytest.mark.parametrize("cards", [{}, {**dict.fromkeys(CARD_SLOTS), "extra": None}])
+def test_empty_or_extra_card_keys_rejected(
+    db: psycopg.Connection,
+    status: str,
+    cards: dict,
+) -> None:
+    key = insert_notice(db)
+    result = summary_json(db)
+    result["card_summaries"] = cards
+    with pytest.raises(psycopg.errors.CheckViolation):
+        insert_summary(db, key, status=status, result=result)
+
+
+@pytest.mark.parametrize("status", ["summarized", "needs_review"])
+@pytest.mark.parametrize("slot", CARD_SLOTS)
+@pytest.mark.parametrize(
+    "value",
+    [
+        "", " ", "\t", "\v", "\f", "\n", "\r", "\r\n",
+        "\x1c\x1d\x1e\x1f", "\u0085", "\u00a0", "\u1680", "\u2000\u2001\u2002\u2003",
+        "\u2004\u2005\u2006\u2007\u2008\u2009\u200a", "\u2028\u2029", "\u202f", "\u205f",
+        "\u3000", " \t\u00a0\u2003\u3000 ", "주민\n신청", "주민\r신청", "신청\r\n",
+        27, 27.5, True, [], {},
+    ],
+)
+def test_non_string_blank_or_multiline_card_values_rejected(
+    db: psycopg.Connection,
+    status: str,
+    slot: str,
+    value: object,
+) -> None:
+    key = insert_notice(db)
+    cards = dict.fromkeys(CARD_SLOTS)
+    cards[slot] = value
+    result = summary_json(db)
+    result["card_summaries"] = cards
+    with pytest.raises(psycopg.errors.CheckViolation):
+        insert_summary(db, key, status=status, result=result)
+
+
+@pytest.mark.parametrize("role", ["anon", "authenticated"])
+def test_app_can_read_generated_cards_only_for_visible_notices(
+    db: psycopg.Connection,
+    role: str,
+) -> None:
+    visible_key = insert_notice(db, post="card-visible")
+    hidden_key = insert_notice(db, post="card-hidden", visible=False)
+    result = summary_json(db)
+    cards = {"audience": "주민", "deadline": None, "action": "신청", "notes": None}
+    result["card_summaries"] = cards
+    insert_summary(db, visible_key, status="needs_review", result=result)
+    insert_summary(db, hidden_key, result=result)
+    db.execute("set local role " + role)
+    assert db.execute(
+        "select notice_id,status,result,card_summaries from notice_summaries "
+        "where notice_id in (%s,%s)",
+        (visible_key, hidden_key),
+    ).fetchall() == [(visible_key, "needs_review", result, cards)]
 
 
 def test_seed_four_states_and_full_valid_summary(db: psycopg.Connection) -> None:
@@ -183,7 +382,7 @@ def test_invalid_storage_contract_rejected(db: psycopg.Connection, overrides: di
         insert_summary(db, key, **overrides)
 
 
-@pytest.mark.parametrize("status", ["pending", "needs_review", "failed"])
+@pytest.mark.parametrize("status", ["pending", "failed"])
 @pytest.mark.parametrize("leaked_column", ["result", "category", "category_code", "deadline_on"])
 def test_unpublished_states_cannot_leak_summary_fields(
     db: psycopg.Connection,
@@ -197,7 +396,7 @@ def test_unpublished_states_cannot_leak_summary_fields(
         "category": None,
         "category_code": None,
         "deadline_on": None,
-        "generated_at": datetime(2026, 10, 6, tzinfo=UTC) if status == "needs_review" else None,
+        "generated_at": None,
         "last_error_code": "api_timeout" if status == "failed" else None,
     }
     values[leaked_column] = {
@@ -208,6 +407,168 @@ def test_unpublished_states_cannot_leak_summary_fields(
     }[leaked_column]
     with pytest.raises(psycopg.errors.CheckViolation):
         insert_summary(db, key, **values)
+
+
+@pytest.mark.parametrize("category", ["living", "unknown"])
+@pytest.mark.parametrize("code", [*SUBJECT_CODES, None])
+def test_review_preserves_generated_result_and_available_classification(
+    db: psycopg.Connection,
+    category: str,
+    code: int | None,
+) -> None:
+    key = insert_notice(db)
+    result = summary_json(db)
+    result.update(category=category, category_code=code)
+    stored_category = None if category == "unknown" else category
+    insert_summary(
+        db,
+        key,
+        status="needs_review",
+        result=result,
+        category=stored_category,
+        category_code=code,
+        attachment_status="partial",
+    )
+    assert db.execute(
+        "select result,category,category_code,deadline_on from notice_summaries where notice_id=%s",
+        (key,),
+    ).fetchone() == (result, stored_category, code, None)
+
+
+@pytest.mark.parametrize("role", ["anon", "authenticated"])
+def test_app_can_read_generated_review_content(db: psycopg.Connection, role: str) -> None:
+    key = insert_notice(db)
+    result = summary_json(db)
+    insert_summary(db, key, status="needs_review", result=result, attachment_status="unread")
+    db.execute("set local role " + role)
+    assert db.execute(
+        "select status,result,category,category_code,deadline_on "
+        "from notice_summaries where notice_id=%s",
+        (key,),
+    ).fetchone() == ("needs_review", result, "living", 27, None)
+
+
+@pytest.mark.parametrize("error_code", [None, "api_timeout"])
+def test_review_without_result_keeps_all_public_content_null(
+    db: psycopg.Connection,
+    error_code: str | None,
+) -> None:
+    key = insert_notice(db)
+    insert_summary(
+        db,
+        key,
+        status="needs_review",
+        result=None,
+        category=None,
+        category_code=None,
+        last_error_code=error_code,
+    )
+    assert db.execute(
+        "select result,category,category_code,deadline_on from notice_summaries where notice_id=%s",
+        (key,),
+    ).fetchone() == (None, None, None, None)
+
+
+@pytest.mark.parametrize("result_code", ["27", "복지", 99, 27.0, 27.5, None, True])
+def test_review_invalid_or_mismatched_json_subject_code_rejected(
+    db: psycopg.Connection,
+    result_code: object,
+) -> None:
+    key = insert_notice(db)
+    result = summary_json(db)
+    result["category_code"] = result_code
+    with pytest.raises(psycopg.errors.CheckViolation):
+        insert_summary(db, key, status="needs_review", result=result)
+
+
+@pytest.mark.parametrize("json_category", [None, 27, True, "event", "unknown"])
+def test_review_invalid_or_mismatched_json_category_rejected(
+    db: psycopg.Connection,
+    json_category: object,
+) -> None:
+    key = insert_notice(db)
+    result = summary_json(db)
+    result["category"] = json_category
+    with pytest.raises(psycopg.errors.CheckViolation):
+        insert_summary(db, key, status="needs_review", result=result)
+
+
+@pytest.mark.parametrize("field", ["category", "category_code"])
+@pytest.mark.parametrize("unclassified", [False, True])
+def test_review_requires_explicit_json_classification_keys(
+    db: psycopg.Connection,
+    field: str,
+    unclassified: bool,
+) -> None:
+    key = insert_notice(db)
+    result = summary_json(db)
+    if unclassified:
+        result.update(category="unknown", category_code=None)
+    del result[field]
+    with pytest.raises(psycopg.errors.CheckViolation):
+        insert_summary(
+            db,
+            key,
+            status="needs_review",
+            result=result,
+            category=None if unclassified else "living",
+            category_code=None if unclassified else 27,
+        )
+
+
+@pytest.mark.parametrize("value", [[], "text", 27, {}])
+def test_review_non_object_or_missing_summary_fields_rejected(
+    db: psycopg.Connection,
+    value: object,
+) -> None:
+    key = insert_notice(db)
+    with pytest.raises(psycopg.errors.CheckViolation):
+        insert_summary(db, key, status="needs_review", result=value)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"category": None},
+        {"category_code": None},
+        {"category_code": 21},
+        {"deadline_on": "2026-10-31"},
+        {"result": None},
+        {"category": "unknown"},
+        {"generated_at": None},
+    ],
+)
+def test_review_inconsistent_columns_or_deadline_rejected(
+    db: psycopg.Connection,
+    overrides: dict,
+) -> None:
+    key = insert_notice(db)
+    with pytest.raises(psycopg.errors.CheckViolation):
+        insert_summary(db, key, status="needs_review", **overrides)
+
+
+@pytest.mark.parametrize("result_code", ["27", 27, 27.0, True])
+def test_review_null_subject_column_requires_explicit_json_null(
+    db: psycopg.Connection,
+    result_code: object,
+) -> None:
+    key = insert_notice(db)
+    result = summary_json(db)
+    result["category_code"] = result_code
+    with pytest.raises(psycopg.errors.CheckViolation):
+        insert_summary(db, key, status="needs_review", result=result, category_code=None)
+
+
+@pytest.mark.parametrize("json_category", [None, 27, True, "living"])
+def test_review_null_type_column_requires_json_unknown(
+    db: psycopg.Connection,
+    json_category: object,
+) -> None:
+    key = insert_notice(db)
+    result = summary_json(db)
+    result["category"] = json_category
+    with pytest.raises(psycopg.errors.CheckViolation):
+        insert_summary(db, key, status="needs_review", result=result, category=None)
 
 
 def test_failed_state_requires_safe_error_and_no_generation(db: psycopg.Connection) -> None:
@@ -346,6 +707,8 @@ def test_app_private_metadata_and_select_star_forbidden(
     [
         "insert into notice_summaries(notice_id) values (1)",
         "update notice_summaries set status='pending'",
+        "update notice_summaries set card_summaries=default",
+        "insert into notice_summaries(notice_id,card_summaries) values (1,default)",
         "delete from notice_summaries",
         "truncate notice_summaries",
     ],
