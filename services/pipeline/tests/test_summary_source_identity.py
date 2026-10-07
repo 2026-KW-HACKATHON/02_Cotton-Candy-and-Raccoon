@@ -63,10 +63,12 @@ def test_db_reader_preserves_seoul_board_post_and_nullable_identifiers(board: st
                 "url": PDF_URL,
             }
         ],
+        4,
     )
     loaded = load_summary_source(conn, 7)
     assert (loaded.category, loaded.source_board, loaded.post_sn) == ("seoul", board, "00123")
     assert loaded.files[0] == _url_file(2, PDF_URL)
+    assert loaded.content_revision == 4
     sql, params = cursor.execute.call_args.args
     assert params == (7,)
     assert "f.notice_id = n.id" in sql

@@ -17,6 +17,7 @@ def _file_output(kind: str = "image") -> dict[str, Any]:
     data = unknown_summary(_prepared().notice, has_media=True).model_dump()
     data.update(
         category="mixed",
+        category_code=26,
         summary="주민 문화 프로그램 안내",
         publisher="노원구청",
         applicable_area="월계1동",
@@ -45,6 +46,12 @@ def _file_output(kind: str = "image") -> dict[str, Any]:
             {"title": "음악 교실", "category": "event", "summary": "가족과 함께하는 음악 체험"},
         ],
         uncertainties=[],
+        card_summaries={
+            "audience": "지역 주민이 대상이에요.",
+            "deadline": "문화 프로그램은 2026년 10월 10일 10:00부터 11:00까지예요.",
+            "action": "온라인으로 예약한 뒤 월계문화센터를 방문해 주세요.",
+            "notes": "일부 프로그램은 사전 예약이 필요해요. 참가비는 프로그램별로 달라요.",
+        },
         evidence=[
             {
                 "field": field,
@@ -64,6 +71,7 @@ def _file_output(kind: str = "image") -> dict[str, Any]:
                 ("dates", "10.10 10:00-11:00"),
                 ("notes", "예약제 / 프로그램별 비용"),
                 ("topics", "공예 / 음악 프로그램"),
+                ("category_code", "문화교실 일정표"),
             )
         ],
     )
@@ -350,6 +358,7 @@ def test_text_only_preserves_a_claim_when_quote_does_not_support_it(
             {"field": "location", "excerpt": "장소: 월계공원"},
         ],
     )
+    output["card_summaries"]["action"] = "장소는 월계문화센터예요."
     requests = _mock_responses(monkeypatch, output)
 
     result = summarize_module.summarize_prepared_notice(prepared, api_key="mock-key")
@@ -447,17 +456,18 @@ def test_file_reference_retry_preserves_omitted_array_items_and_accepts_date_cor
     assert REVIEW_NOTE in result.uncertainties
 
 
-def test_broken_json_on_a_reference_retry_does_not_fall_back_to_the_first_summary(
+def test_broken_json_on_a_reference_retry_preserves_first_summary_for_review(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     first = _file_output()
     first["evidence"] = []
     requests = _mock_responses(monkeypatch, first, "not-json")
 
-    with pytest.raises(SummaryValidationError):
-        summarize_module.summarize_prepared_notice(
-            _prepared("", _media("image")), api_key="mock-key"
-        )
+    result = summarize_module.summarize_prepared_notice(
+        _prepared("", _media("image")), api_key="mock-key"
+    ).summary
+    assert _facts(result.model_dump()) == _facts(first)
+    assert result.uncertainties == [REVIEW_NOTE]
     assert len(requests) == 2
 
 
@@ -475,15 +485,17 @@ def test_broken_json_twice_is_processing_failure_for_file_only(
     assert marker not in str(error.value)
 
 
-def test_reference_retry_returning_broken_json_is_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_reference_retry_returning_broken_json_keeps_pdf_summary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     first = _file_output("document")
     for item in first["evidence"]:
         item.pop("page")
     requests = _mock_responses(monkeypatch, first, "not-json")
 
-    with pytest.raises(SummaryValidationError, match="after one retry"):
-        summarize_module.summarize_prepared_notice(
-            _prepared("", _media("document")), api_key="mock-key"
-        )
-
+    result = summarize_module.summarize_prepared_notice(
+        _prepared("", _media("document")), api_key="mock-key"
+    ).summary
+    assert _facts(result.model_dump()) == _facts(first)
+    assert result.uncertainties == [REVIEW_NOTE]
     assert len(requests) == 2

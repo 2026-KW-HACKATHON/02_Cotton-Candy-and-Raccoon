@@ -1,59 +1,7 @@
 """Validate the consolidated baseline using an empty disposable loopback DB."""
 
-import os
-from collections.abc import Iterator
-from pathlib import Path
-
 import psycopg
 import pytest
-
-ROOT = Path(__file__).resolve().parents[2]
-
-
-@pytest.fixture(scope="module")
-def database() -> Iterator[psycopg.Connection]:
-    dsn = os.environ.get("SCHEMA_TEST_DATABASE_URL")
-    if not dsn:
-        pytest.skip("SCHEMA_TEST_DATABASE_URL is required")
-    conn = psycopg.connect(dsn)
-    if conn.info.host != "127.0.0.1" or not conn.info.dbname.startswith("pipeline_schema_test_"):
-        conn.close()
-        pytest.fail("Use a disposable loopback pipeline_schema_test_* database")
-    try:
-        assert conn.execute("select to_regclass('public.notices')").fetchone()[0] is None
-        # Emulate Supabase default API role grants, not the actual Data API.
-        conn.execute("create role anon; create role authenticated")
-        conn.execute("grant usage on schema public to anon, authenticated")
-        conn.execute(
-            "alter default privileges in schema public grant all on tables to anon, authenticated"
-        )
-        conn.execute(
-            "alter default privileges in schema public "
-            "grant all on sequences to anon, authenticated"
-        )
-        files = sorted((ROOT / "supabase/migrations").glob("*.sql"))
-        assert [path.name for path in files] == [
-            "20260922053900_init.sql",
-            "20260922053901_rls.sql",
-            "20260923044500_holidays.sql",
-        ]
-        for path in files:
-            conn.execute(path.read_text(encoding="utf-8"))
-        conn.execute((ROOT / "supabase/seed.sql").read_text(encoding="utf-8"))
-        yield conn
-    finally:
-        conn.rollback()
-        conn.close()
-
-
-@pytest.fixture
-def db(database: psycopg.Connection) -> Iterator[psycopg.Connection]:
-    database.execute("savepoint source_test")
-    try:
-        yield database
-    finally:
-        database.execute("rollback to savepoint source_test")
-        database.execute("release savepoint source_test")
 
 
 def insert_notice(
@@ -83,7 +31,7 @@ def test_consolidated_init_and_seed(db: psycopg.Connection) -> None:
         == "id:aaaaaaaa-0000-0000-0000-000000000001"
     )
     assert db.execute("select count(*) from notices").fetchone()[0] == 5
-    assert db.execute("select count(*) from notice_files").fetchone()[0] == 3
+    assert db.execute("select count(*) from notice_files").fetchone()[0] == 4
     columns = dict(
         db.execute(
             "select column_name,is_nullable from information_schema.columns "
@@ -195,7 +143,7 @@ def test_invalid_file_key_rejected(
 def test_visible_rows_allowed_file_key_forbidden(db: psycopg.Connection, role: str) -> None:
     db.execute("set local role " + role)
     assert db.execute("select count(*) from notices where not is_visible").fetchone()[0] == 0
-    assert len(db.execute("select id,notice_id,kind,url from notice_files").fetchall()) == 2
+    assert len(db.execute("select id,notice_id,kind,url from notice_files").fetchall()) == 3
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         db.execute("select file_key from notice_files")
 

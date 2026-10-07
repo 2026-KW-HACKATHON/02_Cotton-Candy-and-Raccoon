@@ -6,6 +6,7 @@ from datetime import date, datetime
 from typing import Literal
 
 from pipeline.transform.prepared_summary import PreparedSummaryResult
+from pipeline.transform.summary_files import PrivateSummaryFileManifest, manifest_snapshot
 from pipeline.transform.summary_schema import NoticeSummary
 
 type SummaryStatus = Literal["pending", "summarized", "needs_review", "failed"]
@@ -63,28 +64,36 @@ def _summary_snapshot(value: NoticeSummary) -> NoticeSummary:
         raise SummaryRecordError("invalid_summary_result") from None
 
 
-def _requires_review(summary: NoticeSummary, metadata: "SummaryMetadata") -> bool:
-    """Only text-matched claims may be published, including every date reference.
+def summary_requires_review(summary: NoticeSummary, *, attachment_status: AttachmentStatus) -> bool:
+    """Decide whether the AI summary needs an original-notice warning.
 
     Evidence does not identify individual array entries. A text match for one
     date cannot validate a different date supported only by a file reference.
-    Consequently any file-only or unchecked reference requires review.
+    Consequently any file-only or unchecked reference requires review. This flag
+    does not discard the generated content or prevent its display with a warning.
     """
     if (
         summary.category == "unknown"
+        or summary.category_code is None
         or summary.uncertainties
-        or metadata.attachment_status in {"partial", "unread"}
+        or attachment_status in {"partial", "unread"}
         or any(
             item.source_type != "text" or item.verification != "text_matched"
             for item in summary.evidence
         )
     ):
         return True
-    required = {"summary"}
+    required = {"summary", "category_code"}
     required.update(
         name
         for name in (
-            "applicable_area", "audience", "action", "location", "dates", "notes", "topics"
+            "applicable_area",
+            "audience",
+            "action",
+            "location",
+            "dates",
+            "notes",
+            "topics",
         )
         if getattr(summary, name) not in (None, [])
     )
@@ -95,9 +104,10 @@ def _requires_review(summary: NoticeSummary, metadata: "SummaryMetadata") -> boo
 class SummaryMetadata:
     """Caller-supplied input identity and version information.
 
-    The input owner computes source_hash and attachment_status: #13's current
-    preparation result does not retain all file IDs or the original file count.
-    Include PDF/image contents when the owners extend #14's text hash contract.
+    summary_metadata builds the text hash from body text and file_key-sorted
+    extracted attachment texts. The input owner supplies original/read file
+    counts because #13's preparation result does not retain that manifest.
+    PDF/image bytes are outside the current text hash contract.
     Model and prompt_version must describe the request that produced the result.
     """
 
@@ -124,14 +134,17 @@ class SummaryMetadata:
 class SummaryRecord:
     """A summary write or execution failure for a notice_summaries row.
 
-    Only summarized rows contain public result JSON. needs_review tells the app
-    to show an original-notice instruction, with no result or deadline. Failure
-    writes preserve an existing row apart from its execution counters and error.
+    summarized and needs_review rows retain generated public result JSON.
+    needs_review tells the app to display that content with an original-notice
+    warning, without a sorting deadline. A review row may have no result after
+    source invalidation or when created under the earlier storage contract. Failure
+    writes preserve existing data when the source is unchanged. A changed source
+    invalidates the old public summary, retaining its input/version metadata.
 
     attempt_increment counts summary executions, including their internal API
     retry, rather than HTTP requests. Use 1 on a direct terminal write or when
     starting pending; use 0 to finish that same pending execution.
-    The caller supplies #14's computed deadline_on; this module does not compute it.
+    summary_deadline supplies #14's deterministic deadline calculation.
     """
 
     notice_id: int
@@ -142,6 +155,8 @@ class SummaryRecord:
     generated_at: datetime | None = None
     last_error_code: str | None = None
     attempt_increment: int = 1
+    execution_token: int | None = None
+    file_manifest: PrivateSummaryFileManifest | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if type(self.notice_id) is not int or not 0 < self.notice_id <= 2**63 - 1:
@@ -159,6 +174,22 @@ class SummaryRecord:
         object.__setattr__(self, "metadata", metadata)
         if type(self.attempt_increment) is not int or self.attempt_increment not in {0, 1}:
             raise SummaryRecordError("invalid_attempt_increment")
+        if self.execution_token is not None and (
+            type(self.execution_token) is not int or not 0 < self.execution_token <= 2**63 - 1
+        ):
+            raise SummaryRecordError("invalid_execution_token")
+        if self.file_manifest is not None:
+            try:
+                manifest = manifest_snapshot(self.file_manifest)
+            except (TypeError, ValueError):
+                raise SummaryRecordError("invalid_file_manifest") from None
+            if manifest.notice_id != self.notice_id:
+                raise SummaryRecordError("file_manifest_notice_id_mismatch")
+            if self.status not in {"summarized", "needs_review"} or self.result is None:
+                raise SummaryRecordError("unexpected_file_manifest")
+            if manifest.attachment_status != self.metadata.attachment_status:
+                raise SummaryRecordError("file_manifest_attachment_status_mismatch")
+            object.__setattr__(self, "file_manifest", manifest)
         if self.deadline_on is not None and type(self.deadline_on) is not date:
             raise SummaryRecordError("invalid_deadline_on")
         if self.generated_at is not None and (
@@ -175,11 +206,11 @@ class SummaryRecord:
                 raise SummaryRecordError("summary_generated_at_required")
             if self.last_error_code is not None:
                 raise SummaryRecordError("unexpected_error_code")
-            if _requires_review(snapshot, self.metadata):
+            if summary_requires_review(snapshot, attachment_status=self.metadata.attachment_status):
                 raise SummaryRecordError("summary_requires_review")
         elif self.status == "needs_review":
             if self.result is not None:
-                raise SummaryRecordError("unexpected_summary_result")
+                object.__setattr__(self, "result", _summary_snapshot(self.result))
             if self.generated_at is None:
                 raise SummaryRecordError("summary_generated_at_required")
             if self.last_error_code is not None:
@@ -207,14 +238,15 @@ def build_summary_record(
     deadline_on: date | None,
     generated_at: datetime,
     attempt_increment: int = 1,
+    execution_token: int | None = None,
 ) -> SummaryRecord:
     """Map a prepared result to #14's row contract without IO.
 
-    Only results supported by text-matched evidence can be published as summarized.
     File-only, unchecked, unknown/uncertain, or incompletely read results become
-    needs_review: the app must show "원문을 확인하세요" instead of summary content.
-    Its public result and deadline are NULL. The original prepared result remains
-    caller data in memory; this function does not persist internal review content.
+    needs_review. Both completed states retain the generated summary for display;
+    review content has no sorting deadline. The public view returns review
+    guidance separately, leaving its display to the caller. Only text-matched
+    results can be recorded as summarized.
     Preparation warnings alone do not change status.
     """
     if not isinstance(result, PreparedSummaryResult):
@@ -232,15 +264,19 @@ def build_summary_record(
         metadata=metadata,
         generated_at=generated_at,
         attempt_increment=attempt_increment,
+        execution_token=execution_token,
     )
-    if _requires_review(snapshot, checked.metadata):
-        return checked
+    needs_review = summary_requires_review(
+        snapshot, attachment_status=checked.metadata.attachment_status
+    )
     return SummaryRecord(
         notice_id=checked.notice_id,
-        status="summarized",
+        status="needs_review" if needs_review else "summarized",
         metadata=checked.metadata,
         result=snapshot,
-        deadline_on=deadline_on,
+        deadline_on=None if needs_review else deadline_on,
         generated_at=checked.generated_at,
         attempt_increment=checked.attempt_increment,
+        execution_token=checked.execution_token,
+        file_manifest=result.file_manifest,
     )

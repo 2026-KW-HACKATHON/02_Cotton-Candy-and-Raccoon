@@ -13,6 +13,7 @@ from psycopg.types.json import Jsonb
 from pipeline.storage.summaries import (
     UPSERT_SUMMARY,
     UPSERT_SUMMARY_FAILURE,
+    UPSERT_SUMMARY_PENDING,
     SummaryStorageError,
     record_summary_failure,
     save_notice_summary,
@@ -37,6 +38,7 @@ def _metadata(**changes: Any) -> SummaryMetadata:
 def _summary(**changes: Any) -> NoticeSummary:
     values = {
         "category": "application",
+        "category_code": 27,
         "summary": "지원 사업 신청",
         "publisher": "노원구청",
         "applicable_area": "월계1동",
@@ -100,6 +102,7 @@ def _summary(**changes: Any) -> NoticeSummary:
             "verification": "text_matched",
         }
         for field, excerpt in (
+            ("category_code", "지원 사업 신청"),
             ("applicable_area", "월계1동"),
             ("audience", "월계1동 주민"),
             ("action", "주민센터 방문 신청"),
@@ -145,12 +148,15 @@ def test_all_four_summary_states_bind_their_complete_row_and_leave_transaction_t
     conn.cursor.assert_called_once_with(row_factory=tuple_row)
     cursor.execute.assert_called_once()
     sql, values = cursor.execute.call_args.args
-    assert sql == (UPSERT_SUMMARY_FAILURE if status == "failed" else UPSERT_SUMMARY)
-    assert len(values) == 12
+    assert sql == {"failed": UPSERT_SUMMARY_FAILURE, "pending": UPSERT_SUMMARY_PENDING}.get(
+        status, UPSERT_SUMMARY
+    )
+    assert len(values) == 14
+    assert values[13] is None
     assert values[:2] == (42, status)
-    assert values[5:10] == ("all_read", "ab" * 32, "gemini-3.5-flash-lite", "notice-summary-v3", 1)
-    assert values[10] == ("api_timeout" if status == "failed" else None)
-    assert values[11] == (GENERATED_AT if status in {"summarized", "needs_review"} else None)
+    assert values[6:11] == ("all_read", "ab" * 32, "gemini-3.5-flash-lite", "notice-summary-v3", 1)
+    assert values[11] == ("api_timeout" if status == "failed" else None)
+    assert values[12] == (GENERATED_AT if status in {"summarized", "needs_review"} else None)
     _assert_caller_keeps_transaction(conn)
 
 
@@ -162,9 +168,10 @@ def test_storage_preserves_the_entire_verified_summary_json() -> None:
     assert isinstance(values[2], Jsonb)
     assert values[2].obj == record.result.model_dump(mode="json")
     assert values[3] == "application"
-    assert values[4] == date(2026, 10, 20)
+    assert values[4] == 27
+    assert values[5] == date(2026, 10, 20)
     assert all(item["verification"] == "text_matched" for item in values[2].obj["evidence"])
-    assert values[11].utcoffset() == timedelta(hours=9)
+    assert values[12].utcoffset() == timedelta(hours=9)
 
 
 def test_pending_state_binds_null_result_columns() -> None:
@@ -172,27 +179,35 @@ def test_pending_state_binds_null_result_columns() -> None:
     save_notice_summary(conn, _record())
     save_notice_summary(conn, _record("pending"))
     sql, values = cursor.execute.call_args.args
-    assert values[2:5] == (None, None, None)
+    assert values[2:6] == (None, None, None, None)
+    assert values[12] is None
+    for column in (
+        "result",
+        "category",
+        "category_code",
+        "deadline_on",
+        "generated_at",
+        "last_error_code",
+    ):
+        assert f"{column} = excluded.{column}" not in sql
+    assert sql == UPSERT_SUMMARY_PENDING
     assert values[11] is None
-    for column in ("result", "category", "deadline_on", "generated_at", "last_error_code"):
-        assert f"{column} = excluded.{column}" in sql
-    assert values[10] is None
     _assert_caller_keeps_transaction(conn)
 
 
-def test_failure_updates_only_the_failure_code_attempt_count_and_timestamp() -> None:
+def test_failure_atomically_withholds_changed_source_and_preserves_generation_metadata() -> None:
     conn, cursor = _connection()
     assert record_summary_failure(conn, 42, _metadata(), reason_code="api_timeout") == 42
     sql, values = cursor.execute.call_args.args
     assert sql == UPSERT_SUMMARY_FAILURE
     updates = sql.split("do update set", 1)[1].split("returning", 1)[0]
-    assert updates.strip() == (
-        "last_error_code = excluded.last_error_code,\n"
-        "    attempt_count = notice_summaries.attempt_count + excluded.attempt_count,\n"
-        "    updated_at = now()"
-    )
-    assert values[:5] == (42, "failed", None, None, None)
-    assert values[9:] == (1, "api_timeout", None)
+    assert "source_hash is distinct from excluded.source_hash" in updates
+    assert "then 'needs_review' else notice_summaries.status end" in updates
+    assert "last_error_code = excluded.last_error_code" in updates
+    for column in ("source_hash", "model", "prompt_version", "generated_at", "attachment_status"):
+        assert f"{column} =" not in updates
+    assert values[:6] == (42, "failed", None, None, None, None)
+    assert values[10:] == (1, "api_timeout", None, None)
     assert "select " not in sql.lower()
     _assert_caller_keeps_transaction(conn)
 
@@ -203,8 +218,8 @@ def test_attempt_count_is_incremented_in_the_single_upsert_without_a_prior_read(
     save_notice_summary(conn, _record(attempt_increment=0))
     calls = cursor.execute.call_args_list
     assert len(calls) == 2
-    assert calls[0].args[1][9] == 1
-    assert calls[1].args[1][9] == 0
+    assert calls[0].args[1][10] == 1
+    assert calls[1].args[1][10] == 0
     assert (
         "attempt_count = notice_summaries.attempt_count + excluded.attempt_count" in UPSERT_SUMMARY
     )
@@ -231,18 +246,20 @@ def test_uncertain_or_incompletely_read_summary_cannot_be_claimed_as_summarized(
 
 
 @pytest.mark.parametrize("attachment_status", ["none", "all_read", "partial", "unread"])
-def test_review_state_publishes_no_summary_category_or_deadline(
+def test_review_state_preserves_summary_and_category_without_a_sorting_deadline(
     attachment_status: str,
 ) -> None:
     record = _record(
         "needs_review",
         metadata=_metadata(attachment_status=attachment_status),
+        result=_summary(uncertainties=["원문 확인 필요"]),
     )
     conn, cursor = _connection()
     save_notice_summary(conn, record)
     values = cursor.execute.call_args.args[1]
-    assert values[2:5] == (None, None, None)
-    assert values[5] == attachment_status
+    assert values[2].obj == record.result.model_dump(mode="json")
+    assert values[3:6] == ("application", 27, None)
+    assert values[6] == attachment_status
 
 
 @pytest.mark.parametrize("status", ["pending", "failed", "needs_review"])
@@ -269,10 +286,25 @@ def test_result_states_require_summary_and_generation_time_without_failure_code(
     assert failure.value.reason_code == reason_code
 
 
-@pytest.mark.parametrize("result", [_summary(), {}])
-def test_review_state_rejects_any_public_summary_payload(result: Any) -> None:
-    with pytest.raises(SummaryRecordError, match="unexpected_summary_result"):
+@pytest.mark.parametrize("result", [{}, "invalid"])
+def test_review_state_rejects_invalid_summary_payload(result: Any) -> None:
+    with pytest.raises(SummaryRecordError, match="summary_result_required"):
         _record("needs_review", result=result)
+
+
+def test_review_without_generated_content_remains_compatible_with_invalidated_rows() -> None:
+    conn, cursor = _connection()
+    save_notice_summary(conn, _record("needs_review"))
+    assert cursor.execute.call_args.args[1][2:6] == (None, None, None, None)
+
+
+def test_review_unknown_classification_retains_json_without_inventing_category_columns() -> None:
+    summary = _summary(category="unknown", category_code=None)
+    conn, cursor = _connection()
+    save_notice_summary(conn, _record("needs_review", result=summary))
+    values = cursor.execute.call_args.args[1]
+    assert values[2].obj == summary.model_dump(mode="json")
+    assert values[3:6] == (None, None, None)
 
 
 @pytest.mark.parametrize(
@@ -474,4 +506,4 @@ def test_optional_deadline_remains_caller_supplied_instead_of_using_every_end_da
     save_notice_summary(conn, replace(_record(), deadline_on=None))
     values = cursor.execute.call_args.args[1]
     assert values[2].obj["dates"][0]["end_date"] == "2026-10-20"
-    assert values[4] is None
+    assert values[5] is None

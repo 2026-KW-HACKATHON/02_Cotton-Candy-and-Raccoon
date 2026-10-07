@@ -3,9 +3,18 @@
 import re
 from dataclasses import dataclass
 from datetime import date
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 
 def _single_line(value: str) -> str:
@@ -31,10 +40,22 @@ FIELD_TEXT_LIMITS = {
     "uncertainties": 15,
 }
 MAX_NOTES_ITEMS = 5
+TITLE_EVIDENCE_FIELDS = frozenset({"summary", "category", "category_code"})
 SingleLineText = Annotated[str, Field(min_length=1), AfterValidator(_single_line)]
 NoteText = Annotated[SingleLineText, Field(max_length=FIELD_TEXT_LIMITS["notes"])]
 UncertaintyText = Annotated[SingleLineText, Field(max_length=FIELD_TEXT_LIMITS["uncertainties"])]
 Category = Literal["application", "event", "living", "obligation", "news", "mixed", "unknown"]
+CategoryCode = Literal[21, 22, 23, 24, 25, 26, 27, 30]
+CATEGORY_CODE_NAMES: dict[int, str] = {
+    21: "교통",
+    22: "안전",
+    23: "주택",
+    24: "경제",
+    25: "환경",
+    26: "문화",
+    27: "복지",
+    30: "행정",
+}
 
 
 class DateEntry(BaseModel):
@@ -96,6 +117,7 @@ class Evidence(BaseModel):
 
     field: Literal[
         "category",
+        "category_code",
         "summary",
         "publisher",
         "applicable_area",
@@ -127,12 +149,75 @@ class Evidence(BaseModel):
         return value
 
 
-class NoticeSummary(BaseModel):
-    """The complete output shape required by the checked-in prompt."""
+class CardSummaries(BaseModel):
+    """Gemini-written prose for the four resident-facing summary cards."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
+    audience: SingleLineText | None
+    deadline: SingleLineText | None
+    action: SingleLineText | None
+    notes: SingleLineText | None
+
+
+_QUOTED_CARD_TEXT = re.compile(
+    r'"[^"\n]*"|\'[^\'\n]*\'|“[^”\n]*”|‘[^’\n]*’|「[^」\n]*」|『[^』\n]*』'
+)
+_DACHE_CARD_ENDING = re.compile(
+    r"(?:니다|한다|된다|이다|있다|없다|하다|바란다|받는다|따른다|본다|쓴다|"
+    r"간다|준다|온다|갖는다|않는다|싶다)(?=요?(?:[.!?;；]|$))"
+)
+_NON_YOCHE_NOUNS = ("필요", "중요", "주요", "개요", "수요", "동요", "소요", "민요")
+
+
+def card_text_uses_yoche(value: str) -> bool:
+    """Check a literal 요 ending and obvious unquoted 다-style sentences.
+
+    This conservative style check is not a Korean grammar parser. Quoted source
+    wording and embedded clauses are allowed; the original text is never changed.
+    """
+    if not value.strip() or "\n" in value or "\r" in value:
+        return False
+    ending = value.rstrip().rstrip(".!?").rstrip()
+    if (
+        not ending.endswith("요")
+        or ending.split()[-1] == "요"
+        or ending.endswith(_NON_YOCHE_NOUNS)
+    ):
+        return False
+    unquoted = _QUOTED_CARD_TEXT.sub("", ending)
+    return _DACHE_CARD_ENDING.search(unquoted) is None
+
+
+class GeminiCardSummaries(CardSummaries):
+    """Require 요-style prose only in freshly generated Gemini card text."""
+
+    @field_validator("audience", "deadline", "action", "notes")
+    @classmethod
+    def yoche_card_text(cls, value: str | None) -> str | None:
+        if value is not None and not card_text_uses_yoche(value):
+            raise ValueError(
+                "fresh card text must end in polite Korean 요 style "
+                "without mixed 다-style sentences"
+            )
+        return value
+
+
+class NoticeSummary(BaseModel):
+    """Schema-valid AI output with evidence and review information.
+
+    Unknown policy fields use category_code=None. Unverified claims are retained
+    in needs_review rows and displayed with an original-notice warning. The
+    warning belongs to the public view rather than the 40-character summary.
+    """
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    # Local execution outcome, never a Gemini field or resident-facing JSON.
+    _correction_failure_code: str | None = PrivateAttr(default=None)
+
     category: Category
+    category_code: CategoryCode | None
     summary: SingleLineText = Field(max_length=FIELD_TEXT_LIMITS["summary"])
     publisher: SingleLineText | None = Field(max_length=FIELD_TEXT_LIMITS["publisher"])
     applicable_area: SingleLineText | None = Field(max_length=FIELD_TEXT_LIMITS["applicable_area"])
@@ -161,6 +246,64 @@ class NoticeSummary(BaseModel):
     topics: list[Topic]
     uncertainties: list[UncertaintyText]
     evidence: list[Evidence]
+    card_summaries: CardSummaries | None = None
+
+    @field_validator("category_code", mode="before")
+    @classmethod
+    def integer_category_code(cls, value: object) -> object:
+        # Numeric literals otherwise accept equal floats, even in strict models.
+        if value is not None and type(value) is not int:
+            raise ValueError("category_code must be a JSON integer or null")
+        return value
+
+
+class GeminiNoticeSummary(NoticeSummary):
+    """Require fresh prose for known card facts while retaining truly missing slots.
+
+    A news summary can use policy-default action_requirement='none' without an
+    explicit source statement. That classification alone never requires new
+    prose claiming there is no action. A cited no-action statement does require
+    prose; grounding checks whether the citation belongs to the supplied source.
+    """
+
+    card_summaries: GeminiCardSummaries
+
+    @model_validator(mode="after")
+    def known_fields_have_card_text(self) -> Self:
+        required = {
+            "audience": self.audience is not None,
+            "deadline": bool(self.dates),
+            "action": (
+                self.action is not None
+                or self.location is not None
+                or (
+                    self.action_requirement == "none"
+                    and any(item.field == "action_requirement" for item in self.evidence)
+                )
+            ),
+            "notes": (
+                bool(self.notes)
+                or self.changed_details is not None
+                or self.status_detail is not None
+                or self.notice_update in {"modified", "extended", "cancelled"}
+                or self.status == "cancelled"
+            ),
+        }
+        errors = [
+            {
+                "type": "value_error",
+                "loc": ("card_summaries", key),
+                "input": None,
+                "ctx": {"error": ValueError("fresh card text is missing for known source fields")},
+            }
+            for key, needed in required.items()
+            if needed and getattr(self.card_summaries, key) is None
+        ]
+        if errors:
+            # Keep a slot-specific location so the shared correction merge can
+            # repair only that card and preserve first-response source facts.
+            raise ValidationError.from_exception_data(type(self).__name__, errors)
+        return self
 
 
 class SummaryValidationError(ValueError):
@@ -172,18 +315,29 @@ class SummaryValidationError(ValueError):
 
 
 def evidence_reference_valid(
-    item: Evidence, *, sources: list[str], media_sources: tuple[MediaSource, ...] = ()
+    item: Evidence,
+    *,
+    sources: list[str],
+    media_sources: tuple[MediaSource, ...] = (),
+    title: str | None = None,
 ) -> bool:
     """Check text literally, or only the supplied file reference and page format.
 
     A PDF page number is a positive reference, not a locally verified page count.
     File quotes cannot be checked against the binary contents by this function.
+    A supplied metadata title supports only headlines and classification, never
+    eligibility, actions or schedules. Omitting title retains body/file checks.
     """
     if item.source_type == "text":
         return (
             item.source_id is None
             and item.page is None
-            and any(item.excerpt in source for source in sources)
+            and (
+                any(item.excerpt in source for source in sources)
+                or item.field in TITLE_EVIDENCE_FIELDS
+                and title is not None
+                and item.excerpt in title
+            )
         )
     if item.source_type == "document" and item.page is None:
         return False
@@ -201,13 +355,16 @@ def validate_evidence(
     body_text: str,
     attachment_texts: list[str],
     media_sources: tuple[MediaSource, ...] = (),
+    title: str | None = None,
 ) -> None:
     """Validate each reference without presenting file quotes as text-matched."""
     sources = [body_text, *attachment_texts]
     for item in summary.evidence:
         if getattr(summary, item.field) in (None, []):
             raise SummaryValidationError(f"Evidence points to an empty field: {item.field}")
-        if not evidence_reference_valid(item, sources=sources, media_sources=media_sources):
+        if not evidence_reference_valid(
+            item, sources=sources, media_sources=media_sources, title=title
+        ):
             raise SummaryValidationError(f"Evidence excerpt not found in source: {item.field}")
         expected = "text_matched" if item.source_type == "text" else "file_reference_only"
         if item.verification is not None and item.verification != expected:
@@ -216,6 +373,7 @@ def validate_evidence(
     if not any(source.strip() for source in sources) and not media_sources:
         if (
             summary.category != "unknown"
+            or summary.category_code is not None
             or summary.summary != "공지 확인 불가"
             or summary.action is not None
             or summary.dates
@@ -231,7 +389,10 @@ def validate_evidence(
     required = set() if partial_headline else {"summary"}
     if partial_headline and summary.category != "unknown":
         required.add("category")
-    for field in ("applicable_area", "audience", "action", "location", "dates", "notes", "topics"):
+    for field in (
+        "category_code", "applicable_area", "audience", "action", "location", "dates", "notes",
+        "topics",
+    ):
         if getattr(summary, field) not in (None, []):
             required.add(field)
     missing = required - {item.field for item in summary.evidence}

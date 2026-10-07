@@ -29,6 +29,7 @@ def source(*files: StoredFile, html: str | None = "<p>행사 안내</p>") -> Sum
         "https://www.nowon.kr/www/notice",
         html,
         files,
+        4,
     )
 
 
@@ -60,12 +61,14 @@ def test_read_uses_one_parameterized_select_and_never_commits() -> None:
                 "url": URL + "uuid",
             }
         ],
+        4,
     )
     loaded = load_summary_source(conn, 7)
     assert loaded.notice_id == 7
     assert loaded.files[0].file_name == "첨부.pdf"
     assert loaded.source_board == "1001"
     assert loaded.post_sn == "00123"
+    assert loaded.content_revision == 4
     assert loaded.files[0].file_key == "id:uuid"
     assert cursor.execute.call_count == 1
     sql, params = cursor.execute.call_args.args
