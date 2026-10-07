@@ -36,3 +36,19 @@ export const CARD_SHADOW = {
   shadowRadius: 4,
   elevation: 2,
 };
+
+// 편한 화면은 일반 화면의 색상을 공유하고 큰 글자와 세로 간격을 사용한다.
+export const EASY = {
+  body: 20,
+  title: 28,
+  heading: 24,
+  inset: 20,
+  gap: 20,
+  cardRadius: 20,
+  buttonRadius: 12,
+  buttonHeight: 56,
+  muted: "#F0F2F4",
+  disabled: "#E4E9ED",
+  expired: "#855B1E",
+  brandPoint: "#F26454",
+};
