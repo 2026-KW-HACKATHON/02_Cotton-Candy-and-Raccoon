@@ -22,8 +22,8 @@ export function useNoticeListViewModel() {
                 text.toLocaleLowerCase().includes(keyword),
               )),
         )
-        // 현재 예시 날짜는 YYYY. MM. DD 형식이다. API 연동 시 날짜 형식도 함께 확인한다.
-        .toSorted((a, b) =>
+        // filter가 만든 새 배열을 정렬해 Query 원본을 보존하고 Android Hermes와 호환한다.
+        .sort((a, b) =>
           newestFirst
             ? b.publishedAt
                 .replaceAll(" ", "")
