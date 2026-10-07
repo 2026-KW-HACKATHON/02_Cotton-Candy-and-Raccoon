@@ -131,13 +131,17 @@ def test_first_guarded_preparation_failure_still_inserts_failed_without_result(
     preserved_notice, monkeypatch,
 ):
     conn, notice_id = preserved_notice
+    revision = conn.execute(
+        "select content_revision from notices where id=%s", (notice_id,),
+    ).fetchone()["content_revision"]
+    prepared = _prepared(notice_id, failed=True)
     calls = []
     monkeypatch.setattr(
         summarize_module, "generate_summary_json", lambda **kwargs: calls.append(kwargs)
     )
     outcome = summarize_and_save_prepared_notice(
-        conn, _prepared(notice_id, failed=True), _metadata(readable=False),
-        api_key="non-secret-unit-test-key",
+        conn, prepared, _metadata(readable=False),
+        expected_source_revision=revision, api_key="non-secret-unit-test-key",
     )
     assert isinstance(outcome, StoredSummaryFailure) and calls == []
     row = _row(conn, notice_id)
@@ -154,6 +158,10 @@ def test_actual_source_edit_invalidates_result_and_rejects_inflight_failed_outco
     conn, notice_id = preserved_notice
     _publish(conn, notice_id)
     before = _row(conn, notice_id)
+    revision = conn.execute(
+        "select content_revision from notices where id=%s", (notice_id,),
+    ).fetchone()["content_revision"]
+    prepared = _prepared(notice_id)
 
     def generate(**_kwargs):
         with psycopg.connect(conn.info.dsn, autocommit=True) as collector:
@@ -162,7 +170,8 @@ def test_actual_source_edit_invalidates_result_and_rejects_inflight_failed_outco
 
     monkeypatch.setattr(summarize_module, "generate_summary_json", generate)
     outcome = summarize_and_save_prepared_notice(
-        conn, _prepared(notice_id), _metadata(readable=False), api_key="non-secret-unit-test-key",
+        conn, prepared, _metadata(readable=False), expected_source_revision=revision,
+        api_key="non-secret-unit-test-key",
     )
     assert isinstance(outcome, StoredSummarySuperseded)
     after = _row(conn, notice_id)

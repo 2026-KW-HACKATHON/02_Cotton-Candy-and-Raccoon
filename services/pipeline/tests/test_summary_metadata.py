@@ -125,7 +125,9 @@ def test_job_uses_default_deadline_rule_for_verified_results(
     conn = MagicMock()
     conn.cursor.return_value.__enter__.return_value.fetchone.return_value = (17,)
     metadata = replace(_metadata(), prompt_version=SUMMARY_PROMPT_VERSION)
-    stored = summary_job.summarize_and_save_prepared_notice(conn, _prepared("본문"), metadata)
+    stored = summary_job.summarize_and_save_prepared_notice(
+        conn, _prepared("본문"), metadata, expected_source_revision=1,
+    )
     assert stored.status == "summarized"
     assert stored.deadline_on == date(2026, 10, 20)
     assert (
@@ -139,7 +141,9 @@ def test_job_rejects_metadata_for_another_prompt_before_calling_gemini(monkeypat
     monkeypatch.setattr(summary_job, "summarize_prepared_notice", generate)
     conn = MagicMock()
     with pytest.raises(SummaryRecordError, match="prompt_version_mismatch"):
-        summary_job.summarize_and_save_prepared_notice(conn, _prepared("본문"), _metadata())
+        summary_job.summarize_and_save_prepared_notice(
+            conn, _prepared("본문"), _metadata(), expected_source_revision=1,
+        )
     generate.assert_not_called()
     conn.cursor.assert_not_called()
 

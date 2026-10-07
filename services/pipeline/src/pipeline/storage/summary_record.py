@@ -6,6 +6,7 @@ from datetime import date, datetime
 from typing import Literal
 
 from pipeline.transform.prepared_summary import PreparedSummaryResult
+from pipeline.transform.summary_files import PrivateSummaryFileManifest, manifest_snapshot
 from pipeline.transform.summary_schema import NoticeSummary
 
 type SummaryStatus = Literal["pending", "summarized", "needs_review", "failed"]
@@ -155,6 +156,7 @@ class SummaryRecord:
     last_error_code: str | None = None
     attempt_increment: int = 1
     execution_token: int | None = None
+    file_manifest: PrivateSummaryFileManifest | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if type(self.notice_id) is not int or not 0 < self.notice_id <= 2**63 - 1:
@@ -176,6 +178,18 @@ class SummaryRecord:
             type(self.execution_token) is not int or not 0 < self.execution_token <= 2**63 - 1
         ):
             raise SummaryRecordError("invalid_execution_token")
+        if self.file_manifest is not None:
+            try:
+                manifest = manifest_snapshot(self.file_manifest)
+            except (TypeError, ValueError):
+                raise SummaryRecordError("invalid_file_manifest") from None
+            if manifest.notice_id != self.notice_id:
+                raise SummaryRecordError("file_manifest_notice_id_mismatch")
+            if self.status not in {"summarized", "needs_review"} or self.result is None:
+                raise SummaryRecordError("unexpected_file_manifest")
+            if manifest.attachment_status != self.metadata.attachment_status:
+                raise SummaryRecordError("file_manifest_attachment_status_mismatch")
+            object.__setattr__(self, "file_manifest", manifest)
         if self.deadline_on is not None and type(self.deadline_on) is not date:
             raise SummaryRecordError("invalid_deadline_on")
         if self.generated_at is not None and (
@@ -264,4 +278,5 @@ def build_summary_record(
         generated_at=checked.generated_at,
         attempt_increment=checked.attempt_increment,
         execution_token=checked.execution_token,
+        file_manifest=result.file_manifest,
     )

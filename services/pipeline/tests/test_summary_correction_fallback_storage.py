@@ -219,6 +219,9 @@ def test_actual_job_correction_timeout_keeps_first_or_previous_summary_through_a
     conn.execute("update notices set title=%s,body_html=%s where id=%s", (
         notice.title, notice.body_text, notice_id,
     ))
+    revision = conn.execute(
+        "select content_revision from notices where id=%s", (notice_id,),
+    ).fetchone()["content_revision"]
     prepared = PreparedInput(
         notice_id, notice, [{"type": "text", "text": render_notice_input(notice)}],
     )
@@ -226,9 +229,6 @@ def test_actual_job_correction_timeout_keeps_first_or_previous_summary_through_a
         body_text=notice.body_text, attachment_texts=(), total_file_count=0, read_file_count=0,
         model="gemini-full-job-test", prompt_version=SUMMARY_PROMPT_VERSION,
     )
-    revision = conn.execute(
-        "select content_revision from notices where id=%s", (notice_id,),
-    ).fetchone()["content_revision"]
     if existing_result:
         monkeypatch.setattr(summarize_module, "generate_summary_json", lambda **_kwargs:
                             json.dumps(_response(FACT), ensure_ascii=False))

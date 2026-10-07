@@ -12,7 +12,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from pipeline import summary_job
-from pipeline.storage.summaries import GUARDED_UPSERT_SUMMARY, REGISTER_SUMMARY_EXECUTION
+from pipeline.storage.summaries import (
+    GUARDED_UPSERT_SUMMARY,
+    REGISTER_SUMMARY_EXECUTION_AT_REVISION,
+)
 from pipeline.storage.summary_metadata import build_summary_metadata
 from pipeline.storage.summary_record import SummaryRecordError, build_summary_record
 from pipeline.storage.summary_view import build_notice_summary_view
@@ -119,7 +122,8 @@ def test_job_shape_retry_preserves_source_payload_facts_and_persisted_v5_cards(m
     cursor = conn.cursor.return_value.__enter__.return_value
     cursor.fetchone.return_value = (17,)
     stored = summary_job.summarize_and_save_prepared_notice(
-        conn, prepared, metadata, api_key="audit-only-mocked-key"
+        conn, prepared, metadata, api_key="audit-only-mocked-key",
+        expected_source_revision=1,
     )
 
     assert len(requests) == 2
@@ -127,7 +131,7 @@ def test_job_shape_retry_preserves_source_payload_facts_and_persisted_v5_cards(m
     assert requests[1]["notice_text"][:-1] == requests[0]["notice_text"]
     assert prepared.blocks == before
     execution_calls = cursor.execute.call_args_list
-    assert execution_calls[0].args == (REGISTER_SUMMARY_EXECUTION, (17,))
+    assert execution_calls[0].args == (REGISTER_SUMMARY_EXECUTION_AT_REVISION, (17, 1))
     assert execution_calls[-1].args[0] == GUARDED_UPSERT_SUMMARY
     guarded_values = execution_calls[-1].args[1]
     assert guarded_values[:2] == (17, 17)  # Notice ID and the mocked registration token.
@@ -156,7 +160,9 @@ def test_prompt_upgrade_identity_requires_v5_metadata_before_any_generation(monk
     requests = _generate(monkeypatch, [_response(notice)])
     conn = MagicMock()
     with pytest.raises(SummaryRecordError, match="prompt_version_mismatch"):
-        summary_job.summarize_and_save_prepared_notice(conn, _prepared(notice), old, api_key="test")
+        summary_job.summarize_and_save_prepared_notice(
+            conn, _prepared(notice), old, api_key="test", expected_source_revision=1,
+        )
     assert requests == []
     conn.cursor.assert_not_called()
 

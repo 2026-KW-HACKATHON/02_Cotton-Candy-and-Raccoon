@@ -332,7 +332,7 @@ SQL 적용 순서와 앱 조회 권한은 [DB README](../../supabase/README.md)�
 | 첨부 상태 | 원래 파일 수와 읽은 파일 수로 계산. 추출된 텍스트 목록만으로 판단하지 않음 |
 | `model` | 실제 호출 모델을 명시. Gemini 기본 모델은 `transform.gemini_client.DEFAULT_MODEL` (`gemini-3.5-flash-lite`) |
 | `prompt_version` | `transform.gemini_prompt.SUMMARY_PROMPT_VERSION` (`notice-summary-v6-card-grounding`) |
-| `expected_source_revision` | 원문·파일 목록과 같은 스냅샷에서 조회한 `notices.content_revision` |
+| `expected_source_revision` | 필수 정수. 원문·파일 목록과 같은 스냅샷에서 조회한 `notices.content_revision` |
 
 마감일은 기본 함수 `storage.summary_deadline.compute_deadline_on()`이 `application`,
 `submission`, `payment`의 종료일 중 가장 늦은 날짜로 계산합니다. 해당 날짜가 없거나
@@ -354,8 +354,12 @@ SQL 적용 순서와 앱 조회 권한은 [DB README](../../supabase/README.md)�
   현재 DB 행을 다시 조회하거나 최신 원문으로 입력을 준비해야 합니다.
 
 job은 Gemini 호출 전에 실행 토큰을 등록하고, 완료 시 토큰과 원문 버전이 일치할 때만
-저장합니다. 준비 전 `content_revision`을 함께 조회해 `expected_source_revision`으로
-전달해야 등록 전 변경도 차단합니다. 원문·파일이 바뀌면 기존 공개 결과·카드·분류·
+저장합니다. `storage.summary_source.load_summary_source()`는 원문·파일·버전을 한 번에
+읽습니다. 이 결과로 입력을 준비하고 `source.content_revision`을 필수 인자
+`expected_source_revision`에 그대로 전달합니다. 버전 누락·잘못된 값은 DB 등록과
+Gemini 호출 전에 거부하고, 원문이 이미 바뀌었으면 `superseded`로 종료합니다.
+준비 후 현재 버전만 다시 조회해 전달하면 이전 입력을 보호할 수 없습니다.
+원문·파일이 바뀌면 기존 공개 결과·카드·분류·
 마감일은 즉시 비워지고, 기존 `summarized`는 결과 없는 `needs_review`로 바뀝니다.
 반복 수집이나 공개 여부만 바뀌는 경우에는 버전이 증가하지 않습니다.
 실행 토큰 없는 저수준 저장은 기존 해시 비교 방식을 유지하므로 job 연동을 사용하세요.
@@ -413,6 +417,7 @@ view = build_notice_summary_view(
     status=row["status"],
     result=row["result"],
     attachment_status=row["attachment_status"],
+    file_references=row["file_references"],
     notice=notice_input_for_this_row,  # 텍스트 강조가 필요할 때만 전달
 )
 payload = view.model_dump(mode="json")
@@ -429,6 +434,25 @@ payload = view.model_dump(mode="json")
 위치이며 종료 위치는 포함하지 않습니다. 원문 HTML에 직접 적용하지 않습니다.
 인용 위치가 여러 곳이면 자동 강조에서 제외합니다. PDF·이미지 좌표는 제공하지 않습니다.
 근거는 필드 단위이므로 개별 일정·유의사항까지 검증했다는 뜻은 아닙니다.
+
+### 파일 근거 링크
+
+#13 파일 준비 결과에 선택적 `file_manifest: PrivateSummaryFileManifest`를 제공합니다.
+`transform.summary_files`의 계약은 원문 URL·조회 당시 `content_revision`, 원본 파일
+행별 ID·`file_key`·종류·URL·처리 결과, 실제 전송 블록의 위치·`media_N`·SHA-256을
+묶습니다. 추출 텍스트는 `NoticeInput.attachments`의 위치와 텍스트 SHA-256으로 연결합니다.
+파일 목록 순서로 연결을 추측하지 않으며, 전송한 내용과 맞지 않으면 호출 전에 거부합니다.
+이 계약의 입력은 첫 텍스트 블록이 `render_notice_input(notice)`이고 이후는 파일 블록입니다.
+`build_summary_metadata_from_manifest()`는 원본 파일 행별로 읽기 상태를 계산하고,
+동일 파일의 추출 텍스트는 `file_key`당 한 번만 입력 해시에 반영합니다.
+
+저장 시 현재 원문 버전과 전체 파일 목록을 대조하며 요약과 연결 정보를 함께 씁니다.
+`file_manifest`는 비공개이고 앱은 자동 생성된 `file_references`만 조회합니다.
+처리 실패나 기존 요약을 유지하는 보정 실패는 기존 링크도 유지합니다.
+파일 목록에 없는 본문 이미지는 **“원문에서 확인”**과 원문 공지 링크를 제공합니다.
+PDF·이미지 좌표는 제공하지 않습니다. 준비 결과에 연결 정보가 없는 기존 호출은
+요약을 유지하며 파일 링크를 만들어내지 않습니다. 실제 #13 준비기의 계약 제공은
+별도 연결 작업이 필요합니다.
 
 현재 한계: 카드의 조건 검사는 모든 의미 오류를 잡아내지 못합니다. `source_hash`에는
 제목과 PDF·이미지 바이트가 포함되지 않아 같은 파일 URL의 내용 변경을 감지하지 못할 수
@@ -453,3 +477,8 @@ python -m uv run pytest
 
 공식 설치 프로그램으로 `uv` 실행 파일이 `PATH`에 등록된 환경에서는 위 명령의
 `python -m uv`를 `uv`로 줄여 실행할 수 있습니다.
+
+CI는 임시 PostgreSQL에 전체 마이그레이션을 적용해 파이프라인의 DB 검사를 실행하고,
+별도의 빈 DB에서 스키마·권한을 검증합니다. 검사 결과가 없거나 건너뛴 검사가 있으면
+실패 처리합니다. `scripts/prepare_test_databases.py`는 CI 전용 DB 이름과 로컬 연결을
+사용하며, 이미 있는 DB를 초기화하지 않습니다.

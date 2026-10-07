@@ -17,6 +17,7 @@ MIGRATION_NAMES = [
     "20261007123000_notice_summary_card_summaries.sql",
     "20261007130000_notice_summary_executions.sql",
     "20261007133000_notice_summary_source_revisions.sql",
+    "20261007140000_notice_summary_file_references.sql",
 ]
 
 
@@ -107,6 +108,7 @@ def database() -> Iterator[psycopg.Connection]:
             (legacy_id,),
         ).fetchone()[0]
         conn.execute(files[7].read_text(encoding="utf-8"))
+        conn.execute(files[8].read_text(encoding="utf-8"))
         upgraded_execution = conn.execute(
             "select e.execution_token,e.source_revision,n.content_revision "
             "from notice_summary_executions e join notices n on n.id=e.notice_id "

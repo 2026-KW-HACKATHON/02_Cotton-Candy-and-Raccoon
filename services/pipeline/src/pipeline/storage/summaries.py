@@ -1,9 +1,10 @@
 """Write issue #14's summary rows using the caller's PostgreSQL transaction."""
 
+from contextlib import nullcontext
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 
-from psycopg import Connection, Error
+from psycopg import Connection, Cursor, Error
 from psycopg.rows import tuple_row
 from psycopg.types.json import Jsonb
 
@@ -21,8 +22,8 @@ from pipeline.transform.summary_schema import NoticeSummary
 UPSERT_SUMMARY = """
 insert into public.notice_summaries (
     notice_id, status, result, category, category_code, deadline_on, attachment_status,
-    source_hash, model, prompt_version, attempt_count, last_error_code, generated_at
-) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    source_hash, model, prompt_version, attempt_count, last_error_code, generated_at, file_manifest
+) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 on conflict (notice_id) do update set
     status = excluded.status,
     result = excluded.result,
@@ -36,6 +37,7 @@ on conflict (notice_id) do update set
     attempt_count = notice_summaries.attempt_count + excluded.attempt_count,
     last_error_code = excluded.last_error_code,
     generated_at = excluded.generated_at,
+    file_manifest = excluded.file_manifest,
     updated_at = now()
 returning notice_id
 """
@@ -43,8 +45,8 @@ returning notice_id
 UPSERT_SUMMARY_FAILURE = """
 insert into public.notice_summaries (
     notice_id, status, result, category, category_code, deadline_on, attachment_status,
-    source_hash, model, prompt_version, attempt_count, last_error_code, generated_at
-) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    source_hash, model, prompt_version, attempt_count, last_error_code, generated_at, file_manifest
+) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 on conflict (notice_id) do update set
     status = case when notice_summaries.status = 'summarized'
       and notice_summaries.source_hash is distinct from excluded.source_hash
@@ -66,8 +68,8 @@ returning notice_id
 UPSERT_SUMMARY_PENDING = """
 insert into public.notice_summaries (
     notice_id, status, result, category, category_code, deadline_on, attachment_status,
-    source_hash, model, prompt_version, attempt_count, last_error_code, generated_at
-) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    source_hash, model, prompt_version, attempt_count, last_error_code, generated_at, file_manifest
+) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 on conflict (notice_id) do update set
     attempt_count = notice_summaries.attempt_count + excluded.attempt_count,
     updated_at = now()
@@ -90,8 +92,8 @@ returning execution_token
 UPSERT_SUMMARY_EXECUTION_FAILURE = """
 insert into public.notice_summaries (
     notice_id, status, result, category, category_code, deadline_on, attachment_status,
-    source_hash, model, prompt_version, attempt_count, last_error_code, generated_at
-) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    source_hash, model, prompt_version, attempt_count, last_error_code, generated_at, file_manifest
+) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 on conflict (notice_id) do update set
     last_error_code = excluded.last_error_code,
     attempt_count = notice_summaries.attempt_count + excluded.attempt_count,
@@ -107,7 +109,7 @@ def _correction_fallback_statement(*, guarded: bool) -> str:
         preserve += " and notice_summaries.source_hash = excluded.source_hash"
     content_columns = (
         "status", "result", "category", "category_code", "deadline_on", "attachment_status",
-        "source_hash", "model", "prompt_version", "generated_at",
+        "source_hash", "model", "prompt_version", "generated_at", "file_manifest",
     )
     assignments = ",\n".join(
         f"    {name} = case when {preserve} then notice_summaries.{name} "
@@ -117,8 +119,9 @@ def _correction_fallback_statement(*, guarded: bool) -> str:
     return (
         "insert into public.notice_summaries (\n"
         "    notice_id, status, result, category, category_code, deadline_on, attachment_status,\n"
-        "    source_hash, model, prompt_version, attempt_count, last_error_code, generated_at\n"
-        ") values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)\n"
+        "    source_hash, model, prompt_version, attempt_count, last_error_code, generated_at,"
+        " file_manifest\n"
+        ") values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)\n"
         "on conflict (notice_id) do update set\n"
         + assignments
         + ",\n    last_error_code = excluded.last_error_code,\n"
@@ -136,7 +139,7 @@ REGISTER_SUMMARY_EXECUTION_AT_REVISION = REGISTER_SUMMARY_EXECUTION.replace(
 
 
 def _guarded_statement(statement: str) -> str:
-    placeholders = ", ".join(["%s"] * 13)
+    placeholders = ", ".join(["%s"] * 14)
     values = f") values ({placeholders})"
     assert values in statement
     return (
@@ -239,6 +242,51 @@ def begin_summary_execution(
     return row[0]
 
 
+def _validate_manifest_source(cursor: Cursor, record: SummaryRecord) -> None:
+    """Bind provenance to a locked parent and its complete committed file set.
+
+    File writers increment the parent revision before committing. Locking only
+    the parent prevents a validation/write race without reversing the existing
+    file-trigger lock order by also acquiring locks on the child rows.
+    """
+    manifest = record.file_manifest
+    assert manifest is not None
+    cursor.execute(
+        "select id,content_revision,url from public.notices where id=%s for share",
+        (record.notice_id,),
+    )
+    source = cursor.fetchone()
+    if source is None:
+        raise SummaryExecutionSuperseded()
+    if (
+        not isinstance(source, (tuple, list)) or len(source) != 3
+        or source[0] != record.notice_id or type(source[1]) is not int
+        or not isinstance(source[2], str)
+    ):
+        raise SummaryStorageError("summary_file_source_invalid")
+    if source[1] != manifest.source_revision:
+        raise SummaryExecutionSuperseded()
+    if source[2] != manifest.original_url:
+        raise SummaryRecordError("file_manifest_source_mismatch")
+    cursor.execute(
+        "select id,file_key,kind,url from public.notice_files where notice_id=%s order by id",
+        (record.notice_id,),
+    )
+    rows = cursor.fetchall()
+    if any(
+        not isinstance(row, (tuple, list)) or len(row) != 4 or type(row[0]) is not int
+        or any(not isinstance(value, str) for value in row[1:])
+        for row in rows
+    ):
+        raise SummaryStorageError("summary_file_source_invalid")
+    actual = {tuple(row) for row in rows}
+    expected = {
+        (item.notice_file_id, item.file_key, item.kind, item.url) for item in manifest.files
+    }
+    if actual != expected:
+        raise SummaryRecordError("file_manifest_source_mismatch")
+
+
 def save_notice_summary(conn: Connection, record: SummaryRecord) -> int:
     """Store a summary or failure; leave transaction ownership with the caller.
 
@@ -257,6 +305,9 @@ def save_notice_summary(conn: Connection, record: SummaryRecord) -> int:
     registry locks, rejecting superseded outcomes. Source updates independently
     invalidate existing public content, without counting a summary execution. Legacy
     writes without a token retain compatibility, without execution-order protection.
+    A supplied file manifest is checked against the locked notice revision, URL
+    and complete file identities. Autocommit connections use a short transaction
+    for that check and write; caller-owned transactions are never committed here.
     """
     if not isinstance(record, SummaryRecord):
         raise SummaryRecordError("invalid_summary_record")
@@ -271,6 +322,7 @@ def save_notice_summary(conn: Connection, record: SummaryRecord) -> int:
         last_error_code=record.last_error_code,
         attempt_increment=record.attempt_increment,
         execution_token=record.execution_token,
+        file_manifest=record.file_manifest,
     )
     summary = checked.result
     values = (
@@ -287,21 +339,26 @@ def save_notice_summary(conn: Connection, record: SummaryRecord) -> int:
         checked.attempt_increment,
         checked.last_error_code,
         checked.generated_at,
+        Jsonb(checked.file_manifest.model_dump(mode="json")) if checked.file_manifest else None,
     )
     try:
-        with conn.cursor(row_factory=tuple_row) as cursor:
-            sql = {
-                "failed": UPSERT_SUMMARY_FAILURE,
-                "pending": UPSERT_SUMMARY_PENDING,
-            }.get(checked.status, UPSERT_SUMMARY)
-            if checked.execution_token is not None:
+        atomic = checked.file_manifest is not None and conn.autocommit
+        with conn.transaction() if atomic else nullcontext():
+            with conn.cursor(row_factory=tuple_row) as cursor:
+                if checked.file_manifest is not None:
+                    _validate_manifest_source(cursor, checked)
                 sql = {
-                    "failed": GUARDED_UPSERT_SUMMARY_FAILURE,
-                    "pending": GUARDED_UPSERT_SUMMARY_PENDING,
-                }.get(checked.status, GUARDED_UPSERT_SUMMARY)
-                values = (checked.notice_id, checked.execution_token, *values)
-            cursor.execute(sql, values)
-            row = cursor.fetchone()
+                    "failed": UPSERT_SUMMARY_FAILURE,
+                    "pending": UPSERT_SUMMARY_PENDING,
+                }.get(checked.status, UPSERT_SUMMARY)
+                if checked.execution_token is not None:
+                    sql = {
+                        "failed": GUARDED_UPSERT_SUMMARY_FAILURE,
+                        "pending": GUARDED_UPSERT_SUMMARY_PENDING,
+                    }.get(checked.status, GUARDED_UPSERT_SUMMARY)
+                    values = (checked.notice_id, checked.execution_token, *values)
+                cursor.execute(sql, values)
+                row = cursor.fetchone()
     except Error:
         raise SummaryStorageError() from None
     if row is None and checked.execution_token is not None:
@@ -330,11 +387,15 @@ def save_prepared_summary(
 
     needs_review preserves the generated result JSON for display with an original-
     notice warning. Its sorting deadline remains NULL; warnings and media_sources
-    remain caller data rather than separate database fields.
+    remain caller data rather than separate database fields. Explicit trusted
+    file_manifest data is stored privately with the result and projected into
+    public original-file links after source identity validation.
     A failed correction preserves any existing result for the same source and
     records only the failure code/count/time. Without an existing result, its
     usable candidate is stored as needs_review. Returned row metadata describes
     storage, while result remains the caller's generated candidate snapshot.
+    The private file manifest follows the stored result; public links are generated
+    by PostgreSQL from an explicit whitelist and disappear with invalidated content.
     """
     record = build_summary_record(
         result,
@@ -350,6 +411,7 @@ def save_prepared_summary(
         summary=NoticeSummary.model_validate(result.summary.model_dump(mode="json")),
         warnings=tuple(result.warnings),
         media_sources=tuple(result.media_sources),
+        file_manifest=record.file_manifest,
     )
     reason_code = result.correction_failure_code
     if reason_code is not None:
@@ -403,15 +465,20 @@ def _save_summary_correction_fallback(
         checked.attempt_increment,
         reason_code,
         checked.generated_at,
+        Jsonb(checked.file_manifest.model_dump(mode="json")) if checked.file_manifest else None,
     )
     sql = UPSERT_SUMMARY_CORRECTION_FALLBACK
     if checked.execution_token is not None:
         sql = GUARDED_UPSERT_SUMMARY_CORRECTION_FALLBACK
         values = (checked.notice_id, checked.execution_token, *values)
     try:
-        with conn.cursor(row_factory=tuple_row) as cursor:
-            cursor.execute(sql, values)
-            row = cursor.fetchone()
+        atomic = checked.file_manifest is not None and conn.autocommit
+        with conn.transaction() if atomic else nullcontext():
+            with conn.cursor(row_factory=tuple_row) as cursor:
+                if checked.file_manifest is not None:
+                    _validate_manifest_source(cursor, checked)
+                cursor.execute(sql, values)
+                row = cursor.fetchone()
     except Error:
         raise SummaryStorageError() from None
     if row is None and checked.execution_token is not None:

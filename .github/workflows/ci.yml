@@ -22,12 +22,40 @@ jobs:
 
   pipeline:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      CI_TEST_DATABASE_ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      PIPELINE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/pipeline_schema_test_ci
+      AUDIT_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/pipeline_schema_test_ci
+      SCHEMA_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/pipeline_schema_test_empty_ci
     defaults:
       run:
         working-directory: services/pipeline
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.1.0
-      - run: uv sync
-      - run: uv run ruff check
-      - run: uv run pytest
+      - run: uv sync --locked
+      - run: uv run --locked ruff check
+      - name: Prepare disposable test databases
+        run: uv run --locked python scripts/prepare_test_databases.py
+      - name: Test pipeline with PostgreSQL
+        run: uv run --locked pytest --junitxml="$RUNNER_TEMP/pipeline-junit.xml"
+      - name: Test migrations and app database permissions
+        run: uv run --locked pytest ../../supabase/tests --junitxml="$RUNNER_TEMP/schema-junit.xml"
+      - name: Require both test suites without skips
+        run: >-
+          uv run --locked python scripts/check_test_report.py
+          "$RUNNER_TEMP/pipeline-junit.xml" "$RUNNER_TEMP/schema-junit.xml"

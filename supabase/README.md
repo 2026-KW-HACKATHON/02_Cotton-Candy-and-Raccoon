@@ -6,7 +6,7 @@
 
 ## SQL 파일별 역할과 적용 순서
 
-마이그레이션 8개를 파일명 순서대로 적용한다. 기존 DB에는 미적용 파일만 순서대로 적용하며, 이미 적용한 마이그레이션은 수정하지 않는다.
+마이그레이션 9개를 파일명 순서대로 적용한다. 기존 DB에는 미적용 파일만 순서대로 적용하며, 이미 적용한 마이그레이션은 수정하지 않는다.
 
 | 파일 | 역할 |
 | --- | --- |
@@ -18,6 +18,7 @@
 | [20261007123000_notice_summary_card_summaries.sql](migrations/20261007123000_notice_summary_card_summaries.sql) | 조회용 generated 카드 컬럼·제약·읽기 권한 |
 | [20261007130000_notice_summary_executions.sql](migrations/20261007130000_notice_summary_executions.sql) | 비공개 실행 토큰·백엔드 권한 |
 | [20261007133000_notice_summary_source_revisions.sql](migrations/20261007133000_notice_summary_source_revisions.sql) | 원문 버전·변경 시 요약 무효화·오래된 결과 저장 차단 |
+| [20261007140000_notice_summary_file_references.sql](migrations/20261007140000_notice_summary_file_references.sql) | 비공개 파일 연결 정보·조회용 generated 근거 링크·앱 권한 |
 | [seed.sql](seed.sql) | 테스트용 공지·파일, 요약 상태 4종·부분 읽기·숨김 공지 데이터. 스키마 변경 SQL이 아님 |
 
 init부터 공지 고유 키는 `(category, source_board, post_sn)`, 파일 고유 키는 `(notice_id, file_key, kind)`다. 별도의 새 init 파일을 추가한 것이 아니라 기존 init에 공지 변경을 합쳤다.
@@ -81,7 +82,9 @@ job의 실패는 원문 버전·실행 토큰이 유효하면 `last_error_code`,
 
 job 연동에서는 원문·파일과 같은 DB snapshot에서 읽은 `content_revision`을 `expected_source_revision`으로 **반드시 전달한다**. 비공개 실행 토큰과 원문 버전이 맞는 결과만 저장하며 오래된 실행은 `summary_execution_superseded`로 반환한다. 버전을 생략하는 호환 경로는 등록 전 원문 변경을 보호하지 못한다. API 호출 중 잠금을 유지하지 않으려면 autocommit 연결을 사용하며 commit은 호출자 책임이다.
 
-앱 역할 `anon`, `authenticated`는 보이는 공지의 **9개 컬럼만** 읽는다: `notice_id`, `status`, `category`, `category_code`, `deadline_on`, `result`, `card_summaries`, `attachment_status`, `generated_at`. 내부 메타데이터·실행 레지스트리와 앱 쓰기는 차단하며 `service_role`에는 백엔드 조회·쓰기를 허용한다.
+앱 역할 `anon`, `authenticated`는 보이는 공지의 **10개 컬럼만** 읽는다: `notice_id`, `status`, `category`, `category_code`, `deadline_on`, `result`, `card_summaries`, `attachment_status`, `generated_at`, `file_references`. 내부 메타데이터·실행 레지스트리와 앱 쓰기는 차단하며 `service_role`에는 백엔드 조회·쓰기를 허용한다.
+
+`file_manifest`는 준비기가 제공하는 원본 파일별 처리 결과와 전송 블록 연결 정보이며 비공개다. 저장 시 원문 버전·URL·전체 파일 ID/키/종류/URL을 대조한다. `file_references`는 파일 ID·종류·URL만 공개하는 generated 컬럼으로 직접 쓰지 않는다. 미등록 본문 이미지는 원문 공지 URL과 “원문에서 확인” 안내를 제공한다. 기존 요약을 유지하는 실패·보정 실패는 연결 정보도 유지하고, 원문 변경으로 `result`가 NULL이 되면 공개 링크도 NULL이 된다.
 
 `notices.content_updated_at`은 기존 공지에는 `created_at`으로 채우고 신규 공지에는 현재 시각을 넣는다. 이후 파이프라인이 실제 본문·제목 등의 내용 또는 파일 목록 변경 시에만 갱신한다. 단순 재수집 시간인 `updated_at`, 수정 이력 표시인 `is_modified`와 역할이 다르다. 앱은 기존 공지 읽기 권한으로 이 새 컬럼을 조회한다.
 
@@ -102,7 +105,7 @@ job 연동에서는 원문·파일과 같은 DB snapshot에서 읽은 `content_r
 
 2026-10-04 임시 PostgreSQL17.11에서 **39 passed, 0 skipped**, Ruff와 diff 검사 통과. 기존5개 SQL과 통합3개 SQL의 컬럼28개·제약15개·인덱스·RLS정책2개·RLS활성 상태를 비교해 동일함을 확인했다(컬럼의 물리적 순서는 비교하지 않음). 앱의 테이블 쓰기 권한은 명시적으로 회수했다. Holidays·seed는 diff가 없다. 검증용 임시 서버·DB·로그는 종료/삭제했으며 실제 Supabase 프로젝트 키 조회는 수행하지 않았다.
 
-`supabase/tests/`의 `test_source_identity.py`, `test_notice_summary_schema.py`, `test_notice_summary_execution_schema.py`, `test_notice_summary_source_revision_schema.py`가 수집·요약·실행·원문 버전 계약을 검증한다. 마이그레이션 8개와 seed를 빈 임시 DB에 적용하며 검증 후 롤백한다.
+`supabase/tests/`의 `test_source_identity.py`, `test_notice_summary_schema.py`, `test_notice_summary_execution_schema.py`, `test_notice_summary_source_revision_schema.py`가 수집·요약·실행·원문 버전 계약을 검증한다. 마이그레이션 9개와 seed를 빈 임시 DB에 적용하며 검증 후 롤백한다. 파일 연결·실패 보존·실제 앱 권한·저장 경합은 파이프라인의 `test_summary_file_manifest_storage.py`에서 검사한다.
 
 services/pipeline 폴더에서 PowerShell로 실행한다.
 

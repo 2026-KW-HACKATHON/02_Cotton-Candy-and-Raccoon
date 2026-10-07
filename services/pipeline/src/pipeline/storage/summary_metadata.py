@@ -8,6 +8,8 @@ from dataclasses import dataclass
 
 from pipeline.storage.summary_record import AttachmentStatus, SummaryMetadata, SummaryRecordError
 from pipeline.transform.gemini_prompt import SUMMARY_PROMPT_VERSION
+from pipeline.transform.notice_input import NoticeInput
+from pipeline.transform.summary_files import PrivateSummaryFileManifest, manifest_snapshot
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +107,37 @@ def build_summary_metadata(
     return SummaryMetadata(
         source_hash=source_hash,
         attachment_status=status,
+        model=model,
+        prompt_version=prompt_version,
+    )
+
+
+def build_summary_metadata_from_manifest(
+    *,
+    notice: NoticeInput,
+    file_manifest: PrivateSummaryFileManifest,
+    model: str,
+    prompt_version: str = SUMMARY_PROMPT_VERSION,
+) -> SummaryMetadata:
+    """Count original DB rows while hashing extracted text once per file_key.
+
+    Several original rows may use the same transmitted block. Media byte hashes
+    protect the provenance binding; they do not change #14's source_hash contract.
+    """
+    try:
+        manifest = manifest_snapshot(file_manifest)
+        manifest.validate_text(notice)
+    except (TypeError, ValueError):
+        raise SummaryRecordError("invalid_prepared_input") from None
+    texts = tuple(
+        SummaryAttachmentText(item.file_key, notice.attachments[item.attachment_index].text)
+        for item in manifest.files if item.outcome == "text"
+    )
+    return build_summary_metadata(
+        body_text=notice.body_text,
+        attachment_texts=texts,
+        total_file_count=manifest.total_file_count,
+        read_file_count=manifest.read_file_count,
         model=model,
         prompt_version=prompt_version,
     )

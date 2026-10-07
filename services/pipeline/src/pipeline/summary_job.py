@@ -29,6 +29,7 @@ from pipeline.transform.prepared_summary import (
     PreparationIssueLike,
     PreparedSummaryLike,
     SummaryPreparationError,
+    prepared_file_manifest,
 )
 from pipeline.transform.summarize import summarize_prepared_notice
 from pipeline.transform.summary_schema import NoticeSummary, SummaryValidationError
@@ -74,10 +75,10 @@ def summarize_and_save_prepared_notice(
     prepared: PreparedSummaryLike,
     metadata: SummaryMetadata,
     *,
+    expected_source_revision: int,
     deadline_resolver: DeadlineResolver = compute_deadline_on,
     api_key: str | None = None,
     attempt_increment: int = 1,
-    expected_source_revision: int | None = None,
 ) -> StoredPreparedSummary | StoredSummaryFailure | StoredSummarySuperseded:
     """Run one summary execution and write its completed result or failure.
 
@@ -94,8 +95,13 @@ def summarize_and_save_prepared_notice(
     Source changes invalidate previously published summaries immediately. A caller
     must capture notices.content_revision with the source and pass it as
     expected_source_revision to reject an already stale prepared input before
-    Gemini. Legacy callers omitting it retain compatibility, without protection
-    against changes that occurred before registration.
+    Gemini. The captured revision is mandatory: missing or invalid revisions
+    never register an execution, call Gemini, or write a failure. Reading the
+    current revision after preparing old content does not bind that content to
+    its original snapshot and is not a valid substitute.
+    Explicit file provenance is copied before registration and must use that
+    same revision and attachment status. Generated data keeps this exact copy;
+    storage checks its original URL and full file identity set atomically.
     Internal shape retries still count as one summary execution. An external
     pending start uses increment=1; finish that execution here with increment=0.
     A known processing failure returns status=failed/result=None after recording it,
@@ -108,6 +114,11 @@ def summarize_and_save_prepared_notice(
     The caller commits both outcome types before reporting durable storage; DB or
     programming failures still raise and must be rolled back.
     """
+    if (
+        type(expected_source_revision) is not int
+        or not 0 < expected_source_revision <= 2**63 - 1
+    ):
+        raise SummaryRecordError("invalid_source_revision")
     checked = SummaryRecord(
         notice_id=prepared.notice_id,
         status="pending",
@@ -116,22 +127,31 @@ def summarize_and_save_prepared_notice(
     )
     if checked.metadata.prompt_version != SUMMARY_PROMPT_VERSION:
         raise SummaryRecordError("prompt_version_mismatch")
+    try:
+        manifest = prepared_file_manifest(prepared)
+    except SummaryPreparationError:
+        raise SummaryRecordError("invalid_prepared_input") from None
+    if manifest is not None:
+        if manifest.source_revision != expected_source_revision:
+            raise SummaryRecordError("file_manifest_revision_mismatch")
+        if manifest.attachment_status != checked.metadata.attachment_status:
+            raise SummaryRecordError("file_manifest_attachment_status_mismatch")
     if not isinstance(prepared.warnings, tuple):
         raise SummaryRecordError("invalid_preparation_warnings")
     warnings = tuple(prepared.warnings)
     if not callable(deadline_resolver):
         raise SummaryRecordError("invalid_deadline_resolver")
     try:
-        if expected_source_revision is None:
-            execution_token = begin_summary_execution(conn, checked.notice_id)
-        else:
-            execution_token = begin_summary_execution(
-                conn, checked.notice_id, expected_source_revision=expected_source_revision
-            )
+        execution_token = begin_summary_execution(
+            conn, checked.notice_id, expected_source_revision=expected_source_revision
+        )
     except SummaryExecutionSuperseded:
         return StoredSummarySuperseded(notice_id=checked.notice_id, warnings=warnings)
     try:
-        result = summarize_prepared_notice(prepared, model=checked.metadata.model, api_key=api_key)
+        manifest_args = {} if manifest is None else {"file_manifest": manifest}
+        result = summarize_prepared_notice(
+            prepared, model=checked.metadata.model, api_key=api_key, **manifest_args,
+        )
     except (
         SummaryPreparationError,
         GeminiInputError,
@@ -162,6 +182,8 @@ def summarize_and_save_prepared_notice(
 
     if result.notice_id != checked.notice_id:
         raise SummaryRecordError("summary_notice_id_mismatch")
+    if result.file_manifest != manifest:
+        raise SummaryRecordError("summary_file_manifest_mismatch")
     generated_at = datetime.now(UTC)
     record = build_summary_record(
         result, checked.metadata, deadline_on=None, generated_at=generated_at

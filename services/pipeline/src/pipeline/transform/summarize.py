@@ -36,7 +36,9 @@ from pipeline.transform.prepared_summary import (
     PreparedSummaryResult,
     SummaryPreparationError,
     prepare_gemini_request,
+    prepared_file_manifest,
 )
+from pipeline.transform.summary_files import PrivateSummaryFileManifest, manifest_snapshot
 from pipeline.transform.summary_schema import (
     FIELD_TEXT_LIMITS,
     MAX_NOTES_ITEMS,
@@ -931,11 +933,15 @@ def _require_generated_cards(
     return summary
 
 
+_UNSET_MANIFEST = object()
+
+
 def summarize_prepared_notice(
     prepared: PreparedSummaryLike,
     *,
     model: str = DEFAULT_MODEL,
     api_key: str | None = None,
+    file_manifest: PrivateSummaryFileManifest | None | object = _UNSET_MANIFEST,
 ) -> PreparedSummaryResult:
     """Summarize #13's prepared text/files, keeping its warnings beside the output.
 
@@ -954,7 +960,17 @@ def summarize_prepared_notice(
         raise SummaryPreparationError("invalid_prepared_input") from None
     notice_id = prepared.notice_id
     warnings = tuple(prepared.warnings)
-    original_input, media_sources = prepare_gemini_request(prepared, notice=notice)
+    manifest = (
+        prepared_file_manifest(prepared) if file_manifest is _UNSET_MANIFEST else file_manifest
+    )
+    if manifest is not None:
+        try:
+            manifest = manifest_snapshot(manifest)
+        except (TypeError, ValueError):
+            raise SummaryPreparationError("invalid_prepared_input") from None
+    original_input, media_sources = prepare_gemini_request(
+        prepared, notice=notice, file_manifest=manifest,
+    )
     summary = _require_generated_cards(
         _summarize_input(
             notice,
@@ -971,6 +987,7 @@ def summarize_prepared_notice(
         warnings=warnings,
         media_sources=media_sources,
         correction_failure_code=summary._correction_failure_code,
+        file_manifest=manifest,
     )
 
 

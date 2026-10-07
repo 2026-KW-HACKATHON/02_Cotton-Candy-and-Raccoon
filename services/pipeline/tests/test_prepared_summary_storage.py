@@ -13,7 +13,7 @@ from test_gemini_multimodal import PreparationIssue, _media, _notice, _prepared
 
 from pipeline import summary_job
 from pipeline.storage.summaries import (
-    REGISTER_SUMMARY_EXECUTION,
+    REGISTER_SUMMARY_EXECUTION_AT_REVISION,
     SummaryStorageError,
     record_summary_failure,
     save_prepared_summary,
@@ -140,14 +140,16 @@ def _job_values(cursor: MagicMock) -> tuple:
 
 def _assert_job_registers_then_stores(cursor: MagicMock) -> None:
     assert cursor.execute.call_count == 2
-    assert cursor.execute.call_args_list[0].args == (REGISTER_SUMMARY_EXECUTION, (17,))
+    assert cursor.execute.call_args_list[0].args == (
+        REGISTER_SUMMARY_EXECUTION_AT_REVISION, (17, 1),
+    )
     _job_values(cursor)
 
 
 def _assert_only_registration(conn: MagicMock) -> None:
     conn.cursor.assert_called_once()
     conn.cursor.return_value.__enter__.return_value.execute.assert_called_once_with(
-        REGISTER_SUMMARY_EXECUTION, (17,)
+        REGISTER_SUMMARY_EXECUTION_AT_REVISION, (17, 1)
     )
 
 
@@ -392,7 +394,8 @@ def test_integrated_job_summarizes_each_input_then_saves_with_model_and_utc_time
     deadline_resolver = MagicMock(return_value=DEADLINE)
     before = datetime.now(UTC)
     stored = summary_job.summarize_and_save_prepared_notice(
-        conn, prepared, metadata, deadline_resolver=deadline_resolver, api_key="test-key"
+        conn, prepared, metadata, deadline_resolver=deadline_resolver, api_key="test-key",
+        expected_source_revision=1,
     )
     after = datetime.now(UTC)
     needs_review = kind in {"pdf", "image", "mixed"}
@@ -440,7 +443,8 @@ def test_integrated_review_outcome_never_calls_the_deadline_resolver(
     conn, cursor = _connection()
     deadline_resolver = MagicMock(side_effect=AssertionError("review must not publish a deadline"))
     stored = summary_job.summarize_and_save_prepared_notice(
-        conn, prepared, metadata, deadline_resolver=deadline_resolver, api_key="test-key"
+        conn, prepared, metadata, deadline_resolver=deadline_resolver, api_key="test-key",
+        expected_source_revision=1,
     )
     assert stored.status == "needs_review"
     assert stored.deadline_on is None
@@ -470,7 +474,8 @@ def test_integrated_shape_retry_retains_media_and_counts_as_one_execution(
     monkeypatch.setattr(summarize_module, "generate_summary_json", generate)
     conn, cursor = _connection()
     stored = summary_job.summarize_and_save_prepared_notice(
-        conn, prepared, _metadata(), deadline_resolver=lambda _summary: None, api_key="test-key"
+        conn, prepared, _metadata(), deadline_resolver=lambda _summary: None, api_key="test-key",
+        expected_source_revision=1,
     )
     assert stored.status == "needs_review"
     values = _job_values(cursor)
@@ -533,6 +538,7 @@ def test_integrated_known_failure_returns_saved_failure_without_raising_or_succe
             _metadata(),
             deadline_resolver=deadline_resolver,
             api_key="test-key",
+            expected_source_revision=1,
         )
     assert isinstance(stored, summary_job.StoredSummaryFailure)
     assert stored.status == "failed"
@@ -574,6 +580,7 @@ def test_integrated_storage_error_propagates_for_success_and_failure_writes(
             _metadata(),
             deadline_resolver=lambda _summary: None,
             api_key="test-key",
+            expected_source_revision=1,
         )
     _assert_job_registers_then_stores(cursor)
     _assert_caller_keeps_transaction(conn)
@@ -603,6 +610,7 @@ def test_integrated_programming_errors_propagate_without_being_recorded_as_model
             _metadata(),
             deadline_resolver=deadline,
             api_key="test-key",
+            expected_source_revision=1,
         )
     assert raised.value is error
     _assert_only_registration(conn)
@@ -627,7 +635,8 @@ def test_integrated_invalid_caller_contract_stops_before_api_or_storage(
     conn, _ = _connection()
     with pytest.raises(SummaryRecordError):
         summary_job.summarize_and_save_prepared_notice(
-            conn, prepared, metadata, deadline_resolver=deadline_resolver, api_key="test-key"
+            conn, prepared, metadata, deadline_resolver=deadline_resolver, api_key="test-key",
+            expected_source_revision=1,
         )
     generate.assert_not_called()
     assert prepared.calls == []
@@ -652,6 +661,7 @@ def test_integrated_notice_id_mismatch_stops_before_deadline_and_storage(
             _metadata(),
             deadline_resolver=deadline_resolver,
             api_key="test-key",
+            expected_source_revision=1,
         )
     _assert_only_registration(conn)
     deadline_resolver.assert_not_called()
@@ -676,7 +686,8 @@ def test_integrated_warning_data_is_preserved_without_automatic_emission(
     monkeypatch.setattr(summarize_module, "generate_summary_json", generate)
     conn, _ = _connection()
     stored = summary_job.summarize_and_save_prepared_notice(
-        conn, prepared, _metadata(), deadline_resolver=lambda _summary: None, api_key="test-key"
+        conn, prepared, _metadata(), deadline_resolver=lambda _summary: None, api_key="test-key",
+        expected_source_revision=1,
     )
     warnings = stored.warnings if failed else stored.result.warnings
     assert warnings == prepared.warnings
@@ -732,7 +743,8 @@ def test_invalid_preparation_warnings_stop_integrated_job_before_api_or_sql(
     deadline_resolver = MagicMock()
     with pytest.raises(SummaryRecordError) as failure:
         summary_job.summarize_and_save_prepared_notice(
-            conn, prepared, _metadata(), deadline_resolver=deadline_resolver, api_key="test-key"
+            conn, prepared, _metadata(), deadline_resolver=deadline_resolver, api_key="test-key",
+            expected_source_revision=1,
         )
     assert failure.value.reason_code == "invalid_preparation_warnings"
     assert str(failure.value) == "invalid_preparation_warnings"

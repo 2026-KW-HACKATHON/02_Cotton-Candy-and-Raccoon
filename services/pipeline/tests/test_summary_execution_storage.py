@@ -258,6 +258,9 @@ def test_started_pending_then_one_job_execution_is_counted_once(
     save_notice_summary(
         audit_db, SummaryRecord(notice_id=notice_id, status="pending", metadata=metadata)
     )
+    revision = audit_db.execute(
+        "select content_revision from notices where id=%s", (notice_id,),
+    ).fetchone()["content_revision"]
     prepared = SimpleNamespace(notice_id=notice_id, warnings=())
     result = PreparedSummaryResult(
         notice_id=notice_id, summary=_summary("2026-10-20"), warnings=(), media_sources=()
@@ -270,7 +273,8 @@ def test_started_pending_then_one_job_execution_is_counted_once(
 
     monkeypatch.setattr("pipeline.summary_job.summarize_prepared_notice", fake_summary)
     summarize_and_save_prepared_notice(
-        audit_db, prepared, metadata, api_key="unused-audit-key", attempt_increment=0
+        audit_db, prepared, metadata, expected_source_revision=revision,
+        api_key="unused-audit-key", attempt_increment=0,
     )
     assert _row(audit_db, notice_id)["attempt_count"] == 1, (
         "One execution was counted at both pending start and terminal job save; "
@@ -285,6 +289,9 @@ def test_job_returns_superseded_without_publishing_or_recording_api_failure(
     outcome: str,
 ) -> None:
     notice_id = _notice(audit_db)
+    revision = audit_db.execute(
+        "select content_revision from notices where id=%s", (notice_id,),
+    ).fetchone()["content_revision"]
     prepared = SimpleNamespace(notice_id=notice_id, warnings=())
     metadata = SummaryMetadata(
         source_hash=compute_source_hash(OLD_BODY), model="gemini-audit-v4",
@@ -302,7 +309,7 @@ def test_job_returns_superseded_without_publishing_or_recording_api_failure(
 
     monkeypatch.setattr("pipeline.summary_job.summarize_prepared_notice", fake_summary)
     outcome_value = summarize_and_save_prepared_notice(
-        audit_db, prepared, metadata, api_key="unused-audit-key"
+        audit_db, prepared, metadata, expected_source_revision=revision, api_key="unused-audit-key",
     )
     assert isinstance(outcome_value, StoredSummarySuperseded)
     assert outcome_value.status == "superseded"

@@ -134,7 +134,8 @@ def test_file_application_dates_require_review_even_when_other_claims_match_text
     conn.cursor.return_value.__enter__.return_value.fetchone.return_value = (17,)
     resolver = MagicMock(side_effect=AssertionError("unverified dates must not reach the resolver"))
     stored = summary_job.summarize_and_save_prepared_notice(
-        conn, _prepared("행사 안내"), _metadata(), deadline_resolver=resolver
+        conn, _prepared("행사 안내"), _metadata(), deadline_resolver=resolver,
+        expected_source_revision=1,
     )
     assert stored.status == "needs_review"
     resolver.assert_not_called()

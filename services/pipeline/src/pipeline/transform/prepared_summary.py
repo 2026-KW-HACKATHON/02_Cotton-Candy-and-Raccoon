@@ -7,7 +7,10 @@ from pydantic import ValidationError
 
 from pipeline.transform.gemini_input import GeminiInputError, validate_gemini_input
 from pipeline.transform.notice_input import NoticeInput
+from pipeline.transform.summary_files import PrivateSummaryFileManifest, manifest_snapshot
 from pipeline.transform.summary_schema import MediaSource, NoticeSummary
+
+_UNSET_MANIFEST = object()
 
 
 class PreparationIssueLike(Protocol):
@@ -50,6 +53,7 @@ class PreparedSummaryResult:
     warnings: tuple[PreparationIssueLike, ...]
     media_sources: tuple[MediaSource, ...] = ()
     correction_failure_code: str | None = None
+    file_manifest: PrivateSummaryFileManifest | None = field(default=None, repr=False)
 
 
 class SummaryPreparationError(ValueError):
@@ -60,15 +64,31 @@ class SummaryPreparationError(ValueError):
         super().__init__(reason_code)
 
 
+def prepared_file_manifest(prepared: PreparedSummaryLike) -> PrivateSummaryFileManifest | None:
+    """Copy explicit provider provenance; absent legacy data never implies a mapping."""
+    value = getattr(prepared, "file_manifest", None)
+    if value is None:
+        return None
+    try:
+        manifest = manifest_snapshot(value)
+        if manifest.notice_id != prepared.notice_id:
+            raise ValueError("file_manifest_notice_mismatch")
+    except (TypeError, ValueError):
+        raise SummaryPreparationError("invalid_prepared_input") from None
+    return manifest
+
+
 def prepare_gemini_request(
     prepared: PreparedSummaryLike,
     *,
     notice: NoticeInput | None = None,
+    file_manifest: PrivateSummaryFileManifest | None | object = _UNSET_MANIFEST,
 ) -> tuple[list[dict[str, str]], tuple[MediaSource, ...]]:
     """Copy prepared blocks and append a stable ordinal file-reference manifest.
 
     media_1 identifies the first document/image block, media_2 the second, etc.
-    The original preparer retains file metadata; these IDs refer to transmitted blocks.
+    Explicit file_manifest data binds source files to actual block bytes. Old
+    preparers without that data remain readable but provide no file identity.
     """
     if prepared.failures:
         raise SummaryPreparationError("input_preparation_failed")
@@ -90,6 +110,17 @@ def prepare_gemini_request(
         raise SummaryPreparationError("invalid_prepared_input")
     blocks = validate_gemini_input(value)
     assert isinstance(blocks, list)
+    manifest = (
+        prepared_file_manifest(prepared) if file_manifest is _UNSET_MANIFEST else file_manifest
+    )
+    if manifest is not None:
+        try:
+            manifest = manifest_snapshot(manifest)
+            if manifest.notice_id != prepared.notice_id:
+                raise ValueError("file_manifest_notice_mismatch")
+            manifest.validate_input(blocks, notice)
+        except (TypeError, ValueError):
+            raise SummaryPreparationError("invalid_prepared_input") from None
     media = []
     descriptions = []
     for block in blocks:

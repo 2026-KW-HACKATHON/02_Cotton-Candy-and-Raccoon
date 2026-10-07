@@ -462,10 +462,10 @@ class TestPassTwoHostileSchedules:
 
 class TestPassThreePublicJobReplay:
     @pytest.mark.parametrize("provide_revision", [True, False])
-    def test_prepared_before_source_change_requires_its_captured_revision_for_safety(
+    def test_stale_prepared_input_is_blocked_with_captured_revision_or_missing_argument(
         self, live_db, monkeypatch, provide_revision,
     ):
-        """The false case reproduces the legacy boundary, not a safe app path."""
+        """The operational job cannot register old input by omitting its revision."""
         notice_id = _notice(live_db)
         revision = live_db.execute(
             "select content_revision from notices where id=%s", (notice_id,)
@@ -492,24 +492,24 @@ class TestPassThreePublicJobReplay:
             return json.dumps(data)
 
         monkeypatch.setattr(summarize_module, "generate_summary_json", generate)
-        outcome = summarize_and_save_prepared_notice(
-            live_db, prepared, metadata, api_key="non-secret-unit-test-key",
-            expected_source_revision=revision if provide_revision else None,
-        )
         if provide_revision:
+            outcome = summarize_and_save_prepared_notice(
+                live_db, prepared, metadata, api_key="non-secret-unit-test-key",
+                expected_source_revision=revision,
+            )
             assert isinstance(outcome, StoredSummarySuperseded)
-            assert calls == [] and _row(live_db, notice_id) is None
-            assert live_db.execute(
-                "select notice_id from notice_summary_executions where notice_id=%s", (notice_id,),
-            ).fetchone() is None
         else:
-            # A source hash supplied by the caller cannot bind old prepared text
-            # to a newly captured database revision. Integration must pass one.
-            assert len(calls) == 1 and _row(live_db, notice_id)["status"] == "summarized"
-            assert _row(live_db, notice_id)["deadline_on"] == date(2026, 10, 20)
-            assert live_db.execute(
-                "select body_html from notices where id=%s", (notice_id,),
-            ).fetchone()["body_html"] == NEW_BODY
+            with pytest.raises(TypeError, match="expected_source_revision"):
+                summarize_and_save_prepared_notice(
+                    live_db, prepared, metadata, api_key="non-secret-unit-test-key",
+                )
+        assert calls == [] and _row(live_db, notice_id) is None
+        assert live_db.execute(
+            "select notice_id from notice_summary_executions where notice_id=%s", (notice_id,),
+        ).fetchone() is None
+        assert live_db.execute(
+            "select body_html from notices where id=%s", (notice_id,),
+        ).fetchone()["body_html"] == NEW_BODY
 
     @pytest.mark.parametrize("source", ["nowon", "wolgye1"])
     def test_collector_partial_rate_limit_progress_matches_real_committed_rows(
@@ -566,6 +566,9 @@ class TestPassThreePublicJobReplay:
     @pytest.mark.parametrize("kind", ["text", "pdf", "malformed", "timeout"])
     def test_actual_transform_job_storage_anon_and_view_contract(self, live_db, monkeypatch, kind):
         notice_id = _notice(live_db)
+        revision = live_db.execute(
+            "select content_revision from notices where id=%s", (notice_id,),
+        ).fetchone()["content_revision"]
         notice = NoticeInput(
             title="지원 사업 신청", body_text="" if kind == "pdf" else OLD_BODY,
             reference_datetime="2026-10-07T12:00:00+09:00",
@@ -596,7 +599,8 @@ class TestPassThreePublicJobReplay:
 
         monkeypatch.setattr(summarize_module, "generate_summary_json", generate)
         outcome = summarize_and_save_prepared_notice(
-            live_db, prepared, metadata, api_key="non-secret-unit-test-key"
+            live_db, prepared, metadata, expected_source_revision=revision,
+            api_key="non-secret-unit-test-key",
         )
         assert len(calls) == (2 if kind == "malformed" else 1)
         live_db.execute("set role anon")

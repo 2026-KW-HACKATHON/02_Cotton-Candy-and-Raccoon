@@ -151,7 +151,8 @@ def test_all_four_summary_states_bind_their_complete_row_and_leave_transaction_t
     assert sql == {"failed": UPSERT_SUMMARY_FAILURE, "pending": UPSERT_SUMMARY_PENDING}.get(
         status, UPSERT_SUMMARY
     )
-    assert len(values) == 13
+    assert len(values) == 14
+    assert values[13] is None
     assert values[:2] == (42, status)
     assert values[6:11] == ("all_read", "ab" * 32, "gemini-3.5-flash-lite", "notice-summary-v3", 1)
     assert values[11] == ("api_timeout" if status == "failed" else None)
@@ -206,7 +207,7 @@ def test_failure_atomically_withholds_changed_source_and_preserves_generation_me
     for column in ("source_hash", "model", "prompt_version", "generated_at", "attachment_status"):
         assert f"{column} =" not in updates
     assert values[:6] == (42, "failed", None, None, None, None)
-    assert values[10:] == (1, "api_timeout", None)
+    assert values[10:] == (1, "api_timeout", None, None)
     assert "select " not in sql.lower()
     _assert_caller_keeps_transaction(conn)
 
