@@ -107,7 +107,8 @@
         "created_at": "<set>",
         "updated_at": "<set>",
         "content_updated_at": "<set>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "월계1동 요리 교실 참가자를 모집합니다."
       },
       "dong/1042/20261007090000302": {
         "dong_group": "wolgye1",
@@ -123,7 +124,8 @@
         "created_at": "<set>",
         "updated_at": "<set>",
         "content_updated_at": "<set>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "월계1동 걷기 대회 참가자를 모집합니다."
       }
     },
     "notice_files": {},
@@ -168,11 +170,11 @@
     "notice_dictionary_links": 1,
     "notice_easy_texts": 1,
     "notice_files": 0,
+    "notice_processing_jobs": 0,
     "notice_summaries": 0,
     "notice_summary_executions": 0,
     "notices": 2,
-    "standard_dictionary_cache": 0,
-    "notice_processing_jobs": 0
+    "standard_dictionary_cache": 0
   },
   "anon": {
     "notices": {
@@ -190,7 +192,8 @@
         "created_at": "<set>",
         "updated_at": "<set>",
         "content_updated_at": "<set>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "월계1동 요리 교실 참가자를 모집합니다."
       },
       "dong/1042/20261007090000302": {
         "dong_group": "wolgye1",
@@ -206,15 +209,14 @@
         "created_at": "<set>",
         "updated_at": "<set>",
         "content_updated_at": "<set>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "월계1동 걷기 대회 참가자를 모집합니다."
       }
     },
     "notice_files": {},
     "notice_summaries": {},
     "notice_easy_texts": {
       "dong/1042/20261006090000301": {
-        "notice_revision": "d5f6b23682111a50a3229db6f74a3452b8475a4f37e4f4c29fd932328440c110",
-        "source_hash": "1f4d10aac3f00cbbbf30b233b257876b4230bd7faf909493c9ad55877da7e366",
         "original_text": "월계1동 요리 교실 참가자 모집\n월계1동 요리 교실 참가자를 모집합니다.",
         "easy_text": "월계1동 요리 교실 참가자 모집\n월계1동 요리 교실 참여할 사람을 모집합니다.",
         "changes": [
@@ -226,13 +228,125 @@
             "start": 29
           }
         ],
-        "model": "gemini-3.5-flash-lite",
-        "prompt_version": "easy-language-v8",
-        "attempt_count": 1,
         "generated_at": "<set>",
         "body_text_present": true,
-        "attachment_content_included": false,
-        "dictionary_candidates": []
+        "attachment_content_included": false
+      }
+    },
+    "app_notice_list": {
+      "dong/1042/20261006090000301": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 요리 교실 참가자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-06",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true
+      },
+      "dong/1042/20261007090000302": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 걷기 대회 참가자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false
+      }
+    },
+    "app_notice_detail": {
+      "dong/1042/20261006090000301": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 요리 교실 참가자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-06",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true,
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261006090000301&q_deptCode=1047",
+        "license_type": "KOGL-1",
+        "body_text": "월계1동 요리 교실 참가자를 모집합니다.",
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [],
+        "easy_original_text": "월계1동 요리 교실 참가자 모집\n월계1동 요리 교실 참가자를 모집합니다.",
+        "easy_text": "월계1동 요리 교실 참가자 모집\n월계1동 요리 교실 참여할 사람을 모집합니다.",
+        "easy_changes": [
+          {
+            "context": "참가자를 모집합니다",
+            "end": 33,
+            "original": "참가자를",
+            "replacement": "참여할 사람을",
+            "start": 29
+          }
+        ],
+        "easy_body_text_present": true,
+        "easy_attachment_content_included": false,
+        "easy_generated_at": "<set>"
+      },
+      "dong/1042/20261007090000302": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 걷기 대회 참가자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false,
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261007090000302&q_deptCode=1047",
+        "license_type": "KOGL-1",
+        "body_text": "월계1동 걷기 대회 참가자를 모집합니다.",
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [],
+        "easy_original_text": null,
+        "easy_text": null,
+        "easy_changes": null,
+        "easy_body_text_present": null,
+        "easy_attachment_content_included": null,
+        "easy_generated_at": null
       }
     },
     "get_notice_dictionary": {

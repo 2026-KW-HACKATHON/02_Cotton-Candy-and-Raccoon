@@ -89,7 +89,8 @@
         "created_at": "<set>",
         "updated_at": "<set>",
         "content_updated_at": "<set>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "주민 강좌 참가자를 모집합니다."
       }
     },
     "notice_files": {},
@@ -105,11 +106,11 @@
     "notice_dictionary_links": 0,
     "notice_easy_texts": 0,
     "notice_files": 0,
+    "notice_processing_jobs": 0,
     "notice_summaries": 0,
     "notice_summary_executions": 0,
     "notices": 1,
-    "standard_dictionary_cache": 0,
-    "notice_processing_jobs": 0
+    "standard_dictionary_cache": 0
   },
   "anon": {
     "notices": {
@@ -127,12 +128,69 @@
         "created_at": "<set>",
         "updated_at": "<set>",
         "content_updated_at": "<set>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "주민 강좌 참가자를 모집합니다."
       }
     },
     "notice_files": {},
     "notice_summaries": {},
     "notice_easy_texts": {},
+    "app_notice_list": {
+      "nowon/1001/900521": {
+        "source": "nowon",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "주민 강좌 참가자 모집",
+        "department": "교육지원과",
+        "registered_on": "2026-10-08",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false
+      }
+    },
+    "app_notice_detail": {
+      "nowon/1001/900521": {
+        "source": "nowon",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "주민 강좌 참가자 모집",
+        "department": "교육지원과",
+        "registered_on": "2026-10-08",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false,
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900521",
+        "license_type": "KOGL-4",
+        "body_text": "주민 강좌 참가자를 모집합니다.",
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [],
+        "easy_original_text": null,
+        "easy_text": null,
+        "easy_changes": null,
+        "easy_body_text_present": null,
+        "easy_attachment_content_included": null,
+        "easy_generated_at": null
+      }
+    },
     "get_notice_dictionary": {
       "nowon/1001/900521": {
         "result": null

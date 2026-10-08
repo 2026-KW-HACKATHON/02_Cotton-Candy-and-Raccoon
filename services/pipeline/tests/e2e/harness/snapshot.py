@@ -29,6 +29,7 @@ ANON_COLUMNS: dict[str, tuple[str, ...]] = {
         "id", "category", "source_board", "dong_group", "is_pinned", "post_sn", "title",
         "department", "registered_on", "url", "body_html", "license_type", "is_modified",
         "is_visible", "created_at", "updated_at", "content_updated_at", "content_revision",
+        "body_text",
     ),
     "notice_files": ("id", "notice_id", "kind", "url"),
     "notice_summaries": (
@@ -37,11 +38,26 @@ ANON_COLUMNS: dict[str, tuple[str, ...]] = {
         "preparation_omissions",
     ),
     "notice_easy_texts": (
-        "notice_id", "notice_revision", "source_hash", "original_text", "easy_text", "changes",
-        "model", "prompt_version", "attempt_count", "generated_at", "body_text_present",
-        "attachment_content_included", "dictionary_candidates",
+        "notice_id", "original_text", "easy_text", "changes", "generated_at",
+        "body_text_present", "attachment_content_included",
     ),
 }
+
+# The app's read contract (#58). Rows are keyed by notice like the tables above.
+APP_VIEWS: dict[str, tuple[str, ...]] = {
+    "app_notice_list": (
+        "id", "source", "dong_group", "is_pinned", "title", "department", "registered_on",
+        "content_updated_at", "is_modified", "summary_status", "display_status", "notice_type",
+        "category_code", "deadline_on", "headline", "card_summaries", "attachment_status",
+        "has_easy_text",
+    ),
+}
+APP_VIEWS["app_notice_detail"] = APP_VIEWS["app_notice_list"] + (
+    "url", "license_type", "body_text", "result", "generated_at", "file_references",
+    "preparation_omissions", "files", "easy_original_text", "easy_text", "easy_changes",
+    "easy_body_text_present", "easy_attachment_content_included", "easy_generated_at",
+)
+ANON_READS = {**ANON_COLUMNS, **APP_VIEWS}
 
 LONG_TEXT = 300
 SEQUENCE_COLUMNS = {"execution_token"}
@@ -72,14 +88,14 @@ def check_anon_grants(conn: psycopg.Connection) -> None:
         "select table_name, column_name from information_schema.column_privileges "
         "where grantee = 'anon' and privilege_type = 'SELECT' and table_schema = 'public' "
         "and table_name = any(%s)",
-        (list(ANON_COLUMNS),),
+        (list(ANON_READS),),
     ).fetchall()
-    granted: dict[str, set[str]] = {table: set() for table in ANON_COLUMNS}
+    granted: dict[str, set[str]] = {table: set() for table in ANON_READS}
     for table, column in rows:
         granted[table].add(column)
     mismatched = {
         table: {"granted": sorted(granted[table]), "harness": sorted(columns)}
-        for table, columns in ANON_COLUMNS.items()
+        for table, columns in ANON_READS.items()
         if granted[table] != set(columns)
     }
     if mismatched:
@@ -96,6 +112,8 @@ def _key_rows(table: str, rows: list[dict[str, Any]], notice_keys: dict[int, str
         if table == "notices":
             key = f"{row.pop('category')}/{row.pop('source_board')}/{row.pop('post_sn')}"
             row.pop("id", None)
+        elif table in APP_VIEWS:
+            key = notice_keys.get(row.pop("id", None), "<unknown notice>")
         elif table == "standard_dictionary_cache":
             key = row.pop("cache_key")
         else:
@@ -115,7 +133,7 @@ def _key_rows(table: str, rows: list[dict[str, Any]], notice_keys: dict[int, str
 
 def read_database(conn: psycopg.Connection) -> tuple[Raw, dict[str, int], dict[str, dict]]:
     """Raw rows keyed by notice or shared cache key, plus counts of every public table."""
-    types = _column_types(conn, SNAPSHOT_TABLES)
+    types = _column_types(conn, SNAPSHOT_TABLES + tuple(APP_VIEWS))
     with conn.cursor(row_factory=dict_row) as cursor:
         notice_rows = cursor.execute("select * from public.notices").fetchall()
         notice_keys = {
@@ -153,7 +171,7 @@ def read_anon(conn: psycopg.Connection) -> tuple[Raw, dict[str, str]]:
     with conn.transaction():
         conn.execute("set local role anon")
         notice_keys: dict[int, str] = {}
-        for table, columns in ANON_COLUMNS.items():
+        for table, columns in ANON_READS.items():
             query = SQL("select {} from public.{}").format(
                 SQL(", ").join(Identifier(c) for c in columns), Identifier(table)
             )

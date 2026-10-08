@@ -337,6 +337,7 @@ def _connect(database: DatabaseSettings) -> psycopg.Connection:
 def run_processing(
     database: DatabaseSettings, *, api_key: str | None = None,
     features: tuple[Feature, ...] = FEATURES, notice_id: int | None = None, limit: int = 100,
+    source: str | None = None,
     dry_run: bool = False, retry_stopped: bool = False, max_attempts: int = 3,
     job_timeout_seconds: float = DEFAULT_JOB_TIMEOUT_SECONDS,
     lease_seconds: int = DEFAULT_LEASE_SECONDS, summary_model: str = DEFAULT_MODEL,
@@ -344,6 +345,8 @@ def run_processing(
     executor: Callable[[DatabaseSettings, Claim, str, float], ProcessingOutcome] | None = None,
 ) -> ProcessingRunResult:
     """Scan once, enqueue, and attempt at most limit jobs sequentially; never sleep for retries."""
+    if source not in (None, "nowon", "dong", "seoul"):
+        raise ValueError("invalid_processing_source")
     if not features or any(feature not in FEATURES for feature in features):
         raise ValueError("invalid_processing_feature")
     features = tuple(dict.fromkeys(features))
@@ -376,7 +379,7 @@ def run_processing(
             if retry_stopped:
                 released = retry_job(conn, notice_id, features[0])
             candidates = select_candidates(
-                conn, features=features, notice_id=notice_id, limit=limit,
+                conn, features=features, notice_id=notice_id, limit=limit, source=source,
                 summary_model=summary_model, summary_prompt_version=SUMMARY_PROMPT_VERSION,
                 easy_text_model=easy_text_model, easy_text_prompt_version=EASY_TEXT_PROMPT_VERSION,
             )
@@ -391,6 +394,7 @@ def run_processing(
             with _connect(database) as conn:
                 claim = claim_next(
                     conn, features=features, notice_id=notice_id, max_attempts=max_attempts,
+                    source=source,
                     lease_seconds=lease_seconds, contract_keys=contracts, transitions=transitions,
                 )
             records.extend(transitions)

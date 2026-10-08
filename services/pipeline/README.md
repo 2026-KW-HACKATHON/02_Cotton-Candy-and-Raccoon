@@ -289,6 +289,29 @@ DB에 노원구 공지가 하나도 없으면 **어느 모드든** API 최신 50
 
 `storage/notices.py`의 `save_notice(conn, record)`는 변환된 `NoticeRecord`를 `notices`에 `(category, source_board, post_sn)` 기준으로 한 SQL 문에서 저장·갱신하고 DB `id`를 반환합니다. 새 공지는 공개 상태로 저장하고 다시 확인된 공지를 `is_visible=True`로 복원합니다. 기존 공지는 제목·본문 HTML·등록일·원문 URL·공공누리 유형 중 하나라도 이전 값과 다르면 `is_modified=True`가 되고, 이후 원래 값으로 돌아와도 `True`를 유지합니다. 부서만 변경되면 수정됨으로 표시하지 않습니다. `updated_at`은 갱신하며 `created_at`은 유지합니다. 동일값 비교에는 SQL의 `IS DISTINCT FROM`을 사용해 `NULL` 변경도 감지합니다.
 
+저장할 때마다 `body_text`에 `notice_body_text(body_html)`(= `html_to_notice_text`, 요약 입력과 같은 평문)를 함께 씁니다. 평문이 비면 NULL입니다. 앱은 HTML 대신 이 평문을 표시합니다. 파생 값이라 수정됨 판단과 원문 변경 trigger의 비교 대상이 아닙니다.
+
+`body_text` 컬럼이 생기기 전에 저장한 행은 다시 수집하면 채워집니다(내용이 같아도 upsert가 `body_text`를 씁니다). 목록에서 사라져 다시 수집되지 않는 행은 아래처럼 채웁니다. `body_text`만 바꾸므로 `content_revision`과 기존 요약은 그대로입니다.
+
+```python
+import psycopg
+from pipeline.config import DatabaseSettings
+from pipeline.storage.notices import notice_body_text
+
+with psycopg.connect(DatabaseSettings.from_env().database_url) as conn:
+    rows = conn.execute(
+        "select id, body_html from notices where body_text is null and body_html is not null"
+    ).fetchall()
+    for notice_id, body_html in rows:
+        conn.execute(
+            "update notices set body_text = %s where id = %s "
+            "and body_html is not distinct from %s and body_text is null",
+            (notice_body_text(body_html), notice_id, body_html),
+        )
+```
+
+조회 후 본문 HTML이 바뀌었거나 다른 작업이 평문을 채운 행은 갱신하지 않습니다. 건너뛴 행은 다음 실행에서 최신 원문을 다시 읽어 처리합니다.
+
 함수는 `commit`, `rollback`, 연결 종료를 하지 않습니다. `DatabaseSettings.from_env()`는 DB 연결에 필요한 `DATABASE_URL`만 읽어 검증하므로 API 키 없이도 사용할 수 있습니다. `psycopg.connect(settings.database_url)`로 연결한 뒤 변환된 레코드를 함수에 전달합니다. `collect-one`은 아래의 공지·파일 묶음 저장 함수를 사용합니다.
 
 ## 공지와 파일 함께 저장
@@ -321,7 +344,7 @@ GitHub 저장소의 Settings → Secrets and variables → Actions에서 아래�
 
 기존 `SUPABASE_URL`·`SUPABASE_SECRET_KEY`는 이 Python 코드의 `psycopg` 연결에 사용되지 않습니다. DB 접속용 계정은 현재 `notices`·`notice_files` 쓰기 권한이 필요하며, 연결 문자열과 비밀번호를 코드·PR·채팅·로그에 붙여 넣지 마세요. 공식 DB 스키마에 필요한 마이그레이션이 이미 적용되었는지도 활성화 전에 확인해야 합니다.
 
-예약 시각은 한국 시간 **09:00·13:00 `new`, 17:00 `refresh`**입니다. GitHub 예약 워크플로는 기본 브랜치의 파일을 기준으로 실행됩니다. `workflow_dispatch`로 `new`/`refresh`를 수동 선택할 수도 있지만, 활성화 변수가 `true`이면 **수동 실행도 공식 DB에 실제 저장**합니다. 실행 전에 Secret 대상 DB를 다시 확인하세요. 두 출처는 각각 실행되며, 한 출처가 부분 실패해도 다른 출처를 시도합니다. 둘 중 하나라도 실패하거나 `complete=false`면 최종 Action은 실패로 표시되고, 각 출처의 결과 JSON에서 이유 코드를 확인할 수 있습니다. 이미 성공한 다른 공지의 DB 저장은 되돌리지 않습니다.
+예약 시각은 한국 시간 **09:00·13:00 `new`, 17:00 `refresh`**입니다. GitHub 예약 워크플로는 기본 브랜치의 파일을 기준으로 실행됩니다. `workflow_dispatch`로 `new`/`refresh`를 수동 선택할 수도 있지만, 활성화 변수가 `true`이면 **수동 실행도 공식 DB에 실제 저장**합니다. 실행 전에 Secret 대상 DB를 다시 확인하세요. 노원·월계1동 및 선택적으로 활성화한 서울시 출처는 각각 실행되며, 한 출처가 부분 실패해도 다른 출처를 시도합니다. 활성화한 출처 중 하나라도 실패하거나 `complete=false`면 최종 Action은 실패로 표시되고, 각 출처의 결과 JSON에서 이유 코드를 확인할 수 있습니다. 이미 성공한 다른 공지의 DB 저장은 되돌리지 않습니다.
 
 현재 워크플로와 Secret은 **코드 연결만 준비한 상태**입니다. 이 작업에서는 `PIPELINE_PRODUCTION_ENABLED`를 켜거나 공식 DB에 접속·저장하지 않았습니다.
 
@@ -845,6 +868,105 @@ model=DEFAULT_MODEL)`을 호출합니다.
   데이터(검증을 통과하지 못하는 원문 URL 등)와 프로그래밍 오류는 예외를 그대로 올립니다.
 - 대상 선택, 예약 실행, 자동 재시도는 이 함수 밖의 별도 작업입니다.
 
+## 수집 후 4카드·쉬운말 자동 처리 (#62)
+
+기본 `collect` / `collect-one`은 **원문만 저장**합니다. `--process-ai`를 주면 원문 수집과
+커밋을 모두 끝내고 수집 연결을 닫은 뒤, #61 실행기가 #41 `summarize_one`과 쉬운말 서비스를
+독립 실행합니다. 특정 공지의 AI 지연이 같은 수집 호출의 다른 원문 저장을 막지 않습니다.
+`--easy-text`는 기존 쉬운말·사전만 실행하는 호환 옵션이며 `--process-ai`와 함께 쓸 수 없습니다.
+
+```bash
+# 원문만 수집 (기본)
+pipeline collect --source nowon --mode new
+# 수집 + 두 AI 자동 처리, 기능별 최대 100건 (기본)
+pipeline collect --source nowon --mode new --process-ai
+pipeline collect --source wolgye1 --mode refresh --process-ai
+pipeline collect --source seoul --source-board 25 --mode new --process-ai
+pipeline collect-one --source seoul --source-board 25 --process-ai
+# 기능별 처리 상한 조정 (1~10000)
+pipeline collect --source nowon --mode refresh --process-ai --processing-limit 20
+# 원문을 다시 수집하지 않고 저장된 공지의 누락·실패 후처리 복구
+pipeline process-stored --source nowon --limit 20
+pipeline process-stored --source nowon --feature easy_text --limit 20
+```
+
+DB와 해당 출처 API 설정 외에 `GEMINI_API_KEY`가 필요합니다. 설정 오류는 수집 전에 exit 2로
+종료합니다. 사전 후보가 있는 쉬운말에는 기존 #54의 `STDICT_API_KEY`도 사용합니다. 쉬운말 저장이
+성공한 뒤 사전 연결을 시도하며 사전 실패가 저장된 AI 결과를 취소하지 않습니다.
+
+새 공지가 0건이어도 **같은 출처의 전체 공개 공지** 중 누락·원문 변경·재시도 시각이 지난 작업을
+찾습니다. `collect-one`의 ID도 처리 대상 전체를 제한하지 않습니다. 출처는 nowon / dong(월계1동) /
+seoul 단위이며 서울시의 선택한 게시판 외 기존 서울 공지도 재처리 대상입니다. 현재 버전의 정상
+캐시는 API를 호출하지 않습니다. 재시도 시각·점유·횟수 제한·늦은 저장 방지는 #61에 맡깁니다.
+`blocked`/`exhausted` 수동 복구는 아래 `process-pending --retry` 절차를 사용하세요.
+
+본문 없는 쉬운말은 `skipped/no_body_text`, 요약할 본문·지원 파일이 없는 4카드는 기존 입력
+준비기의 `blocked/input_preparation_failed`로 기록하며 성공 생성 건수에 포함하지 않습니다.
+파일 전용 요약은 기존 입력 준비기가 판단합니다. 미지원/읽기 실패 파일은 기존 사유 코드와
+`preparation_omissions` 또는 실패 상태를 유지합니다. 모든 경우 원문과 파일을 삭제하지 않습니다.
+
+출력의 최상위 `complete`·`saved_count`는 **원문 수집 결과**입니다. `summary`와 `easy_text`는
+각각 실제 실행한 `attempted_count`, `succeeded_count`, `skipped_count`, 실패 `records`를 제공합니다.
+`readiness`는 해당 출처 전체의 현재 결과/작업 상태 집계입니다. 유효 캐시는 `ready`, 입력 없음은
+`skipped`, 처리 상한 초과·재시도 대기·실패는 `pending/retry_wait/blocked/...`로 구분합니다.
+남은 작업이 있으면 그 기능의 `complete=false`이므로 API 호출 0회가 생성 완료를 뜻하지 않습니다.
+원문 또는 기능·사전 처리가 불완전하면 exit 1, 모두 완료(이유 있는 건너뜀 포함)면 exit 0입니다.
+사전은 Gemini 작업과 별도로 현재 쉬운말의 미완료 연결을 조회합니다. 조회 대기 시간이 끝난
+재시도 가능 단어와 누락 연결을 최대 `limit`건 처리하며, 영구 실패·대기 중 작업은 호출하지
+않습니다. `dictionary_remaining_count`에는 상한 밖·대기·영구 실패도 포함하므로 남아 있으면
+완료로 보고하지 않습니다. 완료된 사전 연결은 재작성하지 않습니다.
+
+예를 들어 요약 시간 초과 후 쉬운말만 성공한 경우의 출력 발췌:
+
+```json
+{
+  "saved_count": 1,
+  "complete": true,
+  "summary": {
+    "complete": false,
+    "attempted_count": 1,
+    "succeeded_count": 0,
+    "retry_wait_count": 1
+  },
+  "easy_text": {
+    "complete": true,
+    "attempted_count": 1,
+    "succeeded_count": 1
+  }
+}
+```
+
+두 보고서의 `published`는 처리 종료 후 **별도 연결에서 anon 역할로** #58의
+`app_notice_detail`을 다시 읽은 최종 `id/display_status/has_easy_text/url`입니다. 프론트 #34는
+`app_notice_list` / `app_notice_detail` 계약을 그대로 사용합니다. 결과가 없는 공지도 목록·원문
+링크로 접근하며, private 작업 큐나 모델 메타데이터를 공개 view에 추가하지 않습니다.
+최종 조회 실패 시 `published=null`, `published_error_code=published_read_failed`와 exit 1을
+반환하되, 이미 저장된 결과 및 기능별 실행 건수·기록은 보존합니다.
+
+### backend 적용 순서
+
+이 변경은 `backend`를 대상으로 #60·#61·#54와 #58 공개 조회 계약을 통합합니다. backend의
+`20261008150000_standard_dictionary_cache.sql`과 #58의 원래 migration 번호가 겹치므로,
+기존 migration은 바꾸지 않고 `20261008220000_app_notice_views.sql`로 동일한 조회 계약을
+추가합니다. **최신 migration을 먼저 적용하고 pipeline을 배포**하세요. 기존 공지 `body_text`는
+아래 ‘기존 데이터의 body_text 백필’ 절차 또는 재수집으로 채웁니다. 원격 DB에는 자동 적용하지 않습니다.
+
+GitHub Actions는 기존 `PIPELINE_PRODUCTION_ENABLED=true`일 때만 작동합니다.
+활성화된 모든 출처의 원문 수집을 먼저 마친 뒤 `process-stored`를 출처별로 실행합니다.
+`PIPELINE_AI_PROCESSING_ENABLED=true`이면 두 AI 기능을, 그렇지 않고
+`PIPELINE_EASY_TEXT_ENABLED=true`이면 쉬운말·사전만 처리하며, 둘 다 없으면 원문만 수집합니다.
+각 후처리 단계는 30분 상한이 있고 실패해도 다음 출처 처리를 시도합니다. 중단된 작업은
+#61의 점유 만료 후 복구 정책을 따릅니다.
+두 옵션을 켜도 AI 통합 경로만 한 번 실행합니다. AI/쉬운말 활성화 시 Gemini·표준사전 Secret이
+필요합니다. 서울시 예약 수집은 `PIPELINE_SEOUL_ENABLED=true`와 `SEOUL_NEWS_API_KEY`
+Secret을 추가하면 게시판 25를 처리합니다. 다른 게시판은 CLI의 `--source-board`로 선택합니다.
+이 파일 변경만으로 Repository Variable이나 운영 DB가 변경되지는 않습니다.
+
+검증: `tests/e2e/cases/collect_ai_{nowon,wolgye1,seoul}`은 실제 PostgreSQL과 API 대역으로
+신규 생성→캐시 재사용→원문 변경·요약 시간 초과→대기→복구→쉬운말 실패→복구 및 anon 조회를
+검사합니다. unit/storage는 출처별 점유, 빈 수집, 입력 없음, 기능별 실패 격리와 #60·#61의
+시간 제한·경쟁·취소 보호를 검사합니다.
+
 ## 누락·실패·원문 변경 후처리 재실행 (#61)
 
 `process-pending`은 이미 저장된 전체 공개 공지에서 현재 4카드 요약 또는 쉬운말 결과가 없는 작업을
@@ -907,7 +1029,7 @@ uv run pipeline process-pending --feature summary --notice-id 123 --retry-stoppe
 자동 재시도하지 않습니다. #26의 원문 변경 후 이전 정상 결과 보존은 별도 저장 계약입니다.
 현재 기반 브랜치의 원문 변경 trigger는 이전 결과를 무효화하므로, 원문 변경 중에도 이전 결과를
 계속 표시한다는 요구까지 충족하려면 #26을 통합해야 합니다. 동일 원문 재처리 실패는 기존 정상
-결과를 보존합니다. 수집 직후 자동 연결(#62), 예약 실행(#63)은 이 명령을 호출하는 별도 작업입니다.
+결과를 보존합니다. 수집 직후 자동 연결(#62)은 같은 실행기를 사용합니다. 별도 예약 복구(#63)는 이 명령을 사용할 수 있습니다.
 
 출력 JSON은 선택·점유·성공·보류·실패 건수와 작업별 상태, 안전한 실패 코드, 다음 시도 시각을
 제공합니다. 종료 코드 0은 이번 실행의 정상 완료, 1은 미완료 작업/실행 실패, 2는 잘못된 설정입니다.

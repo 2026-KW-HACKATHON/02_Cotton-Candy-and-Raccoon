@@ -117,3 +117,44 @@ def get_notice_dictionary(conn: psycopg.Connection, notice_id: int) -> dict | No
         return row[0] if row is not None else None
     except psycopg.Error:
         raise NoticeDictionaryStorageError("notice_dictionary_storage_error") from None
+
+
+def dictionary_work(
+    conn: psycopg.Connection, *, source: str, limit: int,
+) -> tuple[list[int], int]:
+    """Find missing/due links independently of Gemini work, and count all gaps.
+
+    The public projection validates source/snapshot and shared-cache identity.
+    Cooldowns and permanent failures remain incomplete but consume no batch slot.
+    Oldest link attempts go first so repeated transient failures cannot starve
+    other notices. Shared dictionary leases still arbitrate concurrent requests.
+    """
+    if source not in {"nowon", "dong", "seoul"} or type(limit) is not int or limit < 1:
+        raise ValueError("invalid_dictionary_batch")
+    row = conn.execute("""
+        with snapshots as materialized (
+            select n.id, l.generated_at, public.get_notice_dictionary(n.id) as result
+            from public.notices n
+            join public.notice_easy_texts e on e.notice_id=n.id
+            left join public.notice_dictionary_links l on l.notice_id=n.id
+            where n.is_visible and n.category=%s and e.body_text_present
+              and e.dictionary_candidates is not null
+        ), incomplete as materialized (
+            select * from snapshots where result->>'dictionary_status'
+                in ('pending','partial')
+        ), due as (
+            select id from incomplete
+            where result->'dictionary_candidates' = 'null'::jsonb
+               or exists (
+                   select 1 from jsonb_array_elements(coalesce(
+                       nullif(result->'dictionary_candidates','null'::jsonb), '[]'::jsonb)) c
+                   where c->>'lookup_status' in ('pending','failed')
+                     and (c->>'retryable')::boolean
+                     and coalesce((c->>'retry_after_seconds')::int,0)=0
+               )
+            order by generated_at nulls first, id limit %s
+        )
+        select coalesce((select array_agg(id) from due), '{}'::bigint[]),
+               (select count(*) from incomplete)
+        """, (source, limit)).fetchone()
+    return list(row[0]), row[1]

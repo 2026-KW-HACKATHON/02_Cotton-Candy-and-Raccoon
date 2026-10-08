@@ -412,3 +412,93 @@ def test_preserved_legacy_summary_does_not_reset_failed_generation_attempts(
             "select result,model,prompt_version from notice_summaries where notice_id=%s",
             (notice_id,),
         ).fetchone() == before
+
+
+@pytest.mark.parametrize("category", ["nowon", "dong", "seoul"])
+def test_collection_scope_selects_and_claims_only_its_source(conn, category):
+    ids = {}
+    for source in ("nowon", "dong", "seoul"):
+        notice_id = _notice(conn)
+        conn.execute(
+            "update notices set category=%s, dong_group=%s, source_board=%s where id=%s",
+            (source, "wolgye1" if source == "dong" else None,
+             {"nowon": "1001", "dong": "1042", "seoul": "25"}[source], notice_id),
+        )
+        ids[source] = notice_id
+    candidates = select_candidates(conn, features=("summary",), source=category)
+    assert [item.notice_id for item in candidates] == [ids[category]]
+    # Pre-existing jobs from another source must not be stolen by this collector.
+    enqueue_candidates(conn, select_candidates(conn, features=("summary",)))
+    claim = claim_next(conn, features=("summary",), source=category)
+    assert claim.notice_id == ids[category]
+    assert claim_next(conn, features=("summary",), source=category) is None
+
+
+def test_readiness_includes_backoff_stopped_skipped_and_missing_cached_results(conn):
+    ids = [_notice(conn) for _ in range(6)]
+    enqueue_candidates(conn, select_candidates(conn, features=("summary",)))
+    for state in ("retry_wait", "blocked", "skipped"):
+        claim = claim_next(conn, features=("summary",), now=NOW)
+        assert claim is not None
+        finish_claim(
+            conn, claim, state=state, last_error_code="api_timeout",
+            next_attempt_at=NOW + timedelta(days=1) if state == "retry_wait" else None,
+            now=NOW,
+        )
+    _summary_cache(conn, ids[3])
+    counts = processing_jobs.readiness_counts(conn, feature="summary", source="nowon")
+    assert counts == {"ready": 1, "skipped": 1, "pending": 2, "running": 0,
+                      "retry_wait": 1, "blocked": 1, "exhausted": 0}
+    conn.execute("delete from notice_summaries where notice_id=%s", (ids[3],))
+    assert processing_jobs.readiness_counts(conn, feature="summary", source="nowon")["pending"] == 3
+
+
+@pytest.mark.parametrize("source,category", [
+    ("nowon", "nowon"), ("wolgye1", "dong"), ("seoul", "seoul"),
+])
+@pytest.mark.parametrize("unsupported_file", [False, True])
+def test_automatic_collection_without_body_keeps_public_original_and_skips_ai(
+    conn, database, monkeypatch, source, category, unsupported_file,
+):
+    from pipeline import collection_processing, processing_runner
+
+    notice_id = _notice(conn)
+    conn.execute(
+        "update notices set body_html=null, category=%s, dong_group=%s, "
+        "source_board=%s where id=%s",
+        (category, "wolgye1" if category == "dong" else None,
+         {"nowon": "1001", "dong": "1042", "seoul": "25"}[category], notice_id),
+    )
+    if unsupported_file:
+        conn.execute(
+            "insert into notice_files (notice_id,kind,file_id,file_key,file_name,url) "
+            "values (%s,'attachment','unsupported','id:unsupported','unsupported.zip',"
+            "'https://www.nowon.kr/unsupported.zip')", (notice_id,),
+        )
+    monkeypatch.setattr(collection_processing, "load_gemini_api_key", lambda: "fake")
+    monkeypatch.setattr(processing_runner, "execute_claim", lambda db, claim, key, timeout:
+                        process_claim(db, claim, api_key=key))
+    processor = collection_processing.create_ai_processing(
+        DatabaseSettings(database_uri(database)), source=source,
+    )
+    processor(notice_id)
+    processor.finish()
+    reports = processor.report()
+    assert not processor.complete, str(reports)
+    for feature, reason in (
+        ("summary", "input_preparation_failed"), ("easy_text", "no_body_text"),
+    ):
+        report = reports[feature]
+        state = "blocked" if feature == "summary" else "skipped"
+        assert report["succeeded_count"] == 0 and report[state + "_count"] == 1
+        assert report["records"][0]["reason_code"] == reason
+        assert report["readiness"][state] == 1
+        assert report["published"][0]["id"] == notice_id
+        assert report["published"][0]["url"] == "https://www.nowon.kr/test"
+    # A subsequent empty collection does not reattempt the same unsupported input.
+    again = collection_processing.create_ai_processing(
+        DatabaseSettings(database_uri(database)), source=source,
+    )
+    again.finish()
+    assert not again.complete
+    assert all(r["attempted_count"] == 0 for r in again.report().values())

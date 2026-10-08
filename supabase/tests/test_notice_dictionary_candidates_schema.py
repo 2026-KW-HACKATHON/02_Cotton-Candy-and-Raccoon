@@ -69,12 +69,12 @@ def test_candidate_migration_preserves_existing_result_as_unprocessed(db, candid
 
 
 @pytest.mark.parametrize("role", ["anon", "authenticated"])
-def test_dictionary_candidates_are_public_read_only(db, role):
+def test_dictionary_candidates_are_private_under_app_contract(db, role):
     assert db.execute(
         "select has_column_privilege(%s,'notice_easy_texts','dictionary_candidates','SELECT'), "
         "has_column_privilege(%s,'notice_easy_texts','dictionary_candidates','UPDATE')",
         (role, role),
-    ).fetchone() == (True, False)
+    ).fetchone() == (False, False)
 
 
 @pytest.mark.parametrize("candidates", [None, [], [CANDIDATE]])
@@ -90,10 +90,14 @@ def test_candidates_distinguish_unprocessed_empty_and_populated(db, candidate_ro
     ).fetchone() == (candidates,)
     with db.transaction():
         db.execute("set local role anon")
+        with pytest.raises(psycopg.errors.InsufficientPrivilege), db.transaction():
+            db.execute(
+                "select dictionary_candidates from notice_easy_texts where notice_id=%s",
+                (candidate_row,),
+            )
         assert db.execute(
-            "select dictionary_candidates from notice_easy_texts where notice_id=%s",
-            (candidate_row,),
-        ).fetchone() == (candidates,)
+            "select easy_text from notice_easy_texts where notice_id=%s", (candidate_row,),
+        ).fetchone() == (ORIGINAL,)
 
 
 @pytest.mark.parametrize(

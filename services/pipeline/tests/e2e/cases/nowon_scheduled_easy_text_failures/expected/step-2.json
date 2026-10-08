@@ -106,7 +106,8 @@
         "created_at": "<set>",
         "updated_at": "<set>",
         "content_updated_at": "<set>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "어르신 체조 참가자를 모집합니다."
       },
       "nowon/1001/900532": {
         "dong_group": null,
@@ -122,7 +123,8 @@
         "created_at": "<set>",
         "updated_at": "<set>",
         "content_updated_at": "<set>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "청소년 캠프 참가자를 모집합니다."
       }
     },
     "notice_files": {},
@@ -167,11 +169,11 @@
     "notice_dictionary_links": 1,
     "notice_easy_texts": 1,
     "notice_files": 0,
+    "notice_processing_jobs": 0,
     "notice_summaries": 0,
     "notice_summary_executions": 0,
     "notices": 2,
-    "standard_dictionary_cache": 0,
-    "notice_processing_jobs": 0
+    "standard_dictionary_cache": 0
   },
   "anon": {
     "notices": {
@@ -189,7 +191,8 @@
         "created_at": "<set>",
         "updated_at": "<set>",
         "content_updated_at": "<set>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "어르신 체조 참가자를 모집합니다."
       },
       "nowon/1001/900532": {
         "dong_group": null,
@@ -205,15 +208,14 @@
         "created_at": "<set>",
         "updated_at": "<set>",
         "content_updated_at": "<set>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "청소년 캠프 참가자를 모집합니다."
       }
     },
     "notice_files": {},
     "notice_summaries": {},
     "notice_easy_texts": {
       "nowon/1001/900531": {
-        "notice_revision": "9a552e3ef7d2eea6b790fe16d4624d85e811cef14281d2055e1eb847e2060b0e",
-        "source_hash": "bdf98ac143995637d0cd830b0817251fa6d63cbdd71983f4fcd5c603bba3fd8b",
         "original_text": "어르신 체조 참가자 모집\n어르신 체조 참가자를 모집합니다.",
         "easy_text": "어르신 체조 참가자 모집\n어르신 체조 참여할 사람을 모집합니다.",
         "changes": [
@@ -225,13 +227,125 @@
             "start": 21
           }
         ],
-        "model": "gemini-3.5-flash-lite",
-        "prompt_version": "easy-language-v8",
-        "attempt_count": 1,
         "generated_at": "<set>",
         "body_text_present": true,
-        "attachment_content_included": false,
-        "dictionary_candidates": []
+        "attachment_content_included": false
+      }
+    },
+    "app_notice_list": {
+      "nowon/1001/900531": {
+        "source": "nowon",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "어르신 체조 참가자 모집",
+        "department": "어르신복지과",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true
+      },
+      "nowon/1001/900532": {
+        "source": "nowon",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "청소년 캠프 참가자 모집",
+        "department": "교육지원과",
+        "registered_on": "2026-10-08",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false
+      }
+    },
+    "app_notice_detail": {
+      "nowon/1001/900531": {
+        "source": "nowon",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "어르신 체조 참가자 모집",
+        "department": "어르신복지과",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true,
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900531",
+        "license_type": "KOGL-4",
+        "body_text": "어르신 체조 참가자를 모집합니다.",
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [],
+        "easy_original_text": "어르신 체조 참가자 모집\n어르신 체조 참가자를 모집합니다.",
+        "easy_text": "어르신 체조 참가자 모집\n어르신 체조 참여할 사람을 모집합니다.",
+        "easy_changes": [
+          {
+            "context": "참가자를 모집합니다",
+            "end": 25,
+            "original": "참가자를",
+            "replacement": "참여할 사람을",
+            "start": 21
+          }
+        ],
+        "easy_body_text_present": true,
+        "easy_attachment_content_included": false,
+        "easy_generated_at": "<set>"
+      },
+      "nowon/1001/900532": {
+        "source": "nowon",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "청소년 캠프 참가자 모집",
+        "department": "교육지원과",
+        "registered_on": "2026-10-08",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false,
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900532",
+        "license_type": "KOGL-4",
+        "body_text": "청소년 캠프 참가자를 모집합니다.",
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [],
+        "easy_original_text": null,
+        "easy_text": null,
+        "easy_changes": null,
+        "easy_body_text_present": null,
+        "easy_attachment_content_included": null,
+        "easy_generated_at": null
       }
     },
     "get_notice_dictionary": {

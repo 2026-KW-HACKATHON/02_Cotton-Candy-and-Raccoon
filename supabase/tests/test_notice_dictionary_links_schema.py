@@ -274,7 +274,8 @@ def test_unprocessed_and_empty_candidates_are_distinct(db, linked_row):
     db.execute("update notice_easy_texts set dictionary_candidates='[]'")
     db.execute(
         "update notice_dictionary_links set candidates='[]',easy_text_token="
-        "(select notice_dictionary_easy_text_token(e) from notice_easy_texts e)",
+        "(select notice_dictionary_easy_text_token(e) from notice_easy_texts e "
+        "where e.notice_id=notice_dictionary_links.notice_id)",
     )
     public = _public(db, linked_row)
     assert public["dictionary_candidates"] == []

@@ -268,3 +268,34 @@ def test_legacy_unknown_candidates_fail_before_http_and_preserve_easy_text(
     response = get_notice_dictionary(dictionary_db, source.notice_id)
     assert response["dictionary_status"] == "unprocessed"
     assert response["dictionary_candidates"] is None
+
+
+@pytest.mark.parametrize("failure,retryable", [("dictionary_timeout", True),
+                                               ("dictionary_authentication_failed", False)])
+def test_dictionary_scan_recovers_old_links_and_respects_retry_policy(
+    dictionary_database, dictionary_db, failure, retryable,
+):
+    from pipeline.storage.notice_dictionary import dictionary_work
+
+    source, saved, _ = _saved_notice(dictionary_db)
+    category = dictionary_db.execute("select category from notices where id=%s",
+                                     (source.notice_id,)).fetchone()[0]
+    dictionary_db.commit()
+    assert dictionary_work(dictionary_db, source=category, limit=1) == ([source.notice_id], 1)
+    assert dictionary_work(dictionary_db, source="seoul", limit=1) == ([], 0)
+    dictionary_db.commit()
+
+    def fail(*args, **kwargs):
+        raise DictionaryError(failure, retryable=retryable)
+
+    enrich_notice_dictionary(dictionary_database, source.notice_id, lookup=fail)
+    expected = [source.notice_id] if retryable else []
+    assert dictionary_work(dictionary_db, source=category, limit=1) == (expected, 1)
+    assert get_notice_easy_text(dictionary_db, source.notice_id) == saved
+    dictionary_db.commit()
+    # A live lookup lease defers even a retryable word without hiding the gap.
+    with psycopg.connect(dictionary_database.database_url, autocommit=True) as conn:
+        assert claim_lookup(conn, DictionaryQuery("구비서류")).token is not None
+    assert dictionary_work(dictionary_db, source=category, limit=1) == ([], 1)
+    dictionary_db.execute("update notices set is_visible=false where id=%s", (source.notice_id,))
+    assert dictionary_work(dictionary_db, source=category, limit=1) == ([], 0)

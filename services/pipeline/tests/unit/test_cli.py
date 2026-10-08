@@ -9,6 +9,7 @@ import pytest
 
 from pipeline.cli import main
 from pipeline.collect_nowon import CollectNowonResult, NoticeFailure
+from pipeline.collection_processing import CollectionPostprocessing
 from pipeline.models import NoticeRecord, RawNotice
 from pipeline.sources.nowon_page import NowonPageError
 from pipeline.transform.nowon import TransformError
@@ -279,3 +280,109 @@ def test_check_config_failure_does_not_print_values(
     assert name in output.err
     assert value not in output.err
     assert "secret-api-key" not in output.err
+
+
+@pytest.mark.parametrize("source", ["nowon", "wolgye1", "seoul"])
+@pytest.mark.parametrize("command", ["collect", "collect-one"])
+def test_combined_ai_requires_key_before_any_collection(
+    source: str, command: str, collect_env: None,
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("SEOUL_NEWS_API_KEY", "private-api-key")
+    args = [command, "--source", source, "--process-ai"]
+    if command == "collect":
+        args += ["--mode", "new"]
+    with (
+        patch("httpx.Client") as http,
+        patch("psycopg.connect") as connect,
+        patch("pipeline.cli.create_easy_text_processing") as legacy,
+    ):
+        assert main(args) == 2
+    http.assert_not_called()
+    connect.assert_not_called()
+    legacy.assert_not_called()
+    output = capsys.readouterr()
+    assert "GEMINI_API_KEY" in output.err
+    assert output.out == ""
+    assert "private" not in output.err
+
+
+@pytest.mark.parametrize("command", ["collect", "collect-one"])
+def test_two_processing_modes_cannot_run_together(command: str) -> None:
+    with pytest.raises(SystemExit) as stopped:
+        main([command, "--source", "nowon", "--easy-text", "--process-ai"])
+    assert stopped.value.code == 2
+
+
+def test_raw_collection_finishes_before_easy_text_requests(
+    collect_env: None, capsys: pytest.CaptureFixture[str],
+) -> None:
+    events = []
+    legacy = MagicMock(side_effect=lambda notice_id: events.append(("ai", notice_id)))
+    legacy.report.return_value = {"complete": True, "successful_count": 2}
+
+    def collect(*args, after_save, **kwargs):
+        for notice_id in (42, 43):
+            events.append(("committed", notice_id))
+            after_save(notice_id)
+        events.append(("collector_closed", None))
+        return CollectNowonResult(
+            total_count=2, listed_count=2, attempted_count=2, saved_count=2,
+            listing_complete=True, limited=False, failed_pages=(), failures=(),
+        )
+
+    with (
+        patch("pipeline.cli.collect_and_save_nowon", side_effect=collect),
+        patch("pipeline.collection_processing.AfterCollectEasyText", return_value=legacy),
+    ):
+        assert main(["collect", "--source", "nowon", "--easy-text"]) == 0
+    assert events == [
+        ("committed", 42), ("committed", 43), ("collector_closed", None), ("ai", 42), ("ai", 43),
+    ]
+    assert json.loads(capsys.readouterr().out)["easy_text"]["successful_count"] == 2
+
+
+@pytest.mark.parametrize("failed_feature", ["summary", "easy_text"])
+def test_common_runner_reports_both_features_without_changing_collection_success(
+    collect_env: None, capsys: pytest.CaptureFixture[str], failed_feature: str,
+) -> None:
+    reports = {
+        feature: {"complete": feature != failed_feature}
+        for feature in ("summary", "easy_text")
+    }
+    runner = MagicMock(return_value=reports)
+    processor = CollectionPostprocessing(("summary", "easy_text"), runner)
+
+    def collect(*args, after_save, **kwargs):
+        after_save(42)
+        runner.assert_not_called()
+        return CollectNowonResult(
+            total_count=1, listed_count=1, attempted_count=1, saved_count=1,
+            listing_complete=True, limited=False, failed_pages=(), failures=(),
+        )
+
+    with (
+        patch("pipeline.cli.create_ai_processing", return_value=processor),
+        patch("pipeline.cli.create_easy_text_processing") as legacy,
+        patch("pipeline.cli.collect_and_save_nowon", side_effect=collect),
+    ):
+        assert main(["collect", "--source", "nowon", "--process-ai"]) == 1
+    legacy.assert_not_called()
+    runner.assert_called_once_with((42,))
+    report = json.loads(capsys.readouterr().out)
+    assert report["complete"] is True and report["saved_count"] == 1
+    assert {feature: report[feature] for feature in reports} == reports
+
+
+@pytest.mark.parametrize("feature,expected", [("all", ("summary", "easy_text")),
+                                               ("easy_text", ("easy_text",))])
+def test_process_stored_without_source_keys(monkeypatch, capsys, feature, expected):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
+    reports = {name: {"complete": True} for name in expected}
+    runner = MagicMock(return_value=reports)
+    processor = CollectionPostprocessing(expected, runner)
+    with patch("pipeline.cli.create_ai_processing", return_value=processor) as create:
+        assert main(["process-stored", "--source", "seoul", "--feature", feature]) == 0
+    assert create.call_args.kwargs["features"] == expected
+    runner.assert_called_once_with(())
+    assert json.loads(capsys.readouterr().out)[expected[0]]["complete"] is True

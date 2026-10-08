@@ -111,11 +111,30 @@ and public.notice_dictionary_candidates_valid(
 """
 
 
+_INPUTS = f"""
+with inputs as (
+    select n.id as notice_id, 'summary'::text as feature,
+           n.content_revision::text as input_version, %(summary_contract)s::text as contract_key,
+           coalesce(({_SUMMARY_READY}), false) as ready
+    from public.notices n left join public.notice_summaries s on s.notice_id = n.id
+    where n.is_visible and (%(notice_id)s::bigint is null or n.id = %(notice_id)s)
+      and (%(source)s::text is null or n.category = %(source)s)
+    union all
+    select n.id, 'easy_text', public.notice_easy_text_revision(n.title, n.body_html),
+           %(easy_contract)s::text, coalesce(({_EASY_READY}), false)
+    from public.notices n left join public.notice_easy_texts e on e.notice_id = n.id
+    where n.is_visible and (%(notice_id)s::bigint is null or n.id = %(notice_id)s)
+      and (%(source)s::text is null or n.category = %(source)s)
+)
+"""
+
+
 def select_candidates(
     conn: Connection,
     *,
     features: Sequence[Feature] = FEATURES,
     notice_id: int | None = None,
+    source: str | None = None,
     limit: int = 100,
     summary_model: str = SUMMARY_MODEL,
     summary_prompt_version: str = SUMMARY_PROMPT_VERSION,
@@ -133,6 +152,7 @@ def select_candidates(
         raise ValueError("invalid_processing_limit")
     params = {
         "features": _features(features), "notice_id": notice_id, "limit": limit,
+        "source": source,
         "summary_model": summary_model, "summary_prompt": summary_prompt_version,
         "easy_model": easy_text_model, "easy_prompt": easy_text_prompt_version,
         "summary_contract": make_contract_key(summary_model, summary_prompt_version),
@@ -140,18 +160,7 @@ def select_candidates(
         "now": _now(now),
     }
     query = f"""
-with inputs as (
-    select n.id as notice_id, 'summary'::text as feature,
-           n.content_revision::text as input_version, %(summary_contract)s::text as contract_key,
-           coalesce(({_SUMMARY_READY}), false) as ready
-    from public.notices n left join public.notice_summaries s on s.notice_id = n.id
-    where n.is_visible and (%(notice_id)s::bigint is null or n.id = %(notice_id)s)
-    union all
-    select n.id, 'easy_text', public.notice_easy_text_revision(n.title, n.body_html),
-           %(easy_contract)s::text, coalesce(({_EASY_READY}), false)
-    from public.notices n left join public.notice_easy_texts e on e.notice_id = n.id
-    where n.is_visible and (%(notice_id)s::bigint is null or n.id = %(notice_id)s)
-)
+{_INPUTS}
 select i.notice_id, i.feature, i.input_version, i.contract_key
 from inputs i left join public.notice_processing_jobs j
     on j.notice_id = i.notice_id and j.feature = i.feature
@@ -166,6 +175,38 @@ limit %(limit)s
 """
     with conn.cursor(row_factory=dict_row) as cursor:
         return [Candidate(**row) for row in cursor.execute(query, params)]
+
+
+def readiness_counts(conn: Connection, *, feature: Feature, source: str) -> dict[str, int]:
+    """Distinguish result readiness from this invocation's attempted jobs.
+
+    Include deferred/stopped work and jobs beyond the batch limit. Reuse the
+    selector's exact cache/version contract so an old success cannot hide a gap.
+    """
+    params = {
+        "notice_id": None, "source": source,
+        "summary_model": SUMMARY_MODEL, "summary_prompt": SUMMARY_PROMPT_VERSION,
+        "easy_model": EASY_TEXT_MODEL, "easy_prompt": EASY_TEXT_PROMPT_VERSION,
+        "summary_contract": make_contract_key(SUMMARY_MODEL, SUMMARY_PROMPT_VERSION),
+        "easy_contract": make_contract_key(EASY_TEXT_MODEL, EASY_TEXT_PROMPT_VERSION),
+        "feature": feature,
+    }
+    rows = conn.execute(f"""
+{_INPUTS}
+select case when i.ready then 'ready'
+            when j.input_version = i.input_version and j.contract_key = i.contract_key
+                 and j.state <> 'succeeded' then j.state
+            else 'pending' end as state, count(*)
+from inputs i left join public.notice_processing_jobs j
+    on j.notice_id = i.notice_id and j.feature = i.feature
+where i.feature = %(feature)s
+group by 1
+""", params).fetchall()
+    counts = dict.fromkeys(
+        ("ready", "skipped", "pending", "running", "retry_wait", "blocked", "exhausted"), 0,
+    )
+    counts.update(rows)
+    return counts
 
 
 def _lock_source(conn: Connection, candidate: Candidate, *, skip_locked: bool = False) -> bool:
@@ -232,6 +273,7 @@ def claim_next(
     contract_keys: Mapping[Feature, str] | None = None,
     transitions: list[dict[str, object]] | None = None,
     notice_id: int | None = None,
+    source: str | None = None,
     max_attempts: int = 3,
     lease_seconds: int = 300,
     now: datetime | None = None,
@@ -254,11 +296,14 @@ def claim_next(
             "select notice_id,feature,input_version,contract_key "
             "from public.notice_processing_jobs "
             "where feature = any(%s::text[]) and (%s::bigint is null or notice_id=%s) "
+            "and (%s::text is null or notice_id in "
+            "(select id from public.notices where category=%s)) "
             "and (%s::jsonb is null or contract_key = (%s::jsonb ->> feature)) "
             "and (state='pending' or (state='retry_wait' and next_attempt_at <= %s) "
             "or (state='running' and lease_expires_at <= %s)) "
             "order by coalesce(next_attempt_at, updated_at), notice_id, feature",
-            (_features(features), notice_id, notice_id, contracts, contracts, timestamp, timestamp),
+            (_features(features), notice_id, notice_id, source, source,
+             contracts, contracts, timestamp, timestamp),
         ).fetchall()
     for row in rows:
         candidate = Candidate(**row)

@@ -17,7 +17,8 @@
         "created_at": "<unchanged>",
         "updated_at": "<unchanged>",
         "content_updated_at": "<unchanged>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "📢 익일에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요."
       }
     },
     "notice_files": {},
@@ -235,11 +236,11 @@
     "notice_dictionary_links": 1,
     "notice_easy_texts": 1,
     "notice_files": 0,
+    "notice_processing_jobs": 0,
     "notice_summaries": 0,
     "notice_summary_executions": 0,
     "notices": 1,
-    "standard_dictionary_cache": 3,
-    "notice_processing_jobs": 0
+    "standard_dictionary_cache": 3
   },
   "anon": {
     "notices": {
@@ -257,15 +258,14 @@
         "created_at": "<unchanged>",
         "updated_at": "<unchanged>",
         "content_updated_at": "<unchanged>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "📢 익일에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요."
       }
     },
     "notice_files": {},
     "notice_summaries": {},
     "notice_easy_texts": {
       "nowon/1001/900551": {
-        "notice_revision": "a848d30a1de9490a85bad59064739fd8f6820e2d27c864f8d0a6c4e689f32b5f",
-        "source_hash": "a146c21250523fd2bc690af991f97da88235ffff58d0c9e53df417669977e317",
         "original_text": "구비서류 제출 안내\n📢 익일에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.",
         "easy_text": "구비서류 제출 안내\n📢 다음 날에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.",
         "changes": [
@@ -277,42 +277,73 @@
             "start": 13
           }
         ],
-        "model": "gemini-3.5-flash-lite",
-        "prompt_version": "easy-language-v8",
-        "attempt_count": 1,
         "generated_at": "<unchanged>",
         "body_text_present": true,
-        "attachment_content_included": false,
-        "dictionary_candidates": [
+        "attachment_content_included": false
+      }
+    },
+    "app_notice_list": {
+      "nowon/1001/900551": {
+        "source": "nowon",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "구비서류 제출 안내",
+        "department": "문화체육과",
+        "registered_on": "2026-10-08",
+        "content_updated_at": "<unchanged>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true
+      }
+    },
+    "app_notice_detail": {
+      "nowon/1001/900551": {
+        "source": "nowon",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "구비서류 제출 안내",
+        "department": "문화체육과",
+        "registered_on": "2026-10-08",
+        "content_updated_at": "<unchanged>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true,
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900551",
+        "license_type": "KOGL-4",
+        "body_text": "📢 익일에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.",
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [],
+        "easy_original_text": "구비서류 제출 안내\n📢 익일에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.",
+        "easy_text": "구비서류 제출 안내\n📢 다음 날에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.",
+        "easy_changes": [
           {
             "context": "익일에는 구비서류를 지참하시어 방문하세요.",
-            "end": 23,
-            "original": "구비서류를",
-            "query_word": "구비서류",
-            "start": 18
-          },
-          {
-            "context": "익일에는 구비서류를 지참하시어 방문하세요.",
-            "end": 29,
-            "original": "지참하시어",
-            "query_word": "지참하다",
-            "start": 24
-          },
-          {
-            "context": "직권처리는 담당자가 진행합니다.",
-            "end": 42,
-            "original": "직권처리는",
-            "query_word": "직권처리",
-            "start": 37
-          },
-          {
-            "context": "재방문할 때에도 구비서류를 지참하시어 방문하세요.",
-            "end": 69,
-            "original": "구비서류를",
-            "query_word": "구비서류",
-            "start": 64
+            "end": 17,
+            "original": "익일에는",
+            "replacement": "다음 날에는",
+            "start": 13
           }
-        ]
+        ],
+        "easy_body_text_present": true,
+        "easy_attachment_content_included": false,
+        "easy_generated_at": "<unchanged>"
       }
     },
     "get_notice_dictionary": {

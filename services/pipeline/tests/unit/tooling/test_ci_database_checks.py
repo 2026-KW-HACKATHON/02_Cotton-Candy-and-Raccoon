@@ -169,11 +169,30 @@ def test_collection_workflow_passes_conditional_credentials_to_every_processing_
     workflow = (REPO_ROOT / ".github" / "workflows" / "collect.yml").read_text("utf-8")
     steps = re.split(r"(?m)^      - ", workflow)
     validation, = [step for step in steps if step.startswith("name: Validate required secrets")]
-    processing = [step for step in steps if "${{ steps.mode.outputs.easy_text_flag }}" in step]
-    assert len(processing) == 2
+    processing = [step for step in steps if "${{ steps.mode.outputs.processing_feature }}" in step]
+    assert len(processing) == 3
     expected = (
-        key + ": ${{ vars.PIPELINE_EASY_TEXT_ENABLED == 'true' && secrets." + key + " || '' }}"
+        key + ": ${{ (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || "
+        "vars.PIPELINE_EASY_TEXT_ENABLED == 'true') && secrets." + key + " || '' }}"
     )
     for step in [validation, *processing]:
         assert expected in step
-    assert f'if [ "$EASY_TEXT_ENABLED" = "true" ] && [ -z "${key}" ]; then' in validation
+    assert f'[ -z "${key}" ]; then' in validation
+    condition = '[ "$AI_PROCESSING_ENABLED" = "true" ] || [ "$EASY_TEXT_ENABLED" = "true" ]'
+    assert condition in validation
+
+
+
+def test_all_raw_sources_precede_bounded_processing_steps():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "collect.yml").read_text("utf-8")
+    steps = re.split(r"(?m)^      - ", workflow)
+    raw = [i for i, step in enumerate(steps) if "pipeline collect --source" in step]
+    processing = [i for i, step in enumerate(steps) if "pipeline process-stored" in step]
+    assert len(raw) == len(processing) == 3
+    assert max(raw) < min(processing)
+    for i in raw:
+        assert "--process-ai" not in steps[i] and "--easy-text" not in steps[i]
+    for i in processing:
+        assert "timeout-minutes: 30" in steps[i]
+        assert "continue-on-error: true" in steps[i]
+        assert "!cancelled()" in steps[i]

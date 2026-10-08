@@ -46,7 +46,8 @@ def insert_notice(
 
 def summary_json(db: psycopg.Connection, *, code: int = 27) -> dict:
     result = db.execute(
-        "select result from notice_summaries where status='summarized' limit 1"
+        "select result from notice_summaries where status='summarized' "
+        "order by notice_id limit 1"
     ).fetchone()[0]
     result["category_code"] = code
     return result
@@ -283,11 +284,16 @@ def test_seed_four_states_and_full_valid_summary(db: psycopg.Connection) -> None
         ("failed",),
     }
     assert db.execute(
-        "select attachment_status,result,category,category_code,deadline_on "
-        "from notice_summaries where status='needs_review'"
+        "select s.attachment_status,s.result,s.category,s.category_code,s.deadline_on "
+        "from notice_summaries s join notices n on n.id=s.notice_id "
+        "where n.post_sn='20260901000000002'"
     ).fetchone() == ("partial", None, None, None, None)
     for (result,) in db.execute("select result from notice_summaries where result is not null"):
-        assert NoticeSummary.model_validate(result).category_code == 27
+        NoticeSummary.model_validate(result)
+    assert db.execute(
+        "select s.category_code from notice_summaries s join notices n on n.id=s.notice_id "
+        "where n.post_sn='20260901000000003'"
+    ).fetchone() == (27,)
     assert (
         db.execute(
             "select count(*) from notice_summaries s join notices n on n.id=s.notice_id "
@@ -682,7 +688,8 @@ def test_duplicate_notice_summary_rejected(db: psycopg.Connection) -> None:
 def test_app_reads_exact_public_columns_and_visible_rows(db: psycopg.Connection, role: str) -> None:
     db.execute("set local role " + role)
     rows = db.execute(f"select {','.join(PUBLIC_COLUMNS)} from notice_summaries").fetchall()
-    assert len(rows) == 4
+    # Seed summaries of visible notices: 1, 2, 3, 4, 6, 7, 8, 9 (5 is hidden).
+    assert len(rows) == 8
     assert {row[1] for row in rows} == {"pending", "summarized", "needs_review", "failed"}
     assert (
         db.execute("select content_updated_at from notices order by id limit 1").fetchone()[0]
@@ -749,7 +756,7 @@ def test_service_role_reads_hidden_metadata_and_writes(db: psycopg.Connection) -
     key = insert_notice(db, visible=False)
     result = summary_json(db)
     db.execute("set local role service_role")
-    assert db.execute("select count(*) from notice_summaries").fetchone()[0] == 5
+    assert db.execute("select count(*) from notice_summaries").fetchone()[0] == 9
     insert_summary(db, key, result=result)
     db.execute(
         "update notice_summaries set last_error_code='api_timeout' where notice_id=%s", (key,)
