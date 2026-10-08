@@ -29,10 +29,11 @@ function connection() {
 async function request(
   view: "app_notice_list" | "app_notice_detail",
   params: URLSearchParams,
+  timeoutMs = 15_000,
 ): Promise<unknown[]> {
   const { url, key } = connection();
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15_000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(
       url + "/rest/v1/" + view + "?" + params.toString(),
@@ -101,6 +102,17 @@ export async function fetchNoticePage(
 }
 export async function fetchNotices(): Promise<Notice[]> {
   return (await fetchNoticePage()).notices;
+}
+/** Public notice for today's Korean calendar date, regardless of AI readiness. */
+export async function fetchTodayNotice(date: string): Promise<Notice | null> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new NoticeRequestError("contract");
+  const rows = await request("app_notice_list", new URLSearchParams({
+    select: LIST_COLUMNS,
+    registered_on: "eq." + date,
+    order: "registered_on.desc,id.desc",
+    limit: "1",
+  }), 8_000);
+  return rows.length ? parseNotice(rows[0]) : null;
 }
 export async function fetchNotice(id: string): Promise<Notice | null> {
   if (!/^\d+$/.test(id) || Number(id) <= 0 || !Number.isSafeInteger(Number(id)))

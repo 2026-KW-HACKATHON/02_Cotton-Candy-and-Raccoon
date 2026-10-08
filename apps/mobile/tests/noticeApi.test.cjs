@@ -16,6 +16,23 @@ const envNames = [
   "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
 ];
 const oldEnv = envNames.map((name) => process.env[name]);
+test("위젯은 요약 상태와 무관하게 오늘 날짜 한 건을 조회한다", async () => {
+  let requested;
+  global.fetch = async (url) => {
+    requested = new URL(url);
+    return new Response(JSON.stringify([row()]));
+  };
+  const notice = await api.fetchTodayNotice("2026-10-09");
+  assert.equal(notice.publishedAt, "2026.10.09");
+  assert.equal(requested.pathname, "/rest/v1/app_notice_list");
+  assert.equal(requested.searchParams.get("registered_on"), "eq.2026-10-09");
+  assert.equal(requested.searchParams.get("order"), "registered_on.desc,id.desc");
+  assert.equal(requested.searchParams.get("limit"), "1");
+  assert.equal(requested.searchParams.has("display_status"), false);
+  global.fetch = async () => new Response("[]");
+  assert.equal(await api.fetchTodayNotice("2026-10-09"), null);
+  await assert.rejects(api.fetchTodayNotice("2026-10-09,or(id.gt.0)"));
+});
 const row = (id = 1, extra = {}) => ({
   id,
   source: "seoul",
