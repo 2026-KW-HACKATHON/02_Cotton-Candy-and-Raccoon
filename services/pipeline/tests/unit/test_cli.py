@@ -375,6 +375,7 @@ def test_common_runner_reports_both_features_without_changing_collection_success
 
 
 @pytest.mark.parametrize("feature,expected", [("all", ("summary", "easy_text")),
+                                               ("summary", ("summary",)),
                                                ("easy_text", ("easy_text",))])
 def test_process_stored_without_source_keys(monkeypatch, capsys, feature, expected):
     monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")

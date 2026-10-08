@@ -113,7 +113,7 @@ def create_ai_processing(
     categories = {"nowon": "nowon", "wolgye1": "dong", "seoul": "seoul"}
     if source not in categories or type(limit) is not int or not 1 <= limit <= 10000:
         raise ConfigError("후처리 출처 또는 작업 상한이 올바르지 않습니다.")
-    if features not in (("summary", "easy_text"), ("easy_text",)):
+    if features not in (("summary", "easy_text"), ("summary",), ("easy_text",)):
         raise ConfigError("지원하지 않는 후처리 기능입니다.")
     try:
         api_key = load_gemini_api_key()

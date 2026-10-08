@@ -143,7 +143,7 @@ def build_parser() -> argparse.ArgumentParser:
         "process-stored", help="run AI and dictionary recovery after all sources are collected",
     )
     stored.add_argument("--source", choices=["nowon", "wolgye1", "seoul"], required=True)
-    stored.add_argument("--feature", choices=["all", "easy_text"], default="all")
+    stored.add_argument("--feature", choices=["all", "summary", "easy_text"], default="all")
     stored.add_argument("--limit", type=int, default=100)
     return parser
 
@@ -178,8 +178,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             processor = create_ai_processing(
                 DatabaseSettings.from_env(), source=args.source, limit=args.limit,
-                features=(("easy_text",) if args.feature == "easy_text"
-                          else ("summary", "easy_text")),
+                features=(("summary", "easy_text") if args.feature == "all"
+                          else (args.feature,)),
             )
         except ConfigError as error:
             print(f"설정 오류: {error}", file=sys.stderr)

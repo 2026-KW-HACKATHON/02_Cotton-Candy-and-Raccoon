@@ -131,3 +131,29 @@ def test_readiness_failure_retains_successful_execution_and_runs_other_feature()
         assert report["records"][0]["notice_id"] == 42
         assert report["complete"] is False
         assert "private" not in json.dumps(report)
+
+
+def test_summary_only_does_not_require_or_call_dictionary(monkeypatch):
+    monkeypatch.delenv("STDICT_API_KEY", raising=False)
+    with (
+        patch.object(adapter, "load_gemini_api_key", return_value="test-key"),
+        patch.object(adapter, "run_processing",
+                     return_value=ProcessingRunResult(False, 0, 0, ())) as runner,
+        patch.object(adapter, "_report_connection", return_value=MagicMock()),
+        patch.object(adapter, "readiness_counts", return_value=dict.fromkeys(
+            ("ready", "pending", "running", "retry_wait", "blocked", "exhausted"), 0,
+        )),
+        patch.object(adapter, "dictionary_work") as dictionary,
+        patch.object(adapter, "enrich_notice_dictionary") as enrich,
+        patch.object(adapter, "read_published", return_value=[]),
+    ):
+        processor = adapter.create_ai_processing(
+            DatabaseSettings("unused"), source="nowon", features=("summary",), limit=5,
+        )
+        processor.finish()
+    assert processor.complete
+    assert set(processor.report()) == {"summary"}
+    assert runner.call_args.kwargs["features"] == ("summary",)
+    assert runner.call_args.kwargs["limit"] == 5
+    dictionary.assert_not_called()
+    enrich.assert_not_called()

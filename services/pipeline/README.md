@@ -955,12 +955,41 @@ GitHub Actions는 기존 `PIPELINE_PRODUCTION_ENABLED=true`일 때만 작동합�
 활성화된 모든 출처의 원문 수집을 먼저 마친 뒤 `process-stored`를 출처별로 실행합니다.
 `PIPELINE_AI_PROCESSING_ENABLED=true`이면 두 AI 기능을, 그렇지 않고
 `PIPELINE_EASY_TEXT_ENABLED=true`이면 쉬운말·사전만 처리하며, 둘 다 없으면 원문만 수집합니다.
-각 후처리 단계는 30분 상한이 있고 실패해도 다음 출처 처리를 시도합니다. 중단된 작업은
-#61의 점유 만료 후 복구 정책을 따릅니다.
-두 옵션을 켜도 AI 통합 경로만 한 번 실행합니다. AI/쉬운말 활성화 시 Gemini·표준사전 Secret이
-필요합니다. 서울시 예약 수집은 `PIPELINE_SEOUL_ENABLED=true`와 `SEOUL_NEWS_API_KEY`
-Secret을 추가하면 게시판 25를 처리합니다. 다른 게시판은 CLI의 `--source-board`로 선택합니다.
-이 파일 변경만으로 Repository Variable이나 운영 DB가 변경되지는 않습니다.
+출처별 요약과 쉬운말·사전은 별도 단계로 실행하며 각각 최대 5건, 20분입니다.
+원문 수집은 출처별 10분, 전체 job은 180분으로 제한합니다. 요약의 지연·실패가
+쉬운말 단계의 실행 시간을 소진하지 않습니다. 같은 운영 workflow는 동시 실행하지 않고,
+진행 중인 실행을 새 실행으로 취소하지 않습니다. 중단된 작업은 #61의 점유 만료 후 복구합니다.
+배치 상한 이후 남은 작업·재시도 대기·중단 상태가 있으면 완료로 표시하지 않습니다.
+따라서 정상 배치가 일부를 처리했어도 backlog가 남으면 Actions가 실패로 표시될 수 있습니다.
+
+필수 Secrets는 원문 수집용 `PIPELINE_DATABASE_URL`, 노원용 `NOWON_NOTICE_API_KEY`입니다.
+서울 수집은 `PIPELINE_SEOUL_ENABLED=true`와 `SEOUL_NEWS_API_KEY`가 필요하며 게시판 25를
+처리합니다. 요약 단계에는 `GEMINI_API_KEY`, 쉬운말·사전 단계에는 여기에 `STDICT_API_KEY`가
+추가로 필요합니다. 각 단계가 필요한 설정을 검사하므로 AI 키 누락은 원문 수집을 막지 않고,
+사전 키 누락은 요약을 막지 않습니다. 실패한 단계 뒤에도 다른 단계는 실행합니다.
+두 AI 옵션을 켜도 각 기능은 한 번씩 실행됩니다. 실행 요약 표는 활성화된 단계의
+성공·실패·미실행을 집계하며, 비활성화된 기능은 처리 성공을 의미하지 않습니다.
+키 값은 출력하지 않습니다. 이 변경은 Repository Variable이나 운영 DB를 변경하지 않습니다.
+
+### 예약 실행 배포·복구 (#63)
+
+- 예약 시간은 UTC 00·04·08시, KST 09·13·17시입니다. 17시는 `refresh`, 나머지는 `new`입니다.
+  수동 실행도 같은 workflow에서 `mode`만 선택합니다.
+- 기본 브랜치 `main`에 반영되어야 예약 실행이 바뀝니다. 이 작업 브랜치는 #62가 통합된
+  `backend`에서 시작했습니다. 통합 시 최신 `develop`과의 차이를 검토하고, 선행 코드·migration을
+  함께 포함한 `develop` → `main` 배포 PR로 진행합니다. workflow만 옮기지 않습니다.
+- 최신 migration 적용 후 `PIPELINE_PRODUCTION_ENABLED=true`로 원문 수집을 활성화합니다.
+  `PIPELINE_AI_PROCESSING_ENABLED=true`는 요약·쉬운말·사전, `PIPELINE_EASY_TEXT_ENABLED=true`는
+  AI 통합 옵션이 꺼졌을 때 쉬운말·사전만 활성화합니다. 없는 옵션은 비활성으로 취급합니다.
+- 전체 중지는 `PIPELINE_PRODUCTION_ENABLED=false`, AI만 중지는 두 AI 옵션을 `false`로 합니다.
+  설정 변경은 진행 중 실행을 중지하지 않으므로 긴급 중지 시 Actions 실행도 취소합니다.
+  재활성화는 키·DB 상태를 확인한 후 원래 옵션을 복원하고 수동 실행합니다.
+- 일시 실패나 시간 초과 후에는 retry 시각·점유 만료 이후 다시 실행합니다. 신규 공지가 없어도
+  저장된 공지에서 처리 대상을 찾습니다. 영구 오류·재시도 소진은 아래 #61 절차로 원인을
+  해결한 뒤 명시적으로 재시도합니다. 기존 정상 결과를 지워서 재시도하지 않습니다.
+- 배포 증거는 수동 실행과 실제 예약 실행 각각의 커밋 SHA·Actions URL·공지 ID·요약/쉬운말
+  상태·`anon` 역할의 `app_notice_detail` 조회 결과로 남깁니다. 신규 0건 복구도 확인합니다.
+  로컬 테스트나 수동 실행만으로 #63을 완료 처리하지 않습니다.
 
 검증: `tests/e2e/cases/collect_ai_{nowon,wolgye1,seoul}`은 실제 PostgreSQL과 API 대역으로
 신규 생성→캐시 재사용→원문 변경·요약 시간 초과→대기→복구→쉬운말 실패→복구 및 anon 조회를

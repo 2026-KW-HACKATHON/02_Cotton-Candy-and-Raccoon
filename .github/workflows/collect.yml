@@ -28,39 +28,13 @@ jobs:
     # This opt-in gate prevents writes when the workflow is first merged.
     if: vars.PIPELINE_PRODUCTION_ENABLED == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 180
     defaults:
       run:
         working-directory: services/pipeline
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.1.0
-      - name: Validate required secrets
-        env:
-          DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
-          NOWON_NOTICE_API_KEY: ${{ secrets.NOWON_NOTICE_API_KEY }}
-          SEOUL_ENABLED: ${{ vars.PIPELINE_SEOUL_ENABLED }}
-          SEOUL_NEWS_API_KEY: ${{ secrets.SEOUL_NEWS_API_KEY }}
-          AI_PROCESSING_ENABLED: ${{ vars.PIPELINE_AI_PROCESSING_ENABLED }}
-          EASY_TEXT_ENABLED: ${{ vars.PIPELINE_EASY_TEXT_ENABLED }}
-          GEMINI_API_KEY: ${{ (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') && secrets.GEMINI_API_KEY || '' }}
-          STDICT_API_KEY: ${{ (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') && secrets.STDICT_API_KEY || '' }}
-        run: |
-          if [ -z "$DATABASE_URL" ] || [ -z "$NOWON_NOTICE_API_KEY" ]; then
-            echo "Required pipeline secrets are missing." >&2
-            exit 1
-          fi
-          if [ "$SEOUL_ENABLED" = "true" ] && [ -z "$SEOUL_NEWS_API_KEY" ]; then
-            echo "SEOUL_NEWS_API_KEY is required when Seoul collection is enabled." >&2
-            exit 1
-          fi
-          if { [ "$AI_PROCESSING_ENABLED" = "true" ] || [ "$EASY_TEXT_ENABLED" = "true" ]; } && [ -z "$GEMINI_API_KEY" ]; then
-            echo "GEMINI_API_KEY is required when AI or easy-text processing is enabled." >&2
-            exit 1
-          fi
-          if { [ "$AI_PROCESSING_ENABLED" = "true" ] || [ "$EASY_TEXT_ENABLED" = "true" ]; } && [ -z "$STDICT_API_KEY" ]; then
-            echo "STDICT_API_KEY is required when notice dictionary processing is enabled." >&2
-            exit 1
-          fi
       - run: uv sync --no-dev --frozen
       - name: Select collection mode
         id: mode
@@ -68,8 +42,6 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           SCHEDULE: ${{ github.event.schedule }}
           REQUESTED_MODE: ${{ inputs.mode }}
-          AI_PROCESSING_ENABLED: ${{ vars.PIPELINE_AI_PROCESSING_ENABLED }}
-          EASY_TEXT_ENABLED: ${{ vars.PIPELINE_EASY_TEXT_ENABLED }}
         run: |
           if [ "$EVENT_NAME" = "schedule" ] && [ "$SCHEDULE" = "0 8 * * *" ]; then
             mode=refresh
@@ -79,14 +51,10 @@ jobs:
             mode="$REQUESTED_MODE"
           fi
           echo "mode=$mode" >> "$GITHUB_OUTPUT"
-          if [ "$AI_PROCESSING_ENABLED" = "true" ]; then
-            echo "processing_feature=all" >> "$GITHUB_OUTPUT"
-          elif [ "$EASY_TEXT_ENABLED" = "true" ]; then
-            echo "processing_feature=easy_text" >> "$GITHUB_OUTPUT"
-          fi
       - name: Collect Nowon notices
         id: nowon
         continue-on-error: true
+        timeout-minutes: 10
         env:
           DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
           NOWON_NOTICE_API_KEY: ${{ secrets.NOWON_NOTICE_API_KEY }}
@@ -96,6 +64,7 @@ jobs:
       - name: Collect Wolgye 1-dong notices
         id: wolgye1
         continue-on-error: true
+        timeout-minutes: 10
         env:
           DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
         run: >-
@@ -105,76 +74,164 @@ jobs:
         if: vars.PIPELINE_SEOUL_ENABLED == 'true'
         id: seoul
         continue-on-error: true
+        timeout-minutes: 10
         env:
           DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
           SEOUL_NEWS_API_KEY: ${{ secrets.SEOUL_NEWS_API_KEY }}
         run: >-
           uv run --no-dev --frozen pipeline collect --source seoul --source-board 25
           --mode "${{ steps.mode.outputs.mode }}"
-      - name: Process stored Nowon notices
-        if: ${{ !cancelled() && (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') }}
-        id: process_nowon
+      - name: Process nowon summary
+        if: ${{ !cancelled() && vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' }}
+        id: summary_nowon
         continue-on-error: true
-        timeout-minutes: 30
+        timeout-minutes: 20
         env:
           DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
-          GEMINI_API_KEY: ${{ (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') && secrets.GEMINI_API_KEY || '' }}
-          STDICT_API_KEY: ${{ (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') && secrets.STDICT_API_KEY || '' }}
-        run: >-
-          uv run --no-dev --frozen pipeline process-stored --source nowon
-          --feature "${{ steps.mode.outputs.processing_feature }}"
-      - name: Process stored Wolgye 1-dong notices
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "DATABASE_URL is required for summary." >&2
+            exit 1
+          fi
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "GEMINI_API_KEY is required for summary." >&2
+            exit 1
+          fi
+          uv run --no-dev --frozen pipeline process-stored --source nowon --feature summary --limit 5
+      - name: Process nowon easy_text
         if: ${{ !cancelled() && (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') }}
-        id: process_wolgye1
+        id: easy_text_nowon
         continue-on-error: true
-        timeout-minutes: 30
+        timeout-minutes: 20
         env:
           DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
-          GEMINI_API_KEY: ${{ (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') && secrets.GEMINI_API_KEY || '' }}
-          STDICT_API_KEY: ${{ (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') && secrets.STDICT_API_KEY || '' }}
-        run: >-
-          uv run --no-dev --frozen pipeline process-stored --source wolgye1
-          --feature "${{ steps.mode.outputs.processing_feature }}"
-      - name: Process stored Seoul notices
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          STDICT_API_KEY: ${{ secrets.STDICT_API_KEY }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "DATABASE_URL is required for easy_text." >&2
+            exit 1
+          fi
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "GEMINI_API_KEY is required for easy_text." >&2
+            exit 1
+          fi
+          if [ -z "$STDICT_API_KEY" ]; then
+            echo "STDICT_API_KEY is required for easy_text." >&2
+            exit 1
+          fi
+          uv run --no-dev --frozen pipeline process-stored --source nowon --feature easy_text --limit 5
+      - name: Process wolgye1 summary
+        if: ${{ !cancelled() && vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' }}
+        id: summary_wolgye1
+        continue-on-error: true
+        timeout-minutes: 20
+        env:
+          DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "DATABASE_URL is required for summary." >&2
+            exit 1
+          fi
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "GEMINI_API_KEY is required for summary." >&2
+            exit 1
+          fi
+          uv run --no-dev --frozen pipeline process-stored --source wolgye1 --feature summary --limit 5
+      - name: Process wolgye1 easy_text
+        if: ${{ !cancelled() && (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') }}
+        id: easy_text_wolgye1
+        continue-on-error: true
+        timeout-minutes: 20
+        env:
+          DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          STDICT_API_KEY: ${{ secrets.STDICT_API_KEY }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "DATABASE_URL is required for easy_text." >&2
+            exit 1
+          fi
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "GEMINI_API_KEY is required for easy_text." >&2
+            exit 1
+          fi
+          if [ -z "$STDICT_API_KEY" ]; then
+            echo "STDICT_API_KEY is required for easy_text." >&2
+            exit 1
+          fi
+          uv run --no-dev --frozen pipeline process-stored --source wolgye1 --feature easy_text --limit 5
+      - name: Process seoul summary
+        if: ${{ !cancelled() && vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' && vars.PIPELINE_SEOUL_ENABLED == 'true' }}
+        id: summary_seoul
+        continue-on-error: true
+        timeout-minutes: 20
+        env:
+          DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "DATABASE_URL is required for summary." >&2
+            exit 1
+          fi
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "GEMINI_API_KEY is required for summary." >&2
+            exit 1
+          fi
+          uv run --no-dev --frozen pipeline process-stored --source seoul --feature summary --limit 5
+      - name: Process seoul easy_text
         if: ${{ !cancelled() && (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') && vars.PIPELINE_SEOUL_ENABLED == 'true' }}
-        id: process_seoul
+        id: easy_text_seoul
         continue-on-error: true
-        timeout-minutes: 30
+        timeout-minutes: 20
         env:
           DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
-          GEMINI_API_KEY: ${{ (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') && secrets.GEMINI_API_KEY || '' }}
-          STDICT_API_KEY: ${{ (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') && secrets.STDICT_API_KEY || '' }}
-        run: >-
-          uv run --no-dev --frozen pipeline process-stored --source seoul
-          --feature "${{ steps.mode.outputs.processing_feature }}"
-      - name: Report collection failures
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          STDICT_API_KEY: ${{ secrets.STDICT_API_KEY }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "DATABASE_URL is required for easy_text." >&2
+            exit 1
+          fi
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "GEMINI_API_KEY is required for easy_text." >&2
+            exit 1
+          fi
+          if [ -z "$STDICT_API_KEY" ]; then
+            echo "STDICT_API_KEY is required for easy_text." >&2
+            exit 1
+          fi
+          uv run --no-dev --frozen pipeline process-stored --source seoul --feature easy_text --limit 5
+      - name: Report collection and processing outcomes
         if: always()
         env:
+          STEP_RESULTS: ${{ toJSON(steps) }}
           SEOUL_ENABLED: ${{ vars.PIPELINE_SEOUL_ENABLED }}
           AI_ENABLED: ${{ vars.PIPELINE_AI_PROCESSING_ENABLED }}
           EASY_ENABLED: ${{ vars.PIPELINE_EASY_TEXT_ENABLED }}
-          NOWON_PROCESS_OUTCOME: ${{ steps.process_nowon.outcome }}
-          WOLGYE_PROCESS_OUTCOME: ${{ steps.process_wolgye1.outcome }}
-          SEOUL_PROCESS_OUTCOME: ${{ steps.process_seoul.outcome }}
-          SEOUL_OUTCOME: ${{ steps.seoul.outcome }}
-          NOWON_OUTCOME: ${{ steps.nowon.outcome }}
-          WOLGYE1_OUTCOME: ${{ steps.wolgye1.outcome }}
         run: |
-          if [ "$SEOUL_ENABLED" = "true" ] && [ "$SEOUL_OUTCOME" != "success" ]; then
-            echo "Seoul collection or processing was incomplete." >&2
-            exit 1
-          fi
-          if [ "$NOWON_OUTCOME" != "success" ] || [ "$WOLGYE1_OUTCOME" != "success" ]; then
-            echo "Collection, summary, easy-text or dictionary processing was incomplete. Review the per-source JSON above." >&2
-            exit 1
-          fi
-          if [ "$AI_ENABLED" = "true" ] || [ "$EASY_ENABLED" = "true" ]; then
-            if [ "$NOWON_PROCESS_OUTCOME" != "success" ] || [ "$WOLGYE_PROCESS_OUTCOME" != "success" ]; then
-              echo "Stored notice processing was incomplete." >&2
-              exit 1
-            fi
-            if [ "$SEOUL_ENABLED" = "true" ] && [ "$SEOUL_PROCESS_OUTCOME" != "success" ]; then
-              echo "Stored Seoul processing was incomplete." >&2
-              exit 1
-            fi
-          fi
+          python - <<'PY'
+          import json
+          import os
+          import sys
+
+          steps = json.loads(os.environ["STEP_RESULTS"])
+          sources = ["nowon", "wolgye1"]
+          if os.environ["SEOUL_ENABLED"] == "true":
+              sources.append("seoul")
+          required = list(sources)
+          if os.environ["AI_ENABLED"] == "true":
+              required.extend(f"summary_{source}" for source in sources)
+          if os.environ["AI_ENABLED"] == "true" or os.environ["EASY_ENABLED"] == "true":
+              required.extend(f"easy_text_{source}" for source in sources)
+          outcomes = {name: steps.get(name, {}).get("outcome", "not_run") for name in required}
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as report:
+              report.write("| Stage | Outcome |\n| --- | --- |\n")
+              for name, outcome in outcomes.items():
+                  report.write(f"| {name} | {outcome} |\n")
+              report.write("\nDisabled sources/features are excluded. JSON logs contain backlog and failure details.\n")
+          print(json.dumps(outcomes))
+          sys.exit(0 if all(value == "success" for value in outcomes.values()) else 1)
+          PY
