@@ -1,3 +1,4 @@
+import { NotificationNavigation } from "@/features/notifications/NotificationNavigation";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -20,6 +21,7 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
           <StatusBar style="dark" />
+          {startup.ready && onboardingComplete && <NotificationNavigation />}
           {!startup.ready ? (
             startup.assetsReady ? (
               <AnimatedSplashScreen

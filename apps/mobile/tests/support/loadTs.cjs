@@ -13,6 +13,7 @@ function loadTs(file, overrides = {}) {
       compilerOptions: {
         module: ts.ModuleKind.CommonJS,
         target: ts.ScriptTarget.ES2022,
+        jsx: ts.JsxEmit.ReactJSX,
       },
     }).outputText;
     new Function("module", "exports", "require", compiled)(
