@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<NowonNewsNoticeList>
+<list_total_count>3</list_total_count>
+<RESULT><CODE>INFO-000</CODE><MESSAGE>정상 처리되었습니다</MESSAGE></RESULT>
+<row>
+<ID>900513</ID>
+<TITLE>저장 거부 대상 공지</TITLE>
+<LINK>https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&amp;q_bbscttSn=900513</LINK>
+<PUBDATE>2026-10-08</PUBDATE>
+<DEPARTMENT>총무과</DEPARTMENT>
+<MANAGER/>
+<DESCRIPTION>&lt;p&gt;저장이 거부되는 공지입니다.&lt;/p&gt;</DESCRIPTION>
+</row>
+<row>
+<ID>900512</ID>
+<TITLE>노인 건강검진 참가자 모집</TITLE>
+<LINK>https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&amp;q_bbscttSn=900512</LINK>
+<PUBDATE>2026-10-08</PUBDATE>
+<DEPARTMENT>보건정책과</DEPARTMENT>
+<MANAGER/>
+<DESCRIPTION>&lt;p&gt;노인 건강검진 참가자를 모집합니다.&lt;/p&gt;</DESCRIPTION>
+</row>
+<row>
+<ID>900511</ID>
+<TITLE>치매 예방 교실 참가자 모집</TITLE>
+<LINK>https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&amp;q_bbscttSn=900511</LINK>
+<PUBDATE>2026-10-07</PUBDATE>
+<DEPARTMENT>보건정책과</DEPARTMENT>
+<MANAGER/>
+<DESCRIPTION>&lt;p&gt;치매 예방 교실 참가자를 모집합니다.&lt;/p&gt;</DESCRIPTION>
+</row>
+</NowonNewsNoticeList>

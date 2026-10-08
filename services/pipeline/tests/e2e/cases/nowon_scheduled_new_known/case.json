@@ -1,0 +1,57 @@
+{
+  "title": "노원구 예약 new: 최초 실행은 목록 전체를 저장하고, 다음 new 실행은 새 글만 원문을 읽어 저장한다",
+  "steps": [
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "nowon",
+        "--mode",
+        "new"
+      ],
+      "http": [
+        {
+          "route": "nowon_api",
+          "start": 1,
+          "end": 50,
+          "body": "input/nowon_list_initial.xml"
+        },
+        {
+          "route": "nowon_page",
+          "post_sn": "900472",
+          "body": "input/nowon_page_900472.html"
+        },
+        {
+          "route": "nowon_page",
+          "post_sn": "900471",
+          "body": "input/nowon_page_900471.html"
+        }
+      ],
+      "expect_exit": 0
+    },
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "nowon",
+        "--mode",
+        "new"
+      ],
+      "http": [
+        {
+          "route": "nowon_api",
+          "start": 1,
+          "end": 50,
+          "body": "input/nowon_list_next.xml"
+        },
+        {
+          "route": "nowon_page",
+          "post_sn": "900473",
+          "body": "input/nowon_page_900473.html"
+        }
+      ],
+      "expect_exit": 0
+    }
+  ],
+  "strict_unused": true
+}

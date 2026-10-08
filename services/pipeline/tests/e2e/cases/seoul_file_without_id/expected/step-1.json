@@ -1,0 +1,188 @@
+{
+  "exit_code": 0,
+  "report": {
+    "mode": "new",
+    "selected_count": 1,
+    "saved_count": 1,
+    "complete": true,
+    "boards": [
+      {
+        "source_board": "25",
+        "total_count": 1,
+        "selected_count": 1,
+        "saved_count": 1,
+        "pages_read": 1,
+        "initial_baseline": true,
+        "listing_complete": true,
+        "complete": true,
+        "failures": []
+      }
+    ]
+  },
+  "stderr": [],
+  "http_calls": [
+    "seoul_api 25 1-25"
+  ],
+  "gemini_calls": {},
+  "db": {
+    "notices": {
+      "seoul/25/000888": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "하천 정화 활동 참여자 모집",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "url": "https://news.seoul.go.kr/env/archives/000888",
+        "body_html": "<p>하천 정화 활동 참여자를 모집합니다.</p><img src=\"/env/files/2026/10/river-poster.jpg\"><a href=\"/env/files/2026/10/river-guide.pdf?a=1&amp;b=2\">하천 정화 안내.pdf</a>",
+        "license_type": null,
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 3,
+        "body_text": "하천 정화 활동 참여자를 모집합니다."
+      }
+    },
+    "notice_files": {
+      "seoul/25/000888|attachment|url:4d7142b78775df9fe6d6b4f878eb130651d11589763ed7614bd799b317929637": {
+        "kind": "attachment",
+        "file_sn": null,
+        "file_id": null,
+        "file_key": "url:4d7142b78775df9fe6d6b4f878eb130651d11589763ed7614bd799b317929637",
+        "file_name": "river-guide.pdf",
+        "url": "https://news.seoul.go.kr/env/files/2026/10/river-guide.pdf?a=1&b=2"
+      },
+      "seoul/25/000888|inline_image|url:dce78afec2b2835f19d6d496635e2d902a7849a7bc080d4b912ced16cd16d2b2": {
+        "kind": "inline_image",
+        "file_sn": null,
+        "file_id": null,
+        "file_key": "url:dce78afec2b2835f19d6d496635e2d902a7849a7bc080d4b912ced16cd16d2b2",
+        "file_name": "river-poster.jpg",
+        "url": "https://news.seoul.go.kr/env/files/2026/10/river-poster.jpg"
+      }
+    },
+    "notice_summaries": {},
+    "notice_easy_texts": {},
+    "notice_dictionary_links": {},
+    "standard_dictionary_cache": {},
+    "notice_summary_executions": {},
+    "notice_processing_jobs": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_dictionary_links": 0,
+    "notice_easy_texts": 0,
+    "notice_files": 2,
+    "notice_processing_jobs": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 1,
+    "standard_dictionary_cache": 0
+  },
+  "anon": {
+    "notices": {
+      "seoul/25/000888": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "하천 정화 활동 참여자 모집",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "url": "https://news.seoul.go.kr/env/archives/000888",
+        "body_html": "<p>하천 정화 활동 참여자를 모집합니다.</p><img src=\"/env/files/2026/10/river-poster.jpg\"><a href=\"/env/files/2026/10/river-guide.pdf?a=1&amp;b=2\">하천 정화 안내.pdf</a>",
+        "license_type": null,
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 3,
+        "body_text": "하천 정화 활동 참여자를 모집합니다."
+      }
+    },
+    "notice_files": {
+      "seoul/25/000888|attachment|https://news.seoul.go.kr/env/files/2026/10/river-guide.pdf?a=1&b=2": {
+        "kind": "attachment",
+        "url": "https://news.seoul.go.kr/env/files/2026/10/river-guide.pdf?a=1&b=2"
+      },
+      "seoul/25/000888|inline_image|https://news.seoul.go.kr/env/files/2026/10/river-poster.jpg": {
+        "kind": "inline_image",
+        "url": "https://news.seoul.go.kr/env/files/2026/10/river-poster.jpg"
+      }
+    },
+    "notice_summaries": {},
+    "notice_easy_texts": {},
+    "app_notice_list": {
+      "seoul/25/000888": {
+        "source": "seoul",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "하천 정화 활동 참여자 모집",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false
+      }
+    },
+    "app_notice_detail": {
+      "seoul/25/000888": {
+        "source": "seoul",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "하천 정화 활동 참여자 모집",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false,
+        "url": "https://news.seoul.go.kr/env/archives/000888",
+        "license_type": null,
+        "body_text": "하천 정화 활동 참여자를 모집합니다.",
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [
+          {
+            "id": 1,
+            "kind": "attachment",
+            "url": "https://news.seoul.go.kr/env/files/2026/10/river-guide.pdf?a=1&b=2"
+          },
+          {
+            "id": 2,
+            "kind": "inline_image",
+            "url": "https://news.seoul.go.kr/env/files/2026/10/river-poster.jpg"
+          }
+        ],
+        "easy_original_text": null,
+        "easy_text": null,
+        "easy_changes": null,
+        "easy_body_text_present": null,
+        "easy_attachment_content_included": null,
+        "easy_generated_at": null
+      }
+    },
+    "get_notice_dictionary": {
+      "seoul/25/000888": {
+        "result": null
+      }
+    }
+  }
+}

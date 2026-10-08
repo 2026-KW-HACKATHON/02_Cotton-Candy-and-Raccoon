@@ -1,0 +1,88 @@
+{
+  "title": "월계1동 collect-one과 쉬운말: 쉬운말이 실패하면 원문만 저장되고 exit 1이며, 다시 실행하면 쉬운말을 만든다. 저장이 실패하면 쉬운말을 실행하지 않는다",
+  "steps": [
+    {
+      "type": "collect-one",
+      "args": [
+        "--source",
+        "wolgye1",
+        "--easy-text"
+      ],
+      "http": [
+        {
+          "route": "wolgye1_list",
+          "page": 1,
+          "body": "input/wolgye1_list_1.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261006090000501",
+          "body": "input/wolgye1_detail_20261006090000501.html"
+        }
+      ],
+      "gemini": {
+        "easy_text": [
+          "input/easy_501_error.json",
+          "input/easy_501_error.json"
+        ]
+      },
+      "expect_exit": 1
+    },
+    {
+      "type": "collect-one",
+      "args": [
+        "--source",
+        "wolgye1",
+        "--easy-text"
+      ],
+      "http": [
+        {
+          "route": "wolgye1_list",
+          "page": 1,
+          "body": "input/wolgye1_list_1.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261006090000501",
+          "body": "input/wolgye1_detail_20261006090000501.html"
+        }
+      ],
+      "gemini": {
+        "easy_text": [
+          "input/easy_501.json"
+        ]
+      },
+      "expect_exit": 0
+    },
+    {
+      "type": "sql",
+      "reason": "DB 저장 실패를 재현하는 코드 경로가 없어 특정 게시물의 저장만 거부하는 트리거를 둔다",
+      "sql": "create function e2e_reject_notice() returns trigger language plpgsql as $$ begin if new.post_sn = '20261006090000501' then raise exception 'e2e storage failure'; end if; return new; end $$; create trigger e2e_reject_notice before insert or update on public.notices for each row execute function e2e_reject_notice();"
+    },
+    {
+      "type": "collect-one",
+      "args": [
+        "--source",
+        "wolgye1",
+        "--easy-text"
+      ],
+      "http": [
+        {
+          "route": "wolgye1_list",
+          "page": 1,
+          "body": "input/wolgye1_list_1.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261006090000501",
+          "body": "input/wolgye1_detail_20261006090000501.html"
+        }
+      ],
+      "gemini": {
+        "easy_text": []
+      },
+      "expect_exit": 1
+    }
+  ],
+  "strict_unused": true
+}

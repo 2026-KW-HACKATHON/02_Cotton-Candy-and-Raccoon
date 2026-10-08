@@ -1,0 +1,26 @@
+{
+  "title": "노원구 같은 응답 재수집: 행 수, content_revision, is_modified, content_updated_at이 바뀌지 않는다",
+  "steps": [
+    {
+      "type": "collect",
+      "args": ["--source", "nowon", "--mode", "new"],
+      "http": [
+        {"route": "nowon_api", "start": 1, "end": 50, "body": "input/nowon_list.xml"},
+        {"route": "nowon_page", "post_sn": "900202", "body": "input/nowon_page_900202.html"},
+        {"route": "nowon_page", "post_sn": "900201", "body": "input/nowon_page_900201.html"}
+      ],
+      "expect_exit": 0
+    },
+    {
+      "type": "collect",
+      "args": ["--source", "nowon", "--mode", "refresh"],
+      "http": [
+        {"route": "nowon_api", "start": 1, "end": 50, "body": "input/nowon_list.xml"},
+        {"route": "nowon_page", "post_sn": "900202", "body": "input/nowon_page_900202.html"},
+        {"route": "nowon_page", "post_sn": "900201", "body": "input/nowon_page_900201.html"}
+      ],
+      "expect_exit": 0
+    }
+  ],
+  "strict_unused": true
+}

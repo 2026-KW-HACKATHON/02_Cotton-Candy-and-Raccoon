@@ -1,0 +1,409 @@
+{
+  "http_calls": [],
+  "gemini_calls": {},
+  "db": {
+    "notices": {
+      "seoul/25/000777": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "환경 캠페인 안내",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "url": "https://news.seoul.go.kr/env/archives/000777",
+        "body_html": "<p>환경 캠페인에 참여하세요.</p>",
+        "license_type": null,
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1,
+        "body_text": "환경 캠페인에 참여하세요."
+      },
+      "seoul/25/000778": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "정원 행사 안내",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "url": "https://news.seoul.go.kr/env/archives/000778",
+        "body_html": "<p>정원 행사에 참여하세요.</p>",
+        "license_type": null,
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1,
+        "body_text": "정원 행사에 참여하세요."
+      },
+      "seoul/25/000779": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "포스터 공지",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "url": "https://news.seoul.go.kr/env/archives/000779",
+        "body_html": "<img src=\"/env/files/poster.jpg\">",
+        "license_type": null,
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 2,
+        "body_text": null
+      }
+    },
+    "notice_files": {
+      "seoul/25/000779|inline_image|url:906373d1921a5d29cdb039b30dd1116dad07ccf8dad17c7ce2f95698ef487101": {
+        "kind": "inline_image",
+        "file_sn": null,
+        "file_id": null,
+        "file_key": "url:906373d1921a5d29cdb039b30dd1116dad07ccf8dad17c7ce2f95698ef487101",
+        "file_name": "poster.jpg",
+        "url": "https://news.seoul.go.kr/env/files/poster.jpg"
+      }
+    },
+    "notice_summaries": {},
+    "notice_easy_texts": {
+      "seoul/25/000777": {
+        "notice_revision": "d35124e87fb139a0c910b07e7434c1957d264206c27c8d54a0e2783e7d678c52",
+        "source_hash": "07aa80eae137155050a28d65df1e9a60c583273c75d1cc7f1460bc1baec57694",
+        "original_text": "환경 캠페인 안내\n환경 캠페인에 참여하세요.",
+        "easy_text": "환경 캠페인 안내\n환경 캠페인에 참여하세요.",
+        "changes": [],
+        "model": "gemini-3.5-flash-lite",
+        "prompt_version": "easy-language-v8",
+        "attempt_count": 1,
+        "generated_at": "<unchanged>",
+        "body_text_present": true,
+        "attachment_content_included": false,
+        "dictionary_candidates": []
+      },
+      "seoul/25/000778": {
+        "notice_revision": "28925f15e32ae0f3599ce25723a1f30fa7e9edf605d01355526aa9a75d0db168",
+        "source_hash": "f1443d763f5d806f1630166dbc8eceabd27ba7827e0e26f594b64d0ac0806550",
+        "original_text": "정원 행사 안내\n정원 행사에 참여하세요.",
+        "easy_text": "정원 행사 안내\n정원 행사에 참여하세요.",
+        "changes": [],
+        "model": "gemini-3.5-flash-lite",
+        "prompt_version": "easy-language-v8",
+        "attempt_count": 1,
+        "generated_at": "<unchanged>",
+        "body_text_present": true,
+        "attachment_content_included": false,
+        "dictionary_candidates": []
+      }
+    },
+    "notice_dictionary_links": {
+      "seoul/25/000777": {
+        "easy_text_token": "<unchanged>",
+        "candidates": [],
+        "generated_at": "<unchanged>"
+      },
+      "seoul/25/000778": {
+        "easy_text_token": "<unchanged>",
+        "candidates": [],
+        "generated_at": "<unchanged>"
+      }
+    },
+    "standard_dictionary_cache": {},
+    "notice_summary_executions": {},
+    "notice_processing_jobs": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_dictionary_links": 2,
+    "notice_easy_texts": 2,
+    "notice_files": 1,
+    "notice_processing_jobs": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 3,
+    "standard_dictionary_cache": 0
+  },
+  "anon": {
+    "notices": {
+      "seoul/25/000777": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "환경 캠페인 안내",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "url": "https://news.seoul.go.kr/env/archives/000777",
+        "body_html": "<p>환경 캠페인에 참여하세요.</p>",
+        "license_type": null,
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1,
+        "body_text": "환경 캠페인에 참여하세요."
+      },
+      "seoul/25/000778": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "정원 행사 안내",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "url": "https://news.seoul.go.kr/env/archives/000778",
+        "body_html": "<p>정원 행사에 참여하세요.</p>",
+        "license_type": null,
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1,
+        "body_text": "정원 행사에 참여하세요."
+      },
+      "seoul/25/000779": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "포스터 공지",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "url": "https://news.seoul.go.kr/env/archives/000779",
+        "body_html": "<img src=\"/env/files/poster.jpg\">",
+        "license_type": null,
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 2,
+        "body_text": null
+      }
+    },
+    "notice_files": {
+      "seoul/25/000779|inline_image|https://news.seoul.go.kr/env/files/poster.jpg": {
+        "kind": "inline_image",
+        "url": "https://news.seoul.go.kr/env/files/poster.jpg"
+      }
+    },
+    "notice_summaries": {},
+    "notice_easy_texts": {
+      "seoul/25/000777": {
+        "original_text": "환경 캠페인 안내\n환경 캠페인에 참여하세요.",
+        "easy_text": "환경 캠페인 안내\n환경 캠페인에 참여하세요.",
+        "changes": [],
+        "generated_at": "<unchanged>",
+        "body_text_present": true,
+        "attachment_content_included": false
+      },
+      "seoul/25/000778": {
+        "original_text": "정원 행사 안내\n정원 행사에 참여하세요.",
+        "easy_text": "정원 행사 안내\n정원 행사에 참여하세요.",
+        "changes": [],
+        "generated_at": "<unchanged>",
+        "body_text_present": true,
+        "attachment_content_included": false
+      }
+    },
+    "app_notice_list": {
+      "seoul/25/000777": {
+        "source": "seoul",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "환경 캠페인 안내",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<unchanged>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true
+      },
+      "seoul/25/000778": {
+        "source": "seoul",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "정원 행사 안내",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<unchanged>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true
+      },
+      "seoul/25/000779": {
+        "source": "seoul",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "포스터 공지",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<unchanged>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false
+      }
+    },
+    "app_notice_detail": {
+      "seoul/25/000777": {
+        "source": "seoul",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "환경 캠페인 안내",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<unchanged>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true,
+        "url": "https://news.seoul.go.kr/env/archives/000777",
+        "license_type": null,
+        "body_text": "환경 캠페인에 참여하세요.",
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [],
+        "easy_original_text": "환경 캠페인 안내\n환경 캠페인에 참여하세요.",
+        "easy_text": "환경 캠페인 안내\n환경 캠페인에 참여하세요.",
+        "easy_changes": [],
+        "easy_body_text_present": true,
+        "easy_attachment_content_included": false,
+        "easy_generated_at": "<unchanged>"
+      },
+      "seoul/25/000778": {
+        "source": "seoul",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "정원 행사 안내",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<unchanged>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true,
+        "url": "https://news.seoul.go.kr/env/archives/000778",
+        "license_type": null,
+        "body_text": "정원 행사에 참여하세요.",
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [],
+        "easy_original_text": "정원 행사 안내\n정원 행사에 참여하세요.",
+        "easy_text": "정원 행사 안내\n정원 행사에 참여하세요.",
+        "easy_changes": [],
+        "easy_body_text_present": true,
+        "easy_attachment_content_included": false,
+        "easy_generated_at": "<unchanged>"
+      },
+      "seoul/25/000779": {
+        "source": "seoul",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "포스터 공지",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<unchanged>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false,
+        "url": "https://news.seoul.go.kr/env/archives/000779",
+        "license_type": null,
+        "body_text": null,
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [
+          {
+            "id": 1,
+            "kind": "inline_image",
+            "url": "https://news.seoul.go.kr/env/files/poster.jpg"
+          }
+        ],
+        "easy_original_text": null,
+        "easy_text": null,
+        "easy_changes": null,
+        "easy_body_text_present": null,
+        "easy_attachment_content_included": null,
+        "easy_generated_at": null
+      }
+    },
+    "get_notice_dictionary": {
+      "seoul/25/000777": {
+        "result": {
+          "attachment_content_included": false,
+          "body_text_present": true,
+          "changes": [],
+          "dictionary_candidates": [],
+          "dictionary_status": "complete",
+          "easy_text": "환경 캠페인 안내\n환경 캠페인에 참여하세요.",
+          "generated_at": "<unchanged>",
+          "model": "gemini-3.5-flash-lite",
+          "notice_id": 1,
+          "notice_revision": "d35124e87fb139a0c910b07e7434c1957d264206c27c8d54a0e2783e7d678c52",
+          "original_text": "환경 캠페인 안내\n환경 캠페인에 참여하세요.",
+          "prompt_version": "easy-language-v8"
+        }
+      },
+      "seoul/25/000778": {
+        "result": {
+          "attachment_content_included": false,
+          "body_text_present": true,
+          "changes": [],
+          "dictionary_candidates": [],
+          "dictionary_status": "complete",
+          "easy_text": "정원 행사 안내\n정원 행사에 참여하세요.",
+          "generated_at": "<unchanged>",
+          "model": "gemini-3.5-flash-lite",
+          "notice_id": 6,
+          "notice_revision": "28925f15e32ae0f3599ce25723a1f30fa7e9edf605d01355526aa9a75d0db168",
+          "original_text": "정원 행사 안내\n정원 행사에 참여하세요.",
+          "prompt_version": "easy-language-v8"
+        }
+      },
+      "seoul/25/000779": {
+        "result": null
+      }
+    }
+  }
+}

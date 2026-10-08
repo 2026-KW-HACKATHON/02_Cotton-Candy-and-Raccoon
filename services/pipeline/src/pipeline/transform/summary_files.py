@@ -1,0 +1,246 @@
+"""Trusted preparation provenance, separate from Gemini and public summary JSON."""
+
+import base64
+import hashlib
+import re
+from typing import Literal
+from urllib.parse import urlsplit
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from pipeline.transform.notice_input import NoticeInput, render_notice_input
+
+MAX_DATABASE_ID = 2**63 - 1
+
+
+def _http_url(value: str) -> str:
+    if value != value.strip() or any(ord(char) < 32 or ord(char) == 127 for char in value):
+        raise ValueError("invalid_file_url")
+    try:
+        parts = urlsplit(value)
+        valid = (
+            parts.scheme in {"http", "https"} and parts.hostname
+            and parts.username is None and parts.password is None
+        )
+        valid = bool(valid and (parts.port is None or parts.port > 0))
+    except ValueError:
+        valid = False
+    if not valid:
+        raise ValueError("invalid_file_url")
+    return value
+
+
+class FileModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+
+class PublicSourceFile(FileModel):
+    """Exactly the file columns the app already has permission to read."""
+
+    notice_file_id: int = Field(gt=0, le=MAX_DATABASE_ID)
+    kind: Literal["attachment", "inline_image"]
+    url: str = Field(min_length=1, max_length=4096)
+
+    _url = field_validator("url")(_http_url)
+
+
+class PublicFileReference(FileModel):
+    source_id: str = Field(pattern=r"^media_[1-9][0-9]*$")
+    source_type: Literal["document", "image"]
+    files: tuple[PublicSourceFile, ...] = Field(max_length=1024)
+    original_notice_url: str | None
+    guidance: Literal["원문에서 확인"] | None
+
+    @field_validator("original_notice_url")
+    @classmethod
+    def original_url(cls, value: str | None) -> str | None:
+        return _http_url(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def consistent_link(self) -> "PublicFileReference":
+        if self.files:
+            if self.original_notice_url is not None or self.guidance is not None:
+                raise ValueError("invalid_file_reference")
+            if len({item.notice_file_id for item in self.files}) != len(self.files):
+                raise ValueError("duplicate_source_file")
+        elif self.original_notice_url is None or self.guidance != "원문에서 확인":
+            raise ValueError("original_notice_link_required")
+        return self
+
+
+class PreparedMediaBinding(FileModel):
+    """The provider explicitly binds an actual input block, never file-list order."""
+
+    source_id: str = Field(pattern=r"^media_[1-9][0-9]*$")
+    source_type: Literal["document", "image"]
+    input_block_index: int = Field(ge=0)
+    content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class PreparationOmission(FileModel):
+    """Trusted public omission; unregistered images link to the original notice."""
+
+    notice_file_id: int | None = Field(default=None, gt=0, le=MAX_DATABASE_ID)
+    url: str
+    reason_code: Literal[
+        "unsupported_type", "invalid_name", "invalid_url", "redirect", "rate_limited",
+        "http_error", "server_error", "too_large", "type_mismatch", "timeout", "request_failed",
+        "empty_file", "total_size_limit", "time_limit", "extraction_failed",
+    ]
+
+    _url = field_validator("url")(_http_url)
+
+
+class PreparedSourceFile(PublicSourceFile):
+    """One original DB row, including aliases combined into a single media block."""
+
+    file_key: str = Field(min_length=1, max_length=1024)
+    outcome: Literal["media", "text", "unread"]
+    source_id: str | None = Field(default=None, pattern=r"^media_[1-9][0-9]*$")
+    attachment_index: int | None = Field(default=None, ge=0)
+    content_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @field_validator("file_key")
+    @classmethod
+    def valid_key(cls, value: str) -> str:
+        if not (
+            value == value.strip()
+            and (re.fullmatch(r"url:[0-9a-f]{64}", value)
+                 or value.startswith("id:") and value[3:].strip() == value[3:] and value[3:])
+            and all(ord(char) >= 32 and ord(char) != 127 for char in value)
+        ):
+            raise ValueError("invalid_file_key")
+        return value
+
+    @model_validator(mode="after")
+    def valid_outcome(self) -> "PreparedSourceFile":
+        if self.outcome == "media":
+            valid = self.source_id is not None and self.attachment_index is None
+        elif self.outcome == "text":
+            valid = self.source_id is None and self.attachment_index is not None
+        else:
+            valid = self.source_id is self.attachment_index is self.content_sha256 is None
+        if not valid or self.outcome != "unread" and self.content_sha256 is None:
+            raise ValueError("invalid_file_outcome")
+        return self
+
+
+class PrivateSummaryFileManifest(FileModel):
+    """Private snapshot data supplied by #13, never generated by the model.
+
+    Every original file row occurs once. Read counts include all successful
+    aliases even when several files share one transmitted media block. An
+    unregistered body image has a media binding but no invented file identity.
+    """
+
+    notice_id: int = Field(gt=0, le=MAX_DATABASE_ID)
+    source_revision: int = Field(gt=0, le=MAX_DATABASE_ID)
+    original_url: str = Field(min_length=1, max_length=4096)
+    files: tuple[PreparedSourceFile, ...] = Field(max_length=1024)
+    media: tuple[PreparedMediaBinding, ...] = Field(max_length=1024)
+    omissions: tuple[PreparationOmission, ...] = Field(default=(), max_length=2048)
+
+    _url = field_validator("original_url")(_http_url)
+
+    @model_validator(mode="after")
+    def unique_sources(self) -> "PrivateSummaryFileManifest":
+        by_id = {item.notice_file_id: item for item in self.files}
+        for omission in self.omissions:
+            if omission.notice_file_id is None:
+                if omission.url != self.original_url:
+                    raise ValueError("invalid_omission_source")
+            else:
+                item = by_id.get(omission.notice_file_id)
+                if item is None or item.outcome != "unread" or item.url != omission.url:
+                    raise ValueError("invalid_omission_source")
+        if len({item.notice_file_id for item in self.files}) != len(self.files):
+            raise ValueError("duplicate_source_file")
+        if len({item.source_id for item in self.media}) != len(self.media) or len({
+            item.input_block_index for item in self.media
+        }) != len(self.media):
+            raise ValueError("duplicate_media_binding")
+        bindings = {item.source_id: item for item in self.media}
+        for item in self.files:
+            if item.outcome == "media" and (
+                item.source_id not in bindings
+                or item.content_sha256 != bindings[item.source_id].content_sha256
+            ):
+                raise ValueError("invalid_media_alias")
+        return self
+
+    @property
+    def total_file_count(self) -> int:
+        return len(self.files)
+
+    @property
+    def read_file_count(self) -> int:
+        return sum(item.outcome != "unread" for item in self.files)
+
+    @property
+    def attachment_status(self) -> Literal["none", "all_read", "partial", "unread"]:
+        if not self.files:
+            return "none"
+        if not self.read_file_count:
+            return "unread"
+        return "all_read" if self.read_file_count == self.total_file_count else "partial"
+
+    def public_references(self) -> tuple[PublicFileReference, ...]:
+        references = []
+        for binding in self.media:
+            aliases = tuple(PublicSourceFile(
+                notice_file_id=item.notice_file_id, kind=item.kind, url=item.url,
+            ) for item in self.files if item.source_id == binding.source_id)
+            references.append(PublicFileReference(
+                source_id=binding.source_id, source_type=binding.source_type, files=aliases,
+                original_notice_url=None if aliases else self.original_url,
+                guidance=None if aliases else "원문에서 확인",
+            ))
+        return tuple(references)
+
+    def validate_input(self, blocks: list[dict[str, str]], notice: NoticeInput) -> None:
+        if (
+            not blocks or blocks[0] != {"type": "text", "text": render_notice_input(notice)}
+            or any(block["type"] == "text" for block in blocks[1:])
+        ):
+            raise ValueError("text_binding_mismatch")
+        actual = {
+            index: block for index, block in enumerate(blocks)
+            if block["type"] in {"document", "image"}
+        }
+        if set(actual) != {item.input_block_index for item in self.media}:
+            raise ValueError("incomplete_media_bindings")
+        ordinals = {index: f"media_{ordinal}" for ordinal, index in enumerate(actual, 1)}
+        for binding in self.media:
+            block = actual[binding.input_block_index]
+            digest = hashlib.sha256(base64.b64decode(block["data"], validate=True)).hexdigest()
+            if (
+                binding.source_id != ordinals[binding.input_block_index]
+                or binding.source_type != block["type"] or binding.content_sha256 != digest
+            ):
+                raise ValueError("media_binding_mismatch")
+        self.validate_text(notice)
+
+    def validate_text(self, notice: NoticeInput) -> None:
+        """Every extracted attachment is attributed to an original file row."""
+        indexes = {item.attachment_index for item in self.files if item.outcome == "text"}
+        if indexes != set(range(len(notice.attachments))):
+            raise ValueError("incomplete_text_bindings")
+        for item in self.files:
+            if item.outcome == "text":
+                assert item.attachment_index is not None
+                if item.attachment_index >= len(notice.attachments):
+                    raise ValueError("text_binding_mismatch")
+                digest = hashlib.sha256(
+                    notice.attachments[item.attachment_index].text.encode("utf-8"),
+                ).hexdigest()
+                if item.content_sha256 != digest:
+                    raise ValueError("text_binding_mismatch")
+
+
+def manifest_snapshot(value: PrivateSummaryFileManifest) -> PrivateSummaryFileManifest:
+    """Revalidate nested provenance even if a caller used unchecked construction."""
+    if not isinstance(value, PrivateSummaryFileManifest):
+        raise ValueError("invalid_file_manifest")
+    return PrivateSummaryFileManifest.model_validate(
+        value.model_dump(mode="python", serialize_as_any=True, warnings="error"),
+    )

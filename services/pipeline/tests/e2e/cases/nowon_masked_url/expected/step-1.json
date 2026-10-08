@@ -1,0 +1,168 @@
+{
+  "exit_code": 0,
+  "report": {
+    "mode": "new",
+    "total_count": 1,
+    "selected_count": 1,
+    "saved_count": 1,
+    "pages_read": 1,
+    "initial_baseline": true,
+    "listing_complete": true,
+    "failed_ranges": [],
+    "complete": true,
+    "failures": [],
+    "skipped_count": 0,
+    "failed_count": 0,
+    "skipped": []
+  },
+  "stderr": [],
+  "http_calls": [
+    "nowon_api 1-50",
+    "nowon_page 900431"
+  ],
+  "gemini_calls": {},
+  "db": {
+    "notices": {
+      "nowon/1001/900431": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "공원 산책로 정비 공사 안내",
+        "department": "공원녹지과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900431",
+        "body_html": "<p>공원 산책로 정비 공사를 안내합니다.</p><img src=\"https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=431&amp;q_fileId=21986319-6614-4482-8756-e5ff5b2908a1\"/>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 2,
+        "body_text": "공원 산책로 정비 공사를 안내합니다."
+      }
+    },
+    "notice_files": {
+      "nowon/1001/900431|inline_image|id:21986319-6614-4482-8756-e5ff5b2908a1": {
+        "kind": "inline_image",
+        "file_sn": "431",
+        "file_id": "21986319-6614-4482-8756-e5ff5b2908a1",
+        "file_key": "id:21986319-6614-4482-8756-e5ff5b2908a1",
+        "file_name": null,
+        "url": "https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=431&q_fileId=21986319-6614-4482-8756-e5ff5b2908a1"
+      }
+    },
+    "notice_summaries": {},
+    "notice_easy_texts": {},
+    "notice_dictionary_links": {},
+    "standard_dictionary_cache": {},
+    "notice_summary_executions": {},
+    "notice_processing_jobs": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_dictionary_links": 0,
+    "notice_easy_texts": 0,
+    "notice_files": 1,
+    "notice_processing_jobs": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 1,
+    "standard_dictionary_cache": 0
+  },
+  "anon": {
+    "notices": {
+      "nowon/1001/900431": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "공원 산책로 정비 공사 안내",
+        "department": "공원녹지과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900431",
+        "body_html": "<p>공원 산책로 정비 공사를 안내합니다.</p><img src=\"https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=431&amp;q_fileId=21986319-6614-4482-8756-e5ff5b2908a1\"/>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 2,
+        "body_text": "공원 산책로 정비 공사를 안내합니다."
+      }
+    },
+    "notice_files": {
+      "nowon/1001/900431|inline_image|https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=431&q_fileId=21986319-6614-4482-8756-e5ff5b2908a1": {
+        "kind": "inline_image",
+        "url": "https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=431&q_fileId=21986319-6614-4482-8756-e5ff5b2908a1"
+      }
+    },
+    "notice_summaries": {},
+    "notice_easy_texts": {},
+    "app_notice_list": {
+      "nowon/1001/900431": {
+        "source": "nowon",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "공원 산책로 정비 공사 안내",
+        "department": "공원녹지과",
+        "registered_on": "2026-10-08",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false
+      }
+    },
+    "app_notice_detail": {
+      "nowon/1001/900431": {
+        "source": "nowon",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "공원 산책로 정비 공사 안내",
+        "department": "공원녹지과",
+        "registered_on": "2026-10-08",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false,
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900431",
+        "license_type": "KOGL-4",
+        "body_text": "공원 산책로 정비 공사를 안내합니다.",
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [
+          {
+            "id": 1,
+            "kind": "inline_image",
+            "url": "https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=431&q_fileId=21986319-6614-4482-8756-e5ff5b2908a1"
+          }
+        ],
+        "easy_original_text": null,
+        "easy_text": null,
+        "easy_changes": null,
+        "easy_body_text_present": null,
+        "easy_attachment_content_included": null,
+        "easy_generated_at": null
+      }
+    },
+    "get_notice_dictionary": {
+      "nowon/1001/900431": {
+        "result": null
+      }
+    }
+  }
+}
