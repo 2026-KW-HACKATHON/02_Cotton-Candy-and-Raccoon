@@ -164,35 +164,62 @@ def test_every_pipeline_test_file_is_inside_a_folder_that_ci_runs():
     assert not_run == [], f"test files outside CI pytest targets: {not_run}"
 
 
-@pytest.mark.parametrize("key", ["GEMINI_API_KEY", "STDICT_API_KEY"])
-def test_collection_workflow_passes_conditional_credentials_to_every_processing_step(key):
+def test_raw_collection_is_independent_of_ai_credentials():
     workflow = (REPO_ROOT / ".github" / "workflows" / "collect.yml").read_text("utf-8")
-    steps = re.split(r"(?m)^      - ", workflow)
-    validation, = [step for step in steps if step.startswith("name: Validate required secrets")]
-    processing = [step for step in steps if "${{ steps.mode.outputs.processing_feature }}" in step]
-    assert len(processing) == 3
-    expected = (
-        key + ": ${{ (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || "
-        "vars.PIPELINE_EASY_TEXT_ENABLED == 'true') && secrets." + key + " || '' }}"
-    )
-    for step in [validation, *processing]:
-        assert expected in step
-    assert f'[ -z "${key}" ]; then' in validation
-    condition = '[ "$AI_PROCESSING_ENABLED" = "true" ] || [ "$EASY_TEXT_ENABLED" = "true" ]'
-    assert condition in validation
+    before_processing = workflow.split("      - name: Process nowon summary")[0]
+    assert "GEMINI_API_KEY" not in before_processing
+    assert "STDICT_API_KEY" not in before_processing
+    assert "timeout-minutes: 180" in before_processing
+    assert "cancel-in-progress: false" in before_processing
 
 
-
-def test_all_raw_sources_precede_bounded_processing_steps():
+def test_all_raw_sources_precede_independently_bounded_features():
     workflow = (REPO_ROOT / ".github" / "workflows" / "collect.yml").read_text("utf-8")
     steps = re.split(r"(?m)^      - ", workflow)
     raw = [i for i, step in enumerate(steps) if "pipeline collect --source" in step]
     processing = [i for i, step in enumerate(steps) if "pipeline process-stored" in step]
-    assert len(raw) == len(processing) == 3
+    assert len(raw) == 3 and len(processing) == 6
     assert max(raw) < min(processing)
     for i in raw:
         assert "--process-ai" not in steps[i] and "--easy-text" not in steps[i]
+        assert "timeout-minutes: 10" in steps[i]
     for i in processing:
-        assert "timeout-minutes: 30" in steps[i]
-        assert "continue-on-error: true" in steps[i]
-        assert "!cancelled()" in steps[i]
+        step = steps[i]
+        assert "timeout-minutes: 20" in step
+        assert "continue-on-error: true" in step
+        assert "!cancelled()" in step
+        assert "--limit 5" in step
+        assert '[ -z "$GEMINI_API_KEY" ]' in step
+        if "--feature easy_text" in step:
+            assert '[ -z "$STDICT_API_KEY" ]' in step
+        else:
+            assert "--feature summary" in step
+            assert "STDICT_API_KEY" not in step
+
+
+@pytest.mark.parametrize("ai,easy,outcomes,exit_code", [
+    ("false", "false", {"nowon": "success", "wolgye1": "success"}, 0),
+    ("true", "false", {"nowon": "success", "wolgye1": "success"}, 1),
+    ("false", "false", {"nowon": "failure", "wolgye1": "success"}, 1),
+    ("false", "true", {"nowon": "success", "wolgye1": "success",
+                       "easy_text_nowon": "success", "easy_text_wolgye1": "success"}, 0),
+    ("true", "false", {"nowon": "success", "wolgye1": "success",
+                       "summary_nowon": "failure", "summary_wolgye1": "success",
+                       "easy_text_nowon": "success", "easy_text_wolgye1": "success"}, 1),
+])
+def test_workflow_report_does_not_hide_failed_or_unrun_features(
+    monkeypatch, tmp_path, ai, easy, outcomes, exit_code,
+):
+    import json
+    import textwrap
+
+    workflow = (REPO_ROOT / ".github" / "workflows" / "collect.yml").read_text("utf-8")
+    script = textwrap.dedent(workflow.split("python - <<'PY'\n")[1].rsplit("          PY", 1)[0])
+    monkeypatch.setenv("STEP_RESULTS", json.dumps({k: {"outcome": v} for k, v in outcomes.items()}))
+    monkeypatch.setenv("AI_ENABLED", ai)
+    monkeypatch.setenv("EASY_ENABLED", easy)
+    monkeypatch.setenv("SEOUL_ENABLED", "false")
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "summary.md"))
+    with pytest.raises(SystemExit) as result:
+        exec(compile(script, "workflow_report", "exec"), {})
+    assert result.value.code == exit_code
