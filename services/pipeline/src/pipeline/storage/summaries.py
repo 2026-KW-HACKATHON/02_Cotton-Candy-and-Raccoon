@@ -594,3 +594,45 @@ def record_summary_failure(
             execution_token=execution_token,
         ),
     )
+
+
+READ_STORED_SUMMARY = """
+select notice_id, status, result, attachment_status, source_hash, last_error_code,
+       file_references, preparation_omissions
+from public.notice_summaries where notice_id = %s
+"""
+
+
+@dataclass(frozen=True, slots=True)
+class StoredSummaryRow:
+    """The committed notice_summaries row that the app reads, plus report-only fields.
+
+    source_hash and last_error_code are private columns: use them for reports, never
+    as app data. result, file_references and preparation_omissions are the public
+    JSON exactly as stored.
+    """
+
+    notice_id: int
+    status: str
+    result: dict | None = field(repr=False)
+    attachment_status: str
+    source_hash: str = field(repr=False)
+    last_error_code: str | None
+    file_references: list | None = field(repr=False)
+    preparation_omissions: list | None = field(repr=False)
+
+
+def load_stored_summary(conn: Connection, notice_id: int) -> StoredSummaryRow | None:
+    """Read one summary row; call it on a connection that sees only committed data.
+
+    Reporting from this row, not from a job's in-memory candidate, keeps a failed or
+    superseded run from claiming a result that was never stored.
+    """
+    if type(notice_id) is not int or not 0 < notice_id <= 2**63 - 1:
+        raise SummaryRecordError("invalid_notice_id")
+    try:
+        with conn.cursor(row_factory=tuple_row) as cursor:
+            row = cursor.execute(READ_STORED_SUMMARY, (notice_id,)).fetchone()
+    except Error:
+        raise SummaryStorageError("summary_read_failed") from None
+    return None if row is None else StoredSummaryRow(*row)

@@ -4,6 +4,7 @@ import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Literal
+from urllib.parse import quote
 from uuid import uuid4
 
 import psycopg
@@ -15,11 +16,22 @@ from support.paths import REPO_ROOT
 
 __all__ = [
     "TEST_ROLES",
+    "database_uri",
     "owned_migrated_database",
 ]
 
 TEST_ROLES = ("anon", "authenticated", "service_role")
 MIGRATIONS_DIR = REPO_ROOT / "supabase" / "migrations"
+
+
+def database_uri(info: dict[str, str]) -> str:
+    """The URI form that pipeline.config accepts for DATABASE_URL."""
+    user = quote(info.get("user", ""), safe="")
+    password = info.get("password")
+    auth = f"{user}:{quote(password, safe='')}@" if password else (f"{user}@" if user else "")
+    host = info.get("host", "127.0.0.1")
+    port = f":{info['port']}" if info.get("port") else ""
+    return f"postgresql://{auth}{host}{port}/{quote(info['dbname'], safe='')}"
 
 
 @contextmanager
