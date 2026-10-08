@@ -1,13 +1,12 @@
-import { NoticeQueryFeedback } from "../components/NoticeReadStatus";
 import { useState } from "react";
 import { Pressable, View, useWindowDimensions } from "react-native";
-import { FloatingSettingsButton } from "@/shared/ui/FloatingSettingsButton";
 import { Header } from "@/shared/ui/Header";
 import { Screen } from "@/shared/ui/Screen";
 import { AppText } from "@/shared/ui/AppText";
 import { COLORS } from "@/shared/theme/tokens";
 import { NoticeCard } from "../components/NoticeCard";
 import { NoticeState } from "../components/NoticeState";
+import { ScopeDropdown } from "../components/ScopeDropdown";
 import { useSavedNotices } from "../hooks/useNotices";
 import { useBookmarkStore } from "../store/bookmarkStore";
 import { useDisplayPreferences } from "@/shared/accessibility/displayPreferences";
@@ -22,13 +21,13 @@ export function SavedScreen() {
   );
 }
 function StandardSavedScreen() {
-  const query = useSavedNotices();
+  const ids = useBookmarkStore((state) => state.savedIds);
+  const query = useSavedNotices(ids);
   const { width } = useWindowDimensions();
   const fontScale = useDisplayPreferences((state) => state.fontScale);
   // 좁은 화면과 큰 글자에서는 날짜·제공처와 북마크가 겹치지 않도록 한 열을 쓴다.
   const singleColumn =
     (Math.min(width, 600) - 31.384) * 0.483 < 150 * fontScale;
-  const ids = useBookmarkStore((state) => state.savedIds);
   const [recentFirst, setRecentFirst] = useState(true);
   // savedIds의 추가 순서를 보관 시점으로 사용한다. 공문 게시일 정렬과는 별개다.
   const saved = (query.data ?? [])
@@ -41,12 +40,8 @@ function StandardSavedScreen() {
   return (
     <Screen
       headerBehavior="reveal"
-      overlay={<FloatingSettingsButton />}
       header={
-        <Header
-          title="다시 볼 소식"
-          right={<View style={{ width: 44.308 }} />}
-        />
+        <Header title="다시 볼 소식" variant="home" right={<ScopeDropdown />} />
       }
       floating
       contentStyle={{ paddingHorizontal: 15.692 }}
@@ -70,20 +65,27 @@ function StandardSavedScreen() {
           </AppText>
         </Pressable>
       </View>
-      <NoticeQueryFeedback
-        error={query.error}
-        hasData={query.data !== undefined}
-        retry={() => void query.refetch()}
-      />
-      {query.isPending ? (
+      {query.isError && query.data && (
         <NoticeState
-          loading={query.isPending}
-          error={query.isError}
+          error
+          errorDetail={query.error}
+          retrying={query.isFetching}
           retry={() => {
             void query.refetch();
           }}
         />
-      ) : query.isError && query.data === undefined ? null : !saved.length ? (
+      )}
+      {query.isPending || (query.isError && !query.data) ? (
+        <NoticeState
+          loading={query.isPending}
+          error={query.isError}
+          errorDetail={query.error}
+          retrying={query.isFetching}
+          retry={() => {
+            void query.refetch();
+          }}
+        />
+      ) : !saved.length ? (
         <NoticeState message="아직 보관한 공문이 없어요. 공문의 북마크를 눌러 모아보세요." />
       ) : (
         <View
@@ -105,7 +107,7 @@ function StandardSavedScreen() {
         </View>
       )}
       <AppText secondary size={11.08}>
-        보관한 공문은 이 기기에 저장됩니다. 비공개된 공문은 표시되지 않습니다.
+        보관 상태는 앱 실행 중에만 유지됩니다.
       </AppText>
     </Screen>
   );

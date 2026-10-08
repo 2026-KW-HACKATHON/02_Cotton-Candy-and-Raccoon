@@ -1,119 +1,133 @@
-import { getSupabase } from "../../../shared/lib/supabase";
-import { DETAIL_COLUMNS, LIST_COLUMNS, noticeFromRow } from "./noticeContract";
-import type { Notice, NoticeSource } from "../types/notice";
+import { type Notice } from "../types/notice";
+import { DETAIL_COLUMNS, LIST_COLUMNS, parseNotice } from "./noticeContract";
+import { NoticeRequestError } from "../domain/noticeError";
 
-export type ListOptions = {
-  source?: NoticeSource;
-  category?: number | "unclassified";
-  ascending?: boolean;
+export type NoticeCursor = { date: string; id: string };
+export type NoticeListOptions = {
+  category?: number | null;
+  oldestFirst?: boolean;
 };
-export type Cursor = { date: string; id: string };
-export type NoticePage = { notices: Notice[]; next: Cursor | null };
 const PAGE_SIZE = 20;
-
-async function request<T>(
-  execute: (
-    signal: AbortSignal,
-  ) => PromiseLike<{
-    data: T;
-    error: { code?: string } | null;
-    status: number;
-  }>,
-  signal?: AbortSignal,
-): Promise<T> {
-  const controller = new AbortController();
-  const abort = () => controller.abort();
-  signal?.addEventListener("abort", abort, { once: true });
-  if (signal?.aborted) abort();
-  const timer = setTimeout(abort, 15_000);
+function connection() {
+  const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  const key = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  if (!url || !key || !key.startsWith("sb_publishable_"))
+    throw new NoticeRequestError("configuration");
   try {
-    const response = await execute(controller.signal);
-    if (response.error) {
-      if ([401, 403].includes(response.status))
-        throw new Error("공지 조회 권한 또는 공개 키 설정을 확인해 주세요.");
-      throw new Error(
-        "공문을 불러오지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.",
+    const parsed = new URL(url);
+    if (
+      !["https:", "http:"].includes(parsed.protocol) ||
+      parsed.username ||
+      parsed.password
+    )
+      throw new Error();
+  } catch {
+    throw new NoticeRequestError("configuration");
+  }
+  return { url: url.replace(/\/$/, ""), key };
+}
+async function request(
+  view: "app_notice_list" | "app_notice_detail",
+  params: URLSearchParams,
+): Promise<unknown[]> {
+  const { url, key } = connection();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(
+      url + "/rest/v1/" + view + "?" + params.toString(),
+      { headers: { apikey: key }, signal: controller.signal },
+    );
+    if (!response.ok)
+      throw new NoticeRequestError(
+        response.status === 401 || response.status === 403
+          ? "configuration"
+          : response.status === 400 || response.status === 404
+            ? "contract"
+            : "connection",
       );
-    }
-    return response.data;
+    const data: unknown = await response.json();
+    if (!Array.isArray(data)) throw new NoticeRequestError("contract");
+    return data;
+  } catch (error) {
+    if (error instanceof NoticeRequestError) throw error;
+    throw new NoticeRequestError("connection");
   } finally {
     clearTimeout(timer);
-    signal?.removeEventListener("abort", abort);
   }
 }
-export async function fetchNotices(
-  options: ListOptions = {},
-  cursor: Cursor | null = null,
-  signal?: AbortSignal,
-): Promise<NoticePage> {
-  let query = getSupabase()
-    .from("app_notice_list")
-    .select(LIST_COLUMNS)
-    .order("registered_on", { ascending: !!options.ascending })
-    .order("id", { ascending: !!options.ascending })
-    .limit(PAGE_SIZE);
-  if (options.source) query = query.eq("source", options.source);
-  if (options.category === "unclassified")
-    query = query.is("category_code", null);
-  else if (options.category !== undefined)
-    query = query.eq("category_code", options.category);
-  if (cursor) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(cursor.date) || !/^\d+$/.test(cursor.id))
-      throw new Error("잘못된 페이지 위치입니다.");
-    const op = options.ascending ? "gt" : "lt";
-    query = query.or(
-      `registered_on.${op}.${cursor.date},and(registered_on.eq.${cursor.date},id.${op}.${cursor.id})`,
+export async function fetchNoticePage(
+  cursor: NoticeCursor | null = null,
+  source?: "dong" | "nowon" | "seoul",
+  options: NoticeListOptions = {},
+) {
+  const params = new URLSearchParams({
+    select: LIST_COLUMNS,
+    order: options.oldestFirst
+      ? "registered_on.asc,id.asc"
+      : "registered_on.desc,id.desc",
+    limit: String(PAGE_SIZE),
+  });
+  if (options.category !== undefined) {
+    if (
+      options.category !== null &&
+      ![21, 22, 23, 24, 25, 26, 27, 30].includes(options.category)
+    )
+      throw new NoticeRequestError("contract");
+    params.set(
+      "category_code",
+      options.category === null ? "is.null" : "eq." + options.category,
     );
   }
-  const rows = await request((sig) => query.abortSignal(sig), signal);
-  if (!Array.isArray(rows))
-    throw new Error("공지 목록 응답 형식을 확인할 수 없습니다.");
-  const notices = rows.map(noticeFromRow);
-  const last = notices.at(-1);
+  const comparison = options.oldestFirst ? "gt" : "lt";
+  if (source) params.set("source", "eq." + source);
+  if (cursor) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(cursor.date) || !/^\d+$/.test(cursor.id))
+      throw new NoticeRequestError("contract");
+    params.set(
+      "or",
+      `(registered_on.${comparison}.${cursor.date},and(registered_on.eq.${cursor.date},id.${comparison}.${cursor.id}))`,
+    );
+  }
+  const notices = (await request("app_notice_list", params)).map(parseNotice);
+  const last = notices[notices.length - 1];
   return {
     notices,
-    next:
+    nextCursor:
       notices.length === PAGE_SIZE && last
-        ? { date: last.registeredOn, id: last.id }
+        ? { date: last.publishedAt.replaceAll(".", "-"), id: last.id }
         : null,
   };
 }
-export async function fetchNotice(
-  id: string,
-  signal?: AbortSignal,
-): Promise<Notice | null> {
-  if (!/^[1-9]\d*$/.test(id)) return null;
-  const row = await request(
-    (sig) =>
-      getSupabase()
-        .from("app_notice_detail")
-        .select(DETAIL_COLUMNS)
-        .eq("id", id)
-        .abortSignal(sig)
-        .maybeSingle(),
-    signal,
+export async function fetchNotices(): Promise<Notice[]> {
+  return (await fetchNoticePage()).notices;
+}
+export async function fetchNotice(id: string): Promise<Notice | null> {
+  if (!/^\d+$/.test(id) || Number(id) <= 0 || !Number.isSafeInteger(Number(id)))
+    return null;
+  const rows = await request(
+    "app_notice_detail",
+    new URLSearchParams({ select: DETAIL_COLUMNS, id: "eq." + id, limit: "1" }),
   );
-  return row === null ? null : noticeFromRow(row);
+  return rows.length ? parseNotice(rows[0]) : null;
 }
 export async function fetchSavedNotices(
   ids: readonly string[],
-  signal?: AbortSignal,
 ): Promise<Notice[]> {
-  const valid = [...new Set(ids.filter((id) => /^[1-9]\d*$/.test(id)))];
-  const notices: Notice[] = [];
+  const valid = [...new Set(ids)].filter(
+    (id) =>
+      /^\d+$/.test(id) && Number.isSafeInteger(Number(id)) && Number(id) > 0,
+  );
+  const results: Notice[] = [];
   for (let offset = 0; offset < valid.length; offset += PAGE_SIZE) {
     const rows = await request(
-      (sig) =>
-        getSupabase()
-          .from("app_notice_list")
-          .select(LIST_COLUMNS)
-          .in("id", valid.slice(offset, offset + PAGE_SIZE))
-          .abortSignal(sig),
-      signal,
+      "app_notice_list",
+      new URLSearchParams({
+        select: LIST_COLUMNS,
+        id: "in.(" + valid.slice(offset, offset + PAGE_SIZE).join(",") + ")",
+      }),
     );
-    if (!Array.isArray(rows))
-      throw new Error("보관함 응답 형식을 확인할 수 없습니다.");
-    notices.push(...rows.map(noticeFromRow));
+    results.push(...rows.map(parseNotice));
   }
-  return notices;
+  return results;
 }

@@ -41,7 +41,10 @@ export function EasySettingsScreen() {
             label={`일반 화면${mode === "standard" ? " · 선택됨" : ""}`}
             filled={mode === "standard"}
             selected={mode === "standard"}
-            onPress={() => setMode("standard")}
+            onPress={() => {
+              setMode("standard");
+              router.replace("/");
+            }}
           />
         </View>
         <View style={styles.panel}>

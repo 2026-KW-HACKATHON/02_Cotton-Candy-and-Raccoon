@@ -1,7 +1,7 @@
-import { router } from "expo-router";
 import { useState } from "react";
 import { Modal, Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
+import { router } from "expo-router";
 import { ChevronRight } from "lucide-react-native";
 import { Screen } from "@/shared/ui/Screen";
 import { Header } from "@/shared/ui/Header";
@@ -51,7 +51,10 @@ function StandardSettingsScreen() {
         </View>
         <Pressable
           accessibilityRole="radio"
-          onPress={() => setMode("easy")}
+          onPress={() => {
+            setMode("easy");
+            router.replace("/");
+          }}
           accessibilityState={{ checked: false }}
           aria-checked={false}
           accessibilityLabel="편한 화면으로 변경"

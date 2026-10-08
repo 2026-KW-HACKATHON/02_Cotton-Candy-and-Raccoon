@@ -338,7 +338,7 @@ def _connect(database: DatabaseSettings) -> psycopg.Connection:
 
 def run_processing(
     database: DatabaseSettings, *, api_key: str | None = None,
-    features: tuple[Feature, ...] = FEATURES, notice_id: int | None = None, limit: int = 100,
+    features: tuple[Feature, ...] = FEATURES, notice_id: int | None = None, limit: int | None = 100,
     source: str | None = None,
     dry_run: bool = False, retry_stopped: bool = False, max_attempts: int = 3,
     job_timeout_seconds: float = DEFAULT_JOB_TIMEOUT_SECONDS,
@@ -346,7 +346,7 @@ def run_processing(
     easy_text_model: str = EASY_TEXT_MODEL,
     executor: Callable[[DatabaseSettings, Claim, str, float], ProcessingOutcome] | None = None,
 ) -> ProcessingRunResult:
-    """Scan once, enqueue, and attempt at most limit jobs sequentially; never sleep for retries."""
+    """Scan once and process the selected batch; None selects all currently eligible jobs."""
     if source not in (None, "nowon", "dong", "seoul"):
         raise ValueError("invalid_processing_source")
     if not features or any(feature not in FEATURES for feature in features):
@@ -354,7 +354,7 @@ def run_processing(
     features = tuple(dict.fromkeys(features))
     if notice_id is not None and (type(notice_id) is not int or not 0 < notice_id <= 2**63 - 1):
         raise ValueError("invalid_notice_id")
-    if type(limit) is not int or not 1 <= limit <= 10000:
+    if limit is not None and (type(limit) is not int or not 1 <= limit <= 10000):
         raise ValueError("invalid_processing_limit")
     if type(max_attempts) is not int or not 1 <= max_attempts <= 100:
         raise ValueError("invalid_processing_attempts")
@@ -391,7 +391,7 @@ def run_processing(
                     "notice_id": item.notice_id, "feature": item.feature, "state": "candidate",
                 } for item in candidates))
             enqueued = enqueue_candidates(conn, candidates)
-        for _ in range(limit):
+        for _ in range(selected if limit is None else limit):
             transitions: list[dict[str, object]] = []
             with _connect(database) as conn:
                 claim = claim_next(

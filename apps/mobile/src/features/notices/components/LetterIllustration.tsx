@@ -1,290 +1,326 @@
-import { StyleSheet, View } from "react-native";
+import {
+  Pressable,
+  StyleSheet,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from "react-native";
 import { Image } from "expo-image";
+import Animated, {
+  useAnimatedStyle,
+  type SharedValue,
+  type AnimatedStyle,
+} from "react-native-reanimated";
 import { AppText } from "@/shared/ui/AppText";
 import { COLORS } from "@/shared/theme/tokens";
 import { type Notice } from "../types/notice";
+import { LETTER_ASSETS, LETTER_LAYERS } from "./letterArtwork";
+import { getLetterMotion, type LetterRole } from "./letterInteraction";
 
-// 고정 좌표는 Figma 그림 레이어 안에서만 사용하며, 화면 너비에 따른 축소는 HomeScreen이 담당한다.
-export function ClosedEnvelope() {
+export const LETTER_WIDTH = 290;
+export const LETTER_HEIGHT = 512;
+
+export function ClosedEnvelope({
+  flapStyle,
+}: {
+  flapStyle?: StyleProp<AnimatedStyle<ViewStyle>>;
+}) {
   return (
-    <View style={styles.closed}>
+    <View pointerEvents="none" style={styles.closed}>
       <Image
-        source={require("@/assets/figma/home-img.svg")}
-        style={{
-          position: "absolute",
-          left: 6.692,
-          top: 7.615,
-          width: 300.462,
-          height: 169.385,
-        }}
+        source={LETTER_ASSETS.img}
+        contentFit="fill"
+        style={styles.envelopeBody}
       />
       <Image
-        source={require("@/assets/figma/home-img1.svg")}
-        style={{
-          position: "absolute",
-          left: 8.997,
-          top: 84.66,
-          width: 295.847,
-          height: 89.5385,
-        }}
+        source={LETTER_ASSETS.img1}
+        contentFit="fill"
+        style={styles.envelopeFront}
       />
-      <Image
-        source={require("@/assets/figma/home-img2.svg")}
-        style={{
-          position: "absolute",
-          left: 9.461,
-          top: 7.615,
-          width: 294.923,
-          height: 101.538,
-        }}
-      />
+      <Animated.View style={[styles.envelopeFlap, flapStyle]}>
+        <Image
+          source={LETTER_ASSETS.img2}
+          contentFit="fill"
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
     </View>
   );
 }
-/** 봉투 뒤·편지·문구·봉투 앞·캐릭터 순으로 쌓아 문구를 이미지 없이 실제 텍스트로 표시한다. */
-export function LetterIllustration({ notice }: { notice: Notice }) {
+
+/** 그림 내부 좌표는 유지하고, 편지 문구와 상세 이동은 실제 앱 데이터에 연결한다. */
+export function LetterIllustration({
+  notice,
+  onOpen,
+  clock,
+  role = "reading",
+  interactive = true,
+}: {
+  notice: Notice;
+  onOpen: () => void;
+  clock: SharedValue<number>;
+  role?: LetterRole;
+  interactive?: boolean;
+}) {
+  const paperStyle = useAnimatedStyle(() => {
+    const pose = getLetterMotion(clock.value, role);
+    return { transform: [{ translateY: pose.paperY }] };
+  });
+  const pocketStyle = useAnimatedStyle(() => ({
+    zIndex: getLetterMotion(clock.value, role).paperAbove ? 2 : 0,
+  }));
+  const openStyle = useAnimatedStyle(() => ({
+    opacity: getLetterMotion(clock.value, role).open,
+  }));
+  const closedStyle = useAnimatedStyle(() => ({
+    opacity: 1 - getLetterMotion(clock.value, role).open,
+  }));
+  const flapStyle = useAnimatedStyle(() => {
+    const pose = getLetterMotion(clock.value, role);
+    return {
+      opacity: pose.open === 1 ? 0 : 1,
+      transform: [{ scaleY: pose.flap }],
+      transformOrigin: "top center" as const,
+    };
+  });
+  const layers = LETTER_LAYERS.filter(
+    (layer) => !layer.asset.startsWith("imgEnvelope"),
+  );
   return (
     <View style={styles.art}>
-      <Image
-        source={require("@/assets/figma/home-imgEnvelopeBack.svg")}
-        style={{
-          position: "absolute",
-          left: 6.692,
-          top: 195.446,
-          width: 300.462,
-          height: 266.769,
-        }}
-      />
-      <Image
-        source={require("@/assets/figma/home-imgLetterPaper.svg")}
-        style={{
-          position: "absolute",
-          left: 25.154,
-          top: 153.923,
-          width: 263.538,
-          height: 280.615,
-        }}
-      />
-      <View style={styles.copy}>
-        <View style={styles.chip}>
-          <AppText
-            variant="bold"
-            size={11.08}
-            style={{ color: COLORS.primary }}
+      <Animated.View
+        pointerEvents="none"
+        style={[StyleSheet.absoluteFill, openStyle]}
+      >
+        <Image
+          source={LETTER_ASSETS.imgEnvelopeBack}
+          contentFit="fill"
+          style={styles.openBack}
+        />
+      </Animated.View>
+      <Animated.View
+        style={[styles.pocket, pocketStyle]}
+        pointerEvents={interactive ? "auto" : "none"}
+        accessibilityElementsHidden={!interactive}
+        importantForAccessibility={interactive ? "auto" : "no-hide-descendants"}
+      >
+        <Animated.View style={[styles.moving, paperStyle]}>
+          <View
+            pointerEvents="none"
+            accessible={false}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            style={StyleSheet.absoluteFill}
           >
-            {notice.category}
-          </AppText>
-        </View>
-        <View
-          accessible
-          accessibilityLabel={notice.title}
-          style={{ flexDirection: "row", flexWrap: "wrap" }}
-        >
-          {/* 제목을 어절 단위로 배치해 한글 단어 중간에서 줄이 나뉘는 것을 줄인다. */}
-          {notice.title.split(" ").map((word, index) => (
-            <AppText
-              key={index}
-              variant="display"
-              size={20.31}
-              lineHeight={25.846}
-            >
-              {word}{" "}
+            {layers.map((layer) => (
+              <Image
+                key={layer.asset}
+                source={
+                  LETTER_ASSETS[layer.asset as keyof typeof LETTER_ASSETS]
+                }
+                contentFit="fill"
+                style={{
+                  position: "absolute",
+                  left: layer.x,
+                  top: layer.y,
+                  width: layer.width,
+                  height: layer.height,
+                  transform:
+                    "rotation" in layer
+                      ? [{ rotate: `${layer.rotation}deg` }]
+                      : undefined,
+                }}
+              />
+            ))}
+          </View>
+          <View style={styles.copy}>
+            <View style={styles.chip}>
+              <AppText
+                variant="bold"
+                size={12}
+                lineHeight={18}
+                style={{ color: COLORS.primary }}
+              >
+                {notice.category}
+              </AppText>
+            </View>
+            <View style={styles.titleAndDate}>
+              <AppText
+                variant="display"
+                size={18}
+                lineHeight={24}
+                numberOfLines={2}
+              >
+                {notice.title}
+              </AppText>
+              <AppText secondary size={12} lineHeight={18} numberOfLines={1}>
+                {notice.publishedAt} · {notice.provider}
+              </AppText>
+            </View>
+            <AppText size={12} lineHeight={18} numberOfLines={2}>
+              {notice.description || "자세한 내용은 원문을 확인해 주세요."}
             </AppText>
-          ))}
-        </View>
-        <AppText secondary size={11.08} numberOfLines={1}>
-          {notice.publishedAt} · {notice.provider}
-        </AppText>
-        <View style={styles.fact}>
-          <Image
-            source={require("@/assets/figma/home-imgCalendarIcon.svg")}
-            style={styles.factIcon}
-          />
-          <AppText
-            variant="bold"
-            size={11.08}
-            style={{ color: COLORS.primary }}
-          >
-            기한
-          </AppText>
-          <AppText size={11.08} style={{ flex: 1 }}>
-            {notice.deadline}
-          </AppText>
-        </View>
-        <View style={styles.fact}>
-          <Image
-            source={require("@/assets/figma/home-imgPersonIcon.svg")}
-            style={styles.factIcon}
-          />
-          <AppText
-            variant="bold"
-            size={11.08}
-            style={{ color: COLORS.primary }}
-          >
-            대상
-          </AppText>
-          <AppText size={11.08} numberOfLines={1} style={{ flex: 1 }}>
-            {notice.audience}
-          </AppText>
-        </View>
-      </View>
-      <Image
-        source={require("@/assets/figma/home-imgEnvelopeFront.svg")}
-        style={{
-          position: "absolute",
-          left: 6.692,
-          top: 298.446,
-          width: 300.462,
-          height: 163.846,
-        }}
-      />
-      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+            <View style={styles.facts}>
+              {[
+                {
+                  label: "기한",
+                  value: notice.deadline,
+                  source: LETTER_ASSETS.imgCalendarIcon,
+                },
+                {
+                  label: "대상",
+                  value: notice.audience,
+                  source: LETTER_ASSETS.imgPersonIcon,
+                },
+              ].map(({ label, value, source }) => (
+                <View key={label} style={styles.fact}>
+                  <View style={styles.factLabel}>
+                    <Image source={source} style={styles.factIcon} />
+                    <AppText
+                      variant="bold"
+                      size={12}
+                      lineHeight={18}
+                      style={{ color: COLORS.primary }}
+                    >
+                      {label}
+                    </AppText>
+                  </View>
+                  <AppText
+                    size={12}
+                    lineHeight={18}
+                    numberOfLines={1}
+                    style={{ flex: 1 }}
+                  >
+                    {value || "원문에서 확인"}
+                  </AppText>
+                </View>
+              ))}
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${notice.title}, 공문 보기`}
+              onPress={onOpen}
+              disabled={!interactive}
+              accessibilityState={{ disabled: !interactive }}
+              style={({ pressed }) => [
+                styles.open,
+                pressed && { opacity: 0.75 },
+              ]}
+            >
+              <AppText
+                variant="medium"
+                size={16}
+                lineHeight={24}
+                style={{ color: COLORS.surface }}
+              >
+                공문 보기
+              </AppText>
+            </Pressable>
+          </View>
+        </Animated.View>
+      </Animated.View>
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.frontLayer, openStyle]}
+      >
         <Image
-          source={require("@/assets/figma/home-imgTail.svg")}
-          style={{
-            position: "absolute",
-            left: 21.8,
-            top: 100.94,
-            width: 81.1968,
-            height: 59.8828,
-          }}
+          source={LETTER_ASSETS.imgEnvelopeFront}
+          contentFit="fill"
+          style={styles.openFront}
         />
-        <Image
-          source={require("@/assets/figma/home-imgUpperBody.svg")}
-          style={{
-            position: "absolute",
-            left: 0,
-            top: 1.85,
-            width: 313.846,
-            height: 470.769,
-          }}
-        />
-        <Image
-          source={require("@/assets/figma/home-img04ScarfTails.svg")}
-          style={{
-            position: "absolute",
-            left: 225.07,
-            top: 132.82,
-            width: 54.1508,
-            height: 58.4918,
-          }}
-        />
-        <Image
-          source={require("@/assets/figma/home-img05ScarfNeck.svg")}
-          style={{
-            position: "absolute",
-            left: 108.17,
-            top: 131.92,
-            width: 165.978,
-            height: 56.3703,
-          }}
-        />
-        <Image
-          source={require("@/assets/figma/home-img06Head.svg")}
-          style={{
-            position: "absolute",
-            left: 97.13,
-            top: 13.52,
-            width: 190.812,
-            height: 145.178,
-            transform: [{ rotate: "14.38deg" }],
-          }}
-        />
-        <Image
-          source={require("@/assets/figma/home-img07EarInteriors.svg")}
-          style={{
-            position: "absolute",
-            left: 129.37,
-            top: 28.81,
-            width: 124.501,
-            height: 35.5805,
-            transform: [{ rotate: "14.38deg" }],
-          }}
-        />
-        <Image
-          source={require("@/assets/figma/home-img09Cheeks.svg")}
-          style={{
-            position: "absolute",
-            left: 94.02,
-            top: 91.93,
-            width: 177.54,
-            height: 59.1638,
-            transform: [{ rotate: "14.38deg" }],
-          }}
-        />
-        <Image
-          source={require("@/assets/figma/home-img08EyeMasks.svg")}
-          style={{
-            position: "absolute",
-            left: 120.48,
-            top: 78.14,
-            width: 133.597,
-            height: 54.8278,
-            transform: [{ rotate: "14.38deg" }],
-          }}
-        />
-        <Image
-          source={require("@/assets/figma/home-img10EyesAndNose.svg")}
-          style={{
-            position: "absolute",
-            left: 151.96,
-            top: 87.74,
-            width: 70.8061,
-            height: 31.4017,
-            transform: [{ rotate: "14.38deg" }],
-          }}
-        />
-        <Image
-          source={require("@/assets/figma/home-imgVector2.svg")}
-          style={{
-            position: "absolute",
-            left: 117.22,
-            top: 149.09,
-            width: 28.4981,
-            height: 13.573,
-          }}
-        />
-        <Image
-          source={require("@/assets/figma/home-imgLeftPaw.svg")}
-          style={{
-            position: "absolute",
-            left: 96.58,
-            top: 129.28,
-            width: 49.8966,
-            height: 31.2831,
-          }}
-        />
-        <Image
-          source={require("@/assets/figma/home-imgRightPaw.svg")}
-          style={{
-            position: "absolute",
-            left: 194.54,
-            top: 137.24,
-            width: 47.1643,
-            height: 30.318,
-          }}
-        />
-      </View>
+      </Animated.View>
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.closedLayer, closedStyle]}
+      >
+        <ClosedEnvelope flapStyle={flapStyle} />
+      </Animated.View>
     </View>
   );
 }
 const styles = StyleSheet.create({
-  art: { width: 313.846, height: 470.769 },
-  closed: { width: 313.846, height: 184.615 },
+  art: { width: LETTER_WIDTH, height: LETTER_HEIGHT },
+  // 아래로 삽입한 그림만 잘라내고, 들어 올림의 상단 여유 공간은 유지한다.
+  pocket: {
+    position: "absolute",
+    top: -40,
+    left: 0,
+    width: LETTER_WIDTH,
+    height: 544,
+    overflow: "hidden",
+  },
+  moving: {
+    position: "absolute",
+    top: 40,
+    left: 0,
+    width: LETTER_WIDTH,
+    height: LETTER_HEIGHT,
+  },
+  frontLayer: { ...StyleSheet.absoluteFill, zIndex: 1 },
+  openBack: {
+    position: "absolute",
+    left: 6.202,
+    top: 257.31557,
+    width: 277.596,
+    height: 246.48386,
+  },
+  openFront: {
+    position: "absolute",
+    left: 6.202,
+    top: 352.41594,
+    width: 277.596,
+    height: 151.42012,
+  },
+  closedLayer: { position: "absolute", left: 0.24, top: 340.5, zIndex: 3 },
+  closed: { width: 289.52, height: 170.306 },
+  envelopeBody: {
+    position: "absolute",
+    left: 6.202,
+    top: 7.028,
+    width: 277.172,
+    height: 156.255,
+  },
+  envelopeFront: {
+    position: "absolute",
+    left: 8.21,
+    top: 78.127,
+    width: 272.915,
+    height: 82.5983,
+  },
+  envelopeFlap: {
+    position: "absolute",
+    left: 8.67,
+    top: 7.028,
+    width: 272.064,
+    height: 93.6681,
+  },
   copy: {
     position: "absolute",
-    left: 59.08,
-    top: 178.15,
-    width: 195.692,
-    gap: 7.385,
+    left: 43,
+    top: 173.96,
+    bottom: 76,
+    width: 204,
+    gap: 12,
   },
   chip: {
     backgroundColor: COLORS.soft,
     borderRadius: 999,
-    paddingHorizontal: 9.231,
-    paddingVertical: 3.692,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     alignSelf: "flex-start",
   },
-  fact: { flexDirection: "row", alignItems: "center", gap: 4 },
-  factIcon: { width: 14.7692, height: 14.7692 },
+  titleAndDate: { gap: 4 },
+  facts: { gap: 4 },
+  fact: { flexDirection: "row", alignItems: "center", gap: 8 },
+  factLabel: { flexDirection: "row", alignItems: "center", gap: 3.412 },
+  factIcon: { width: 13.647, height: 13.647 },
+  open: {
+    marginTop: "auto",
+    flexShrink: 0,
+    backgroundColor: COLORS.primary,
+    borderRadius: 10.235,
+    minHeight: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });

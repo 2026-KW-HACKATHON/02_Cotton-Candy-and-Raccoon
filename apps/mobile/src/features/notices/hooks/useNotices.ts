@@ -1,49 +1,66 @@
-import { useMemo } from "react";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useQuery,
+  type InfiniteData,
+} from "@tanstack/react-query";
 import {
   fetchNotice,
-  fetchNotices,
+  fetchNoticePage,
   fetchSavedNotices,
-  type Cursor,
-  type ListOptions,
+  type NoticeCursor,
+  type NoticeListOptions,
 } from "../api/noticeApi";
-import { useBookmarkStore } from "../store/bookmarkStore";
+import { NoticeRequestError } from "../domain/noticeError";
+import { useNoticeScopeStore } from "../store/noticeScopeStore";
 
+// 목록과 상세를 같은 키 접두사로 묶고, 상세 ID로 공문별 캐시를 구분한다.
 export const NOTICE_KEYS = {
   all: ["notices"] as const,
-  list: (options: ListOptions) => ["notices", "list", options] as const,
-  detail: (id: string) => ["notices", "detail", id] as const,
+  detail: (id: string) => ["notices", id] as const,
 };
-export function useNotices(options: ListOptions = {}, enabled = true) {
-  const query = useInfiniteQuery({
-    queryKey: NOTICE_KEYS.list(options),
-    initialPageParam: null as Cursor | null,
-    queryFn: ({ pageParam, signal }) =>
-      fetchNotices(options, pageParam, signal),
-    getNextPageParam: (page) => page.next,
-    retry: false,
+const selectNotices = (
+  data: InfiniteData<
+    Awaited<ReturnType<typeof fetchNoticePage>>,
+    NoticeCursor | null
+  >,
+) => data.pages.flatMap((page) => page.notices);
+
+export function useNotices(enabled = true, options: NoticeListOptions = {}) {
+  const scope = useNoticeScopeStore((state) => state.scope);
+  const source =
+    scope === "서울시" ? "seoul" : scope === "노원구" ? "nowon" : "dong";
+  return useInfiniteQuery({
     enabled,
+    queryKey: [
+      ...NOTICE_KEYS.all,
+      "list",
+      source,
+      options.category === undefined ? "all" : options.category,
+      !!options.oldestFirst,
+    ],
+    initialPageParam: null as NoticeCursor | null,
+    queryFn: ({ pageParam }) => fetchNoticePage(pageParam, source, options),
+    getNextPageParam: (page) => page.nextCursor,
+    select: selectNotices,
+    retry: (count, error) =>
+      !(error instanceof NoticeRequestError && error.code !== "connection") &&
+      count < 1,
   });
-  const data = useMemo(() => {
-    if (!query.data) return undefined;
-    const rows = query.data.pages.flatMap((page) => page.notices);
-    return [...new Map(rows.map((row) => [row.id, row])).values()];
-  }, [query.data]);
-  return { ...query, data };
 }
-export function useSavedNotices(enabled = true) {
-  const ids = useBookmarkStore((state) => state.savedIds);
+export function useSavedNotices(ids: readonly string[], enabled = true) {
   return useQuery({
-    queryKey: ["notices", "saved", ids],
-    queryFn: ({ signal }) => fetchSavedNotices(ids, signal),
-    retry: false,
     enabled,
+    queryKey: [...NOTICE_KEYS.all, "saved", ids],
+    queryFn: () => fetchSavedNotices(ids),
+    retry: false,
   });
 }
 export function useNotice(id: string) {
   return useQuery({
     queryKey: NOTICE_KEYS.detail(id),
-    queryFn: ({ signal }) => fetchNotice(id, signal),
-    retry: false,
+    queryFn: () => fetchNotice(id),
+    retry: (count, error) =>
+      !(error instanceof NoticeRequestError && error.code !== "connection") &&
+      count < 1,
   });
 }
