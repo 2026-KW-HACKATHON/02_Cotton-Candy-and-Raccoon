@@ -656,4 +656,111 @@ python -m uv run pytest
 CI는 임시 PostgreSQL에 전체 마이그레이션을 적용해 파이프라인의 DB 검사를 실행하고,
 별도의 빈 DB에서 스키마·권한을 검증합니다. 검사 결과가 없거나 건너뛴 검사가 있으면
 실패 처리합니다. `scripts/prepare_test_databases.py`는 CI 전용 DB 이름과 로컬 연결을
-사용하며, 이미 있는 DB를 초기화하지 않습니다.
+사용하며, 이미 있는 DB를 초기화하지 않습니다. CI는 `tests/unit`, `tests/e2e`,
+`supabase/tests`를 각각 실행해 세 보고서 모두 skip이 없는지 확인합니다.
+
+## e2e 검증
+
+`tests/e2e/`는 API 응답 예시 파일을 넣고 실제 CLI(`pipeline.cli.main`)를 그대로 실행해,
+DB에 저장된 결과와 앱(anon)이 조회하는 결과를 기대값과 비교합니다. 외부 HTTP 요청과
+Gemini 호출만 pytest monkeypatch로 녹화 응답에 연결하고, 운영 코드(`src/`)에는 테스트용
+분기가 없습니다. 실제 네트워크, 실제 Gemini, 운영 DB는 쓰지 않습니다.
+
+### 로컬 실행
+
+로컬 PostgreSQL 서버 주소를 `E2E_TEST_DATABASE_URL`로 지정합니다. DB 이름은
+`pipeline_e2e_test_`로 시작해야 하며, 그 DB 자체는 없어도 됩니다. 케이스마다 같은 서버에
+`pipeline_e2e_test_auto_<uuid>` DB를 새로 만들어 마이그레이션을 적용하고, 끝나면 지웁니다.
+설정이 없으면 건너뛰지 않고 실패합니다.
+
+```powershell
+$env:E2E_TEST_DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:5432/pipeline_e2e_test_local"
+python -m uv run pytest tests/e2e                     # 전체 케이스와 하네스 검사
+python -m uv run pytest tests/e2e -k nowon_api_error  # 케이스 하나
+```
+
+실행할 때마다 케이스별 결과가 `artifacts/e2e/<케이스명>.md`에 남습니다(Git 제외). step별 CLI 인자,
+exit code, 외부 요청 순서, Gemini 호출 수, 테이블별 행 수, 저장된 공지, anon에 보이는 공지,
+기대값과의 차이를 적고, 통과하지 못한 실행에서도 씁니다. CI에서는 `e2e-reports` artifact로 올립니다.
+
+### 케이스 추가 절차
+
+1. `tests/e2e/cases/<케이스명>/input/`에 API 응답 원본(XML, HTML), 첨부 파일, Gemini 응답 JSON을
+   넣습니다. 실제 공지를 쓸 때는 첨부 파일명과 본문의 개인 이름, 연락처를 가짜 값으로 바꿉니다.
+2. `case.json`에 실행 단계를 적습니다. 노원구 응답은 scaffold로 초안을 만들 수 있습니다.
+   ```powershell
+   python -m uv run python tests/e2e/harness/scaffold.py --name <케이스명> --source nowon `
+       --api <목록.xml> --page <원문.html>
+   ```
+   scaffold는 수집기가 요청할 URL을 라우트로 채우고, 남은 할 일을 `TODO:`로 출력합니다.
+   마스킹된 이름(`이0진` 등)이나 휴대전화 번호가 보이면 경고합니다.
+3. 기대값을 생성합니다.
+   ```powershell
+   $env:E2E_UPDATE = "1"; python -m uv run pytest tests/e2e -k <케이스명>; Remove-Item Env:E2E_UPDATE
+   ```
+4. 생성된 `expected/step-<n>.json`이 의도와 맞는지 읽고 확인합니다.
+5. 커밋합니다. 이후 실행은 기대값과 다르면 테이블, 행 키, 컬럼 단위로 차이를 보여 주며 실패합니다.
+
+`E2E_UPDATE`는 `CI` 환경변수가 있으면 거부됩니다. 실패한 케이스는 동작이 바뀐 이유를 설명할 수
+있을 때만 기대값을 갱신하고, PR 본문에 `expected/` 차이를 요약합니다.
+
+### case.json
+
+```json
+{
+  "title": "이 케이스가 확인하는 것",
+  "strict_unused": true,
+  "steps": [
+    {
+      "type": "collect",
+      "args": ["--source", "nowon", "--mode", "new"],
+      "http": [
+        {"route": "nowon_api", "start": 1, "end": 50, "body": "input/nowon_list.xml"},
+        {"route": "nowon_page", "post_sn": "900101", "body": "input/nowon_page_900101.html"}
+      ],
+      "gemini": {"easy_text": [], "summary": []},
+      "expect_exit": 0
+    }
+  ]
+}
+```
+
+| step `type` | 실행 |
+| --- | --- |
+| `collect`, `collect-one` | `pipeline <type> <args>`. stdout의 JSON 보고서와 stderr를 스냅샷에 넣습니다 |
+| `sql` | 테스트 DB에 `sql`을 직접 실행합니다. 운영자 숨김처럼 코드 경로가 없는 상황에만 쓰고 `reason`을 적습니다 |
+
+| `route` | 필요한 값 | 요청 |
+| --- | --- | --- |
+| `nowon_api` | `start`, `end` | 서울 열린데이터 `NowonNewsNoticeList/<start>/<end>/` |
+| `nowon_page` | `post_sn` | 노원구 공지 원문 `BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=<post_sn>` |
+| `wolgye1_list` | `page`(기본 1) | 월계1동 게시판 목록 |
+| `wolgye1_detail` | `post_sn` | 월계1동 게시글 |
+| `seoul_api` | `start`, `end`, `board`(선택) | 서울시 `SeoulNewsList` |
+| `file` | `url` | 첨부, 본문 이미지의 정확한 URL |
+
+- 응답은 `body`(케이스 폴더 기준 파일 경로) 또는 `text`로 주고, `status`(기본 200)와 `headers`를
+  덧붙일 수 있습니다. `Content-Type`은 파일 확장자로 정합니다.
+- 한 라우트는 같은 요청이 여러 번 와도 같은 응답을 돌려줍니다. 재시도 횟수는 스냅샷의
+  `http_calls`로 확인합니다.
+- 등록하지 않은 요청은 `Unexpected external URL`로 실패합니다. 등록했지만 요청되지 않은 라우트는
+  보고서에 경고로 남고, `strict_unused`가 `true`면 실패합니다.
+- API 키는 `test-only-key`로 고정되며 보고서에는 `<key>`로 표시합니다.
+- Gemini 응답은 종류별(`easy_text`, `summary`) 파일 목록을 순서대로 소비합니다. 응답이 모자라거나
+  남으면 실패합니다. 오류는 `{"__error__": "timeout"}`처럼 적습니다
+  (`timeout`, `connection`, `api_error`, `too_large`).
+- 재시도와 요청 간격의 대기(`sleep`)는 실제로 기다리지 않고 보고서에 기록만 합니다.
+- `now`(요약 기준 시각)는 요약 step과 함께 Phase B에서 사용합니다.
+
+### 기대값 정규화
+
+- 행은 `category/source_board/post_sn` 공지 키로 묶습니다. `notice_files`는 `공지 키|kind|file_key`입니다.
+  `id`, `notice_id`는 기록하지 않습니다.
+- 시각 컬럼은 처음 나타나면 `"<set>"`, 이전 step에도 있던 행이면 `"<changed>"` 또는
+  `"<unchanged>"`로 적습니다. UUID와 `execution_token`은 `"<set>"`입니다.
+- 300자를 넘는 텍스트는 길이와 sha256 앞 16자로 적습니다. 원문은 보고서의 스냅샷 전체에서 볼 수
+  있습니다.
+- `row_counts`에 공개 스키마 모든 테이블의 행 수를 적어, 스냅샷 대상이 아닌 테이블의 변화도 잡습니다.
+- `anon`은 같은 DB에서 `set local role anon`으로 앱 권한과 같은 컬럼만 조회합니다. 마이그레이션이
+  anon의 컬럼 권한을 바꾸면 하네스(`harness/snapshot.py`의 `ANON_COLUMNS`)가 실패하므로, 목록과
+  기대값을 함께 확인합니다.

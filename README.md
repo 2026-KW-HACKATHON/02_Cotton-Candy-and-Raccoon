@@ -60,7 +60,7 @@
 │       │   ├── sources/            # 외부 데이터 수집
 │       │   ├── storage/            # 저장소 연동
 │       │   └── transform/          # 데이터 변환
-│       └── tests/              # unit/(영역별 단위 테스트), support/(공용 helper), fixtures/
+│       └── tests/              # unit/(단위), e2e/(API 응답→DB 검증), support/(공용 helper), fixtures/
 ├── supabase/
 │   ├── config.toml                # 로컬 Supabase 설정
 │   └── migrations/                # DB 스키마 변경 이력

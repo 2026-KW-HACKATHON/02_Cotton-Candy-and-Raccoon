@@ -1,0 +1,68 @@
+{
+  "exit_code": 1,
+  "report": null,
+  "stderr": [
+    "목록 수집 실패: 노원구 API HTTP 오류: 500"
+  ],
+  "http_calls": [
+    "nowon_api 1-50",
+    "nowon_api 1-50",
+    "nowon_api 1-50"
+  ],
+  "gemini_calls": {},
+  "db": {
+    "notices": {
+      "nowon/1001/900301": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "공영주차장 정기 점검 안내",
+        "department": "주차관리과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900301",
+        "body_html": "<p>관내 공영주차장 정기 점검으로 이용이 일시 제한됩니다.</p><p>점검일: 2026-10-15</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {},
+    "notice_summary_executions": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_easy_texts": 0,
+    "notice_files": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 1
+  },
+  "anon": {
+    "notices": {
+      "nowon/1001/900301": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "공영주차장 정기 점검 안내",
+        "department": "주차관리과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900301",
+        "body_html": "<p>관내 공영주차장 정기 점검으로 이용이 일시 제한됩니다.</p><p>점검일: 2026-10-15</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {}
+  }
+}
