@@ -8,6 +8,7 @@ import { useDisplayPreferences } from "@/shared/accessibility/displayPreferences
 
 import { useAppStartup } from "@/features/settings/hooks/useAppStartup";
 import { AnimatedSplashScreen } from "@/features/settings/screens/AnimatedSplashScreen";
+import { NotificationNavigation } from "@/features/notifications/NotificationNavigation";
 
 export default function RootLayout() {
   const startup = useAppStartup();
@@ -18,6 +19,7 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
         <StatusBar style="dark" />
+        {startup.ready && onboardingComplete && <NotificationNavigation />}
         {!startup.ready ? (
           startup.assetsReady ? (
             <AnimatedSplashScreen

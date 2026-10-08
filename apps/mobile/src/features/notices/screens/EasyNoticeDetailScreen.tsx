@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { DeadlineReminder } from "@/features/notifications/DeadlineReminder";
 import { Modal, StyleSheet, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { Screen } from "@/shared/ui/Screen";
@@ -82,6 +83,7 @@ export function EasyNoticeDetailScreen() {
             retry={() => void query.refetch()}
           />
           <NoticeReadStatus notice={notice} />
+          <DeadlineReminder key={notice.id} notice={notice} />
           <View style={{ gap: 12 }}>
             <AppText size={EASY.title} variant="display">
               {notice.title}

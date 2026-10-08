@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { DeadlineReminder } from "@/features/notifications/DeadlineReminder";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
@@ -113,6 +114,7 @@ function StandardNoticeDetailScreen() {
             retry={() => void query.refetch()}
           />
           <NoticeReadStatus notice={notice} />
+          <DeadlineReminder key={notice.id} notice={notice} />
           <View style={styles.metadata}>
             <CategoryBadge>{notice.category}</CategoryBadge>
             <AppText secondary size={11.08} style={{ flexShrink: 1 }}>
