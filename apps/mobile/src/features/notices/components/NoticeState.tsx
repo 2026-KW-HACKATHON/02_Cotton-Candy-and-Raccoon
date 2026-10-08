@@ -1,36 +1,57 @@
-import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { AppText } from "@/shared/ui/AppText";
-import { COLORS, RADIUS } from "@/shared/theme/tokens";
-
+import { COLORS } from "@/shared/theme/tokens";
+import { noticeErrorPresentation } from "../domain/noticeError";
+import { NoticeActionButton } from "./NoticeActionButton";
 export function NoticeState({
   loading,
   error,
+  errorDetail,
   message,
   retry,
+  retrying = false,
+  comfortable = false,
 }: {
   loading?: boolean;
   error?: boolean;
+  errorDetail?: unknown;
   message?: string;
   retry?: () => void;
+  retrying?: boolean;
+  comfortable?: boolean;
 }) {
+  const failure = noticeErrorPresentation(errorDetail);
   return (
     <View style={styles.box} accessibilityLiveRegion="polite">
       {loading && <ActivityIndicator color={COLORS.primary} />}
-      <AppText secondary style={{ textAlign: "center" }}>
+      <AppText
+        variant="bold"
+        size={comfortable ? 20 : 16}
+        style={{ textAlign: "center" }}
+      >
         {loading
-          ? "공문을 불러오고 있어요."
+          ? "공문을 불러오는 중이에요."
           : error
-            ? "공문을 불러오지 못했어요."
+            ? failure.title
             : message}
       </AppText>
       {error && (
-        <Pressable
-          accessibilityRole="button"
-          onPress={retry}
-          style={styles.retry}
+        <AppText
+          secondary
+          size={comfortable ? 20 : 14}
+          style={{ textAlign: "center" }}
         >
-          <AppText style={{ color: COLORS.primary }}>다시 시도</AppText>
-        </Pressable>
+          {failure.description}
+        </AppText>
+      )}
+      {error && failure.retryable && retry && (
+        <NoticeActionButton
+          label={retrying ? "불러오는 중…" : "다시 불러오기"}
+          comfortable={comfortable}
+          filled
+          disabled={retrying}
+          onPress={retry}
+        />
       )}
     </View>
   );
@@ -40,7 +61,8 @@ const styles = StyleSheet.create({
     padding: 24,
     gap: 12,
     backgroundColor: COLORS.soft,
-    borderRadius: RADIUS.card,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
-  retry: { minHeight: 44, alignItems: "center", justifyContent: "center" },
 });

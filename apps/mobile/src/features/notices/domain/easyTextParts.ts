@@ -6,8 +6,9 @@ export function easyTextParts(
   original: string,
   easy: string,
   changes: unknown,
+  mode: "plain" | "original" = "plain",
 ): EasyPart[] {
-  const fallback = [{ text: easy }];
+  const fallback = [{ text: mode === "original" ? original : easy }];
   if (!Array.isArray(changes)) return fallback;
   const points = Array.from(original);
   const parts: EasyPart[] = [];
@@ -44,5 +45,40 @@ export function easyTextParts(
   }
   if (cursor < points.length)
     parts.push({ text: points.slice(cursor).join("") });
-  return parts.map((part) => part.text).join("") === easy ? parts : fallback;
+  if (parts.map((part) => part.text).join("") !== easy) return fallback;
+  return mode === "original"
+    ? parts.map((part) => ({ ...part, text: part.term?.original ?? part.text }))
+    : parts;
+}
+
+/** 현재 본문과 변환 원문이 일치할 때만 원문에도 변환 위치를 연결한다. */
+export function noticeDocumentParts(
+  notice: {
+    original: string;
+    easy: string;
+    hasEasyText?: boolean;
+    easyOriginal: string;
+    easyChanges: unknown;
+  },
+  easy: boolean,
+): EasyPart[] {
+  const hasEasyText = notice.hasEasyText && !!notice.easy;
+  if (easy && hasEasyText) {
+    return easyTextParts(notice.easyOriginal, notice.easy, notice.easyChanges);
+  }
+  if (hasEasyText && notice.original === notice.easyOriginal) {
+    return easyTextParts(
+      notice.easyOriginal,
+      notice.easy,
+      notice.easyChanges,
+      "original",
+    );
+  }
+  return [
+    {
+      text:
+        notice.original ||
+        "본문 텍스트가 없습니다. 원문과 첨부를 확인해 주세요.",
+    },
+  ];
 }

@@ -19,6 +19,23 @@ const loaded = { exports: {} };
 new Function("module", "exports", compiled)(loaded, loaded.exports);
 const { getSummaryRows, isNoticeExpired, splitGlossaryText } = loaded.exports;
 
+test("원문 용어도 반복·중첩 표현을 보존하며 같은 뜻풀이에 연결한다", () => {
+  const terms = [
+    { plain: "알림", original: "송달" },
+    { plain: "게시판으로 알림", original: "공시송달" },
+  ];
+  const text = "공시송달 공고 후 송달과 공시송달을 확인합니다.";
+  const parts = splitGlossaryText(text, terms, "original");
+  assert.equal(parts.map((part) => part.text).join(""), text);
+  assert.deepEqual(
+    parts.filter((part) => part.term).map((part) => part.term.plain),
+    ["게시판으로 알림", "알림", "게시판으로 알림"],
+  );
+  assert.deepEqual(splitGlossaryText("용어 없음", [], "original"), [
+    { text: "용어 없음" },
+  ]);
+});
+
 test("누락된 요약 항목은 숨기고 나머지 항목의 순서를 유지한다", () => {
   const notice = {
     audience: "주민",
