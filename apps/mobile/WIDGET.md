@@ -24,6 +24,8 @@ npx expo run:android
 
 로컬 빌드에는 프로젝트 Expo 버전에서 요구하는 JDK와 Android SDK가 필요합니다. 배포 APK에서는 JS 번들을 포함해 Metro 없이 확인합니다. 개발 빌드는 Metro 연결이 필요할 수 있습니다.
 
+EAS 클라우드 빌드는 기존 `pjparks-team/mobile` 프로젝트에 연결되어 있습니다. `preview` 환경에 Supabase 공개 URL·publishable key를 설정한 뒤 `npx eas-cli build --platform android --profile preview`로 내부 테스트 APK를 만듭니다. 서버용 비밀 키를 앱에 포함하지 않습니다. 동일한 패키지명의 다른 기능 브랜치 APK를 설치하면 해당 앱을 교체하므로, 이 APK는 위젯 브랜치 검증용으로 구분합니다.
+
 1. Android 홈 화면을 길게 눌러 위젯 목록에서 ‘월계 공지 → 오늘의 공문’을 추가합니다.
 2. 너구리가 편지를 들고 있는 모습, 제목 잘림 처리, 날짜·출처를 확인합니다.
 3. 앱 화면을 닫은 상태에서 갱신 버튼을 누르고 실제 공개 공지와 비교합니다.

@@ -2,6 +2,12 @@
   "expo": {
     "name": "월계 공지",
     "slug": "mobile",
+    "owner": "pjparks-team",
+    "extra": {
+      "eas": {
+        "projectId": "aa71300e-7cd6-4ba8-a87d-b29b2358872b"
+      }
+    },
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
