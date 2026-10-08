@@ -1,11 +1,12 @@
 """Guard disposable CI setup and reject reports which silently skip DB tests."""
 
 import importlib.util
+import re
 from types import ModuleType
 from unittest.mock import MagicMock
 
 import pytest
-from support.paths import PIPELINE_DIR
+from support.paths import PIPELINE_DIR, REPO_ROOT, TESTS_DIR
 
 
 def _load_script(name: str) -> ModuleType:
@@ -144,3 +145,20 @@ def test_missing_and_malformed_reports_do_not_pass_ci(tmp_path):
     path.write_text("<broken", encoding="utf-8")
     with pytest.raises(report.TestReportError, match="invalid_or_missing"):
         report.check_test_report(path)
+
+
+def test_every_pipeline_test_file_is_inside_a_folder_that_ci_runs():
+    # CI runs pytest per folder; a test placed elsewhere would never run and never be
+    # counted by the skip check (issue #47). Compare ci.yml targets with every test file.
+    workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    targets = [
+        (PIPELINE_DIR / target).resolve()
+        for target in re.findall(r"\bpytest\s+([^\s-]\S*)", workflow)
+    ]
+    assert targets, "no pytest targets found in ci.yml"
+    not_run = sorted(
+        str(path.relative_to(TESTS_DIR))
+        for path in TESTS_DIR.rglob("test_*.py")
+        if not any(path.resolve().is_relative_to(target) for target in targets)
+    )
+    assert not_run == [], f"test files outside CI pytest targets: {not_run}"

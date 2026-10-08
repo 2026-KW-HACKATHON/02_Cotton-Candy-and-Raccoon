@@ -685,7 +685,7 @@ python -m uv run pytest
 `tests/unit/legacy_flow/`는 수집에서 저장까지의 흐름을 확인하는 테스트의 임시 위치이며,
 같은 내용을 e2e 케이스로 대체한 뒤 삭제합니다. 남길 테스트의 기준은 CONTRIBUTING.md를 따릅니다.
 
-`tests/integration/test_summary_field_preservation.py`는 #40의 대상·기한 누락 조합,
+`tests/unit/storage/test_summary_field_preservation.py`는 #40의 대상·기한 누락 조합,
 첨부 링크 보존, 최초 부분 결과와 정상 교체, 동시 실행을 검증합니다. 실제 PostgreSQL에
 commit한 뒤 별도의 익명 연결에서 공개 결과를 읽습니다. Gemini와 다운로드 HTTP 응답만
 대체하며 실제 외부 서비스의 요약 품질은 검증하지 않습니다. 전체 마이그레이션이 적용된
@@ -695,7 +695,10 @@ CI는 임시 PostgreSQL에 전체 마이그레이션을 적용해 파이프라�
 별도의 빈 DB에서 스키마·권한을 검증합니다. 검사 결과가 없거나 건너뛴 검사가 있으면
 실패 처리합니다. `scripts/prepare_test_databases.py`는 CI 전용 DB 이름과 로컬 연결을
 사용하며, 이미 있는 DB를 초기화하지 않습니다. CI는 `tests/unit`, `tests/e2e`,
-`supabase/tests`를 각각 실행해 세 보고서 모두 skip이 없는지 확인합니다.
+`supabase/tests`를 각각 실행해 세 보고서 모두 skip이 없는지 확인합니다. 이 세 폴더 밖에 있는
+`test_*.py`는 CI에서 실행되지 않으므로, `tests/unit/tooling/test_ci_database_checks.py`가 `ci.yml`의
+`pytest` 대상과 `tests/` 아래 테스트 파일을 비교해 빠진 파일이 있으면 실패합니다. 새 테스트 폴더를
+만들 때는 `ci.yml`에 실행 단계를 함께 추가합니다.
 
 ## e2e 검증
 
