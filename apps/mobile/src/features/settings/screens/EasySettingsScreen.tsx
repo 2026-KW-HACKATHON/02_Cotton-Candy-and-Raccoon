@@ -72,6 +72,10 @@ export function EasySettingsScreen() {
           <AppText size={EASY.body}>이 크기로 공문을 읽습니다.</AppText>
         </View>
         <EasyButton
+          label="관심 키워드 알림"
+          onPress={() => router.push("/keyword-notifications")}
+        />
+        <EasyButton
           label="사용 설명 다시 보기"
           onPress={() => router.push("/onboarding")}
         />

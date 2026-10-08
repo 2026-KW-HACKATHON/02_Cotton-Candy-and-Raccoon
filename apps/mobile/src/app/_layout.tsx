@@ -1,3 +1,4 @@
+import { useKeywordNotifications } from "@/features/keyword-notifications/useKeywordNotifications";
 import { NotificationNavigation } from "@/features/notifications/NotificationNavigation";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Stack } from "expo-router";
@@ -16,6 +17,7 @@ export default function RootLayout() {
   const onboardingComplete = useDisplayPreferences(
     (state) => state.onboardingComplete,
   );
+  useKeywordNotifications(startup.ready && onboardingComplete);
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
@@ -39,6 +41,7 @@ export default function RootLayout() {
               <Stack.Protected guard={onboardingComplete}>
                 <Stack.Screen name="(tabs)" />
                 <Stack.Screen name="settings" />
+                <Stack.Screen name="keyword-notifications" />
                 <Stack.Screen name="notice/[id]" />
               </Stack.Protected>
               <Stack.Screen name="onboarding" />

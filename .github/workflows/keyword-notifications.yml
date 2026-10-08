@@ -1,0 +1,27 @@
+name: Keyword notifications
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: keyword-notifications-production
+  cancel-in-progress: false
+jobs:
+  dispatch:
+    if: vars.PIPELINE_KEYWORD_PUSH_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: services/pipeline
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
+      - run: uv sync --no-dev --frozen
+      - name: Send queued notices and check receipts
+        env:
+          DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+          EXPO_ACCESS_TOKEN: ${{ secrets.EXPO_ACCESS_TOKEN }}
+        run: uv run --no-dev --frozen python -m pipeline.keyword_notifications
