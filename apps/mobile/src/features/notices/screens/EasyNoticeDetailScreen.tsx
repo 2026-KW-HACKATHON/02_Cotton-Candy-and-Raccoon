@@ -24,9 +24,15 @@ export function EasyNoticeDetailScreen() {
   const query = useNotice(id);
   const saved = useBookmarkStore((state) => state.savedIds.includes(id));
   const toggleBookmark = useBookmarkStore((state) => state.toggleBookmark);
-  const [easy, setEasy] = useState(false);
+  const [easyRequested, setEasy] = useState(false);
   const [term, setTerm] = useState<GlossaryTerm | null>(null);
   const notice = query.data;
+  // 재조회로 쉬운말이 무효화되면 즉시 원문을 표시하고 이전 선택과 단어 설명을 해제한다.
+  const easy = easyRequested && notice?.hasEasyText === true;
+  if (easyRequested && notice && !notice.hasEasyText) {
+    setEasy(false);
+    setTerm(null);
+  }
   const rows = notice ? getSummaryRows(notice) : [];
   return (
     <Screen
@@ -143,7 +149,7 @@ export function EasyNoticeDetailScreen() {
             <EasyButton
               label={easy ? "원문으로 읽기" : "쉬운말로 읽기"}
               selected={easy}
-              disabled={!notice.hasEasyText}
+              disabled={!easy && !notice.hasEasyText}
               onPress={() => {
                 setTerm(null);
                 setEasy((value) => !value);
