@@ -963,3 +963,23 @@ exit code, 외부 요청 순서, Gemini 호출 수, 테이블별 행 수, 저장
   `app_notice_list`, `app_notice_detail` view의 결과도 같은 공지 키로 기록합니다. 마이그레이션이
   anon의 컬럼 권한을 바꾸면 하네스(`harness/snapshot.py`의 `ANON_COLUMNS`, `APP_VIEWS`)가 실패하므로,
   목록과 기대값을 함께 확인합니다.
+
+
+### 원문이 없는 노원구 공지 (#71)
+
+노원구가 명시적으로 게시물 없음 응답을 반환하면 `source_page_missing`을
+`skipped`에 기록합니다. `skipped_count`는 건너뜀 건수이고 `failed_count`는
+공지별 실제 실패 건수입니다. `collect-one`, 전체 수집, `new`/`refresh`에 적용합니다.
+본문이 비어 있거나 첨부만 있다는 이유로 건너뛰지는 않습니다.
+
+예약 수집은 `selected_count = saved_count + skipped_count + failed_count`입니다.
+전체 수집에서는 제한 적용 후 선택한 공지 수가 같은 합계이며, `listed_count`는
+제한 적용 전 목록 수입니다. 기존 `attempted_count`는 목록 충돌과 이전 오류로
+시도하지 못한 항목을 제외하며, 원문 없음 응답을 받은 항목은 포함합니다.
+목록 조회 실패는 `failed_pages`/`failed_ranges`에 별도로 남습니다.
+
+목록 수집이 완료되고 실제 실패나 수동 제한이 없으면, 모두 건너뛴 경우에도
+완료로 보고하며 종료 코드 0을 반환합니다. AI 후처리 실패가 있으면 기존처럼
+종료 코드 1입니다. 원문 없음 건은 저장·후처리하지 않으며 기존 DB 행의 내용과
+공개 상태도 바꾸지 않습니다. 삭제 또는 비공개라고 확정하는 상태는 아닙니다.
+기존 Actions는 CLI 종료 코드를 사용하므로 워크플로 변경 없이 적용됩니다.

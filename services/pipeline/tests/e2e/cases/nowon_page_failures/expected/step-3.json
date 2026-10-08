@@ -1,29 +1,41 @@
 {
-  "exit_code": 0,
+  "exit_code": 1,
   "report": {
-    "mode": "new",
+    "mode": "refresh",
     "total_count": 3,
     "selected_count": 3,
-    "saved_count": 2,
-    "skipped_count": 1,
+    "saved_count": 0,
+    "skipped_count": 2,
     "skipped": [
       {
         "post_sn": "900442",
         "stage": "page_missing",
         "reason_code": "source_page_missing"
+      },
+      {
+        "post_sn": "900441",
+        "stage": "page_missing",
+        "reason_code": "source_page_missing"
       }
     ],
-    "failed_count": 0,
+    "failed_count": 1,
     "pages_read": 1,
-    "initial_baseline": true,
+    "initial_baseline": false,
     "listing_complete": true,
     "failed_ranges": [],
-    "complete": true,
-    "failures": []
+    "complete": false,
+    "failures": [
+      {
+        "post_sn": "900443",
+        "stage": "page",
+        "reason_code": "page_unavailable"
+      }
+    ]
   },
   "stderr": [],
   "http_calls": [
     "nowon_api 1-50",
+    "nowon_page 900443",
     "nowon_page 900443",
     "nowon_page 900443",
     "nowon_page 900442",
@@ -43,9 +55,9 @@
         "license_type": "KOGL-4",
         "is_modified": false,
         "is_visible": true,
-        "created_at": "<set>",
-        "updated_at": "<set>",
-        "content_updated_at": "<set>",
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
         "content_revision": 1,
         "body_text": "진료 시간이 변경됩니다."
       },
@@ -60,9 +72,9 @@
         "license_type": "KOGL-4",
         "is_modified": false,
         "is_visible": true,
-        "created_at": "<set>",
-        "updated_at": "<set>",
-        "content_updated_at": "<set>",
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
         "content_revision": 1,
         "body_text": "도서관 휴관을 안내합니다."
       }
@@ -93,9 +105,9 @@
         "license_type": "KOGL-4",
         "is_modified": false,
         "is_visible": true,
-        "created_at": "<set>",
-        "updated_at": "<set>",
-        "content_updated_at": "<set>",
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
         "content_revision": 1,
         "body_text": "진료 시간이 변경됩니다."
       },
@@ -110,9 +122,9 @@
         "license_type": "KOGL-4",
         "is_modified": false,
         "is_visible": true,
-        "created_at": "<set>",
-        "updated_at": "<set>",
-        "content_updated_at": "<set>",
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
         "content_revision": 1,
         "body_text": "도서관 휴관을 안내합니다."
       }
@@ -128,7 +140,7 @@
         "title": "보건소 진료 시간 변경",
         "department": "보건정책과",
         "registered_on": "2026-10-07",
-        "content_updated_at": "<set>",
+        "content_updated_at": "<unchanged>",
         "is_modified": false,
         "summary_status": null,
         "display_status": "none",
@@ -147,7 +159,7 @@
         "title": "도서관 휴관 안내",
         "department": "문화체육과",
         "registered_on": "2026-10-08",
-        "content_updated_at": "<set>",
+        "content_updated_at": "<unchanged>",
         "is_modified": false,
         "summary_status": null,
         "display_status": "none",
@@ -168,7 +180,7 @@
         "title": "보건소 진료 시간 변경",
         "department": "보건정책과",
         "registered_on": "2026-10-07",
-        "content_updated_at": "<set>",
+        "content_updated_at": "<unchanged>",
         "is_modified": false,
         "summary_status": null,
         "display_status": "none",
@@ -201,7 +213,7 @@
         "title": "도서관 휴관 안내",
         "department": "문화체육과",
         "registered_on": "2026-10-08",
-        "content_updated_at": "<set>",
+        "content_updated_at": "<unchanged>",
         "is_modified": false,
         "summary_status": null,
         "display_status": "none",
