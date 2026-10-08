@@ -8,6 +8,9 @@
     "scheme": "mobile",
     "userInterfaceStyle": "automatic",
     "android": {
+      "permissions": [
+        "android.permission.SCHEDULE_EXACT_ALARM"
+      ],
       "package": "com.cottoncandyraccoon.wolgyenotice",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -22,6 +25,7 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "expo-notifications",
       "expo-router",
       [
         "expo-splash-screen",
@@ -36,6 +40,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "aa71300e-7cd6-4ba8-a87d-b29b2358872b"
+      }
+    },
+    "owner": "pjparks-team"
   }
 }
