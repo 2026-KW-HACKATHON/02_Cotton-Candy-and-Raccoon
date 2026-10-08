@@ -14,10 +14,10 @@ import psycopg
 import pytest
 from e2e.harness import gemini_replay, http_replay
 from e2e.harness.http_replay import API_KEY, CaseDefinitionError
-from e2e.harness.snapshot import normalize, read_anon, read_database
+from e2e.harness.snapshot import normalize, normalize_json, read_anon, read_database
 from support.db import database_uri
 
-STEP_TYPES = ("collect", "collect-one", "sql")
+STEP_TYPES = ("collect", "collect-one", "notice-glossary", "sql")
 # Values in the CLI JSON report that change between runs; none are known today.
 VOLATILE_REPORT_KEYS: frozenset[str] = frozenset()
 
@@ -60,7 +60,10 @@ def load_case(path: Path) -> Case:
 
 def configure_environment(monkeypatch: pytest.MonkeyPatch, info: dict[str, str]) -> None:
     monkeypatch.setenv("DATABASE_URL", database_uri(info))
-    for name in ("NOWON_NOTICE_API_KEY", "SEOUL_NEWS_API_KEY", "SEOUL_API_KEY", "GEMINI_API_KEY"):
+    for name in (
+        "NOWON_NOTICE_API_KEY", "SEOUL_NEWS_API_KEY", "SEOUL_API_KEY", "GEMINI_API_KEY",
+        "STDICT_API_KEY",
+    ):
         # GEMINI_API_KEY must be set: otherwise the pipeline falls back to a local .env file.
         monkeypatch.setenv(name, API_KEY)
 
@@ -115,9 +118,12 @@ def _parse_report(stdout: str) -> Any:
     if not lines:
         return None
     try:
-        return _drop_volatile(json.loads(lines[-1]))
+        return _drop_volatile(json.loads(stdout))
     except ValueError:
-        return None
+        try:
+            return _drop_volatile(json.loads(lines[-1]))
+        except ValueError:
+            return None
 
 
 def run_step(
@@ -143,11 +149,18 @@ def run_step(
     if step["type"] == "sql":
         conn.execute(step["sql"])
     else:
-        argv = [step["type"], *[str(arg) for arg in step.get("args", [])]]
+        args = [str(arg) for arg in step.get("args", [])]
+        if step["type"] == "notice-glossary":
+            from pipeline.glossary.cli import main
+
+            argv = args
+        else:
+            main = cli.main
+            argv = [step["type"], *args]
         out, err = io.StringIO(), io.StringIO()
         try:
             with redirect_stdout(out), redirect_stderr(err):
-                result.exit_code = cli.main(argv)
+                result.exit_code = main(argv)
         except SystemExit as exit_:
             result.exit_code = exit_.code if isinstance(exit_.code, int) else 2
         except Exception as error:  # reported as a step problem, with the report still written
@@ -178,7 +191,7 @@ def run_step(
     if step["type"] != "sql":
         snapshot |= {
             "exit_code": result.exit_code,
-            "report": result.report,
+            "report": normalize_json(result.report, previous.report if previous else None),
             "stderr": [line for line in result.stderr.splitlines() if line.strip()],
         }
     snapshot |= {

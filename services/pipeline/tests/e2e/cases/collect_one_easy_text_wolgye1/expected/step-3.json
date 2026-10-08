@@ -46,10 +46,19 @@
         "dictionary_candidates": []
       }
     },
+    "notice_dictionary_links": {
+      "dong/1042/20261006090000501": {
+        "easy_text_token": "<unchanged>",
+        "candidates": [],
+        "generated_at": "<unchanged>"
+      }
+    },
+    "standard_dictionary_cache": {},
     "notice_summary_executions": {}
   },
   "row_counts": {
     "holidays": 0,
+    "notice_dictionary_links": 1,
     "notice_easy_texts": 1,
     "notice_files": 0,
     "notice_summaries": 0,
@@ -100,6 +109,32 @@
         "body_text_present": true,
         "attachment_content_included": false,
         "dictionary_candidates": []
+      }
+    },
+    "get_notice_dictionary": {
+      "dong/1042/20261006090000501": {
+        "result": {
+          "attachment_content_included": false,
+          "body_text_present": true,
+          "changes": [
+            {
+              "context": "참가자를 모집합니다",
+              "end": 33,
+              "original": "참가자를",
+              "replacement": "참여할 사람을",
+              "start": 29
+            }
+          ],
+          "dictionary_candidates": [],
+          "dictionary_status": "complete",
+          "easy_text": "월계1동 바둑 교실 참가자 모집\n월계1동 바둑 교실 참여할 사람을 모집합니다.",
+          "generated_at": "<unchanged>",
+          "model": "gemini-3.5-flash-lite",
+          "notice_id": 1,
+          "notice_revision": "133451aa612c034b9bdf1c28f113dd21a633b668d461e7587715422423a24740",
+          "original_text": "월계1동 바둑 교실 참가자 모집\n월계1동 바둑 교실 참가자를 모집합니다.",
+          "prompt_version": "easy-language-v8"
+        }
       }
     }
   }

@@ -41,6 +41,13 @@ def conn() -> MagicMock:
     return connection
 
 
+@pytest.fixture(autouse=True)
+def dictionary(monkeypatch):
+    lookup = MagicMock(return_value={"dictionary_status": "complete"})
+    monkeypatch.setattr("pipeline.after_collect.enrich_notice_dictionary", lookup)
+    return lookup
+
+
 def test_separate_transaction_reuses_current_cache_without_forced_refresh(
     processor: AfterCollectEasyText,
     conn: MagicMock,
@@ -69,6 +76,10 @@ def test_separate_transaction_reuses_current_cache_without_forced_refresh(
         "failed_count": 0,
         "skipped": [],
         "failures": [],
+        "dictionary": {
+            "attempted_count": 1, "complete_count": 1, "partial_count": 0,
+            "pending_count": 0, "failures": [],
+        },
     }
 
 
@@ -77,6 +88,7 @@ def test_bodyless_notice_is_skipped_without_api_work(
     processor: AfterCollectEasyText,
     conn: MagicMock,
     raced: bool,
+    dictionary,
 ) -> None:
     with (
         patch("pipeline.after_collect.psycopg.connect", return_value=conn),
@@ -96,6 +108,7 @@ def test_bodyless_notice_is_skipped_without_api_work(
     assert report["successful_count"] == report["failed_count"] == 0
     assert report["skipped_count"] == 1
     assert report["skipped"] == [{"notice_id": 42, "reason_code": "no_body_text"}]
+    dictionary.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -161,3 +174,44 @@ def test_commit_failure_does_not_claim_success_or_skip(
     assert processor.report()["successful_count"] == 0
     assert processor.report()["skipped_count"] == 0
     assert processor.report()["failed_count"] == 1
+
+
+@pytest.mark.parametrize("status", ["partial", "pending"])
+def test_dictionary_failure_retains_conversion_success_and_later_notice_runs(
+    processor, conn, dictionary, status,
+):
+    dictionary.side_effect = [{"dictionary_status": status}, {"dictionary_status": "complete"}]
+    with (
+        patch("pipeline.after_collect.psycopg.connect", return_value=conn),
+        patch("pipeline.after_collect.load_notice_glossary_input", return_value=_source()),
+        patch("pipeline.after_collect.simplify_and_store_notice"),
+    ):
+        processor(42)
+        processor(43)
+    report = processor.report()
+    assert report["successful_count"] == 2 and report["failed_count"] == 0
+    assert report["complete"] is False
+    assert report["dictionary"]["complete_count"] == 1
+    assert report["dictionary"]["failures"] == [
+        {"notice_id": 42, "reason_code": "dictionary_incomplete"},
+    ]
+
+
+def test_dictionary_starts_after_easy_text_connection_closes_and_masks_errors(
+    processor, conn, dictionary,
+):
+    def fail(*args):
+        conn.__exit__.assert_called_once_with(None, None, None)
+        raise RuntimeError("private-api-key")
+
+    dictionary.side_effect = fail
+    with (
+        patch("pipeline.after_collect.psycopg.connect", return_value=conn),
+        patch("pipeline.after_collect.load_notice_glossary_input", return_value=_source()),
+        patch("pipeline.after_collect.simplify_and_store_notice"),
+    ):
+        processor(42)
+    report = processor.report()
+    assert report["successful_count"] == 1 and report["complete"] is False
+    assert "private" not in json.dumps(report)
+    assert report["dictionary"]["failures"][0]["reason_code"] == "dictionary_processing_failed"

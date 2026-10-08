@@ -49,10 +49,13 @@
     },
     "notice_summaries": {},
     "notice_easy_texts": {},
+    "notice_dictionary_links": {},
+    "standard_dictionary_cache": {},
     "notice_summary_executions": {}
   },
   "row_counts": {
     "holidays": 0,
+    "notice_dictionary_links": 0,
     "notice_easy_texts": 0,
     "notice_files": 1,
     "notice_summaries": 0,
@@ -86,6 +89,11 @@
       }
     },
     "notice_summaries": {},
-    "notice_easy_texts": {}
+    "notice_easy_texts": {},
+    "get_notice_dictionary": {
+      "nowon/1001/900431": {
+        "result": null
+      }
+    }
   }
 }
