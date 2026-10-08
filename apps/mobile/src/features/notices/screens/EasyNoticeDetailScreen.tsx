@@ -6,14 +6,16 @@ import { goBack } from "@/shared/ui/Header";
 import { AppText } from "@/shared/ui/AppText";
 import { EasyButton } from "@/shared/ui/EasyButton";
 import { COLORS, EASY } from "@/shared/theme/tokens";
+import { NoticeLinks } from "../components/NoticeLinks";
+import {
+  NoticeReadStatus,
+  NoticeQueryFeedback,
+} from "../components/NoticeReadStatus";
 import { useNotice } from "../hooks/useNotices";
 import { useBookmarkStore } from "../store/bookmarkStore";
 import { EasyNoticeState } from "../components/EasyNoticeState";
-import {
-  getSummaryRows,
-  isNoticeExpired,
-  splitGlossaryText,
-} from "../domain/noticePresentation";
+import { getSummaryRows } from "../domain/noticePresentation";
+import { easyTextParts } from "../domain/easyTextParts";
 import { type GlossaryTerm } from "../types/notice";
 
 export function EasyNoticeDetailScreen() {
@@ -54,7 +56,7 @@ export function EasyNoticeDetailScreen() {
         gap: EASY.gap,
       }}
     >
-      {query.isPending || query.isError ? (
+      {query.isPending ? (
         <EasyNoticeState
           loading={query.isPending}
           error={query.isError}
@@ -63,9 +65,23 @@ export function EasyNoticeDetailScreen() {
           }}
         />
       ) : !notice ? (
-        <EasyNoticeState message="공문을 찾을 수 없습니다" />
+        query.isError ? (
+          <NoticeQueryFeedback
+            error={query.error}
+            hasData={false}
+            retry={() => void query.refetch()}
+          />
+        ) : (
+          <EasyNoticeState message="공문을 찾을 수 없습니다" />
+        )
       ) : (
         <>
+          <NoticeQueryFeedback
+            error={query.error}
+            hasData={true}
+            retry={() => void query.refetch()}
+          />
+          <NoticeReadStatus notice={notice} />
           <View style={{ gap: 12 }}>
             <AppText size={EASY.title} variant="display">
               {notice.title}
@@ -75,18 +91,6 @@ export function EasyNoticeDetailScreen() {
               secondary
             >{`게시일 ${notice.publishedAt.replaceAll(" ", "")}\n정보제공처 ${notice.provider}`}</AppText>
           </View>
-          {isNoticeExpired(notice) && (
-            <View style={styles.card}>
-              <AppText
-                size={EASY.body}
-                variant="bold"
-                style={{ color: EASY.expired }}
-              >
-                종료된 공문 · 신청기한{"\n"}
-                {notice.deadline}
-              </AppText>
-            </View>
-          )}
           {rows.length > 0 && (
             <View
               style={[styles.card, { backgroundColor: COLORS.soft, gap: 12 }]}
@@ -119,33 +123,41 @@ export function EasyNoticeDetailScreen() {
               onPress={() => setEasy((value) => !value)}
             />
             <AppText size={EASY.body}>
-              {easy
-                ? splitGlossaryText(notice.easy, notice.terms).map(
-                    (part, index) =>
-                      part.term ? (
-                        <AppText
-                          key={index}
-                          size={EASY.body}
-                          accessibilityRole="link"
-                          accessibilityLabel={`${part.text}, 원래 용어 보기`}
-                          onPress={() => setTerm(part.term ?? null)}
-                          style={{
-                            color: COLORS.primary,
-                            textDecorationLine: "underline",
-                          }}
-                        >
-                          {part.text}
-                        </AppText>
-                      ) : (
-                        part.text
-                      ),
+              {easy && notice.hasEasyText && notice.easy
+                ? easyTextParts(
+                    notice.easyOriginal,
+                    notice.easy,
+                    notice.easyChanges,
+                  ).map((part, index) =>
+                    part.term ? (
+                      <AppText
+                        key={index}
+                        size={EASY.body}
+                        accessibilityRole="link"
+                        accessibilityLabel={`${part.text}, 원래 용어 보기`}
+                        onPress={() => setTerm(part.term ?? null)}
+                        style={{
+                          color: COLORS.primary,
+                          textDecorationLine: "underline",
+                        }}
+                      >
+                        {part.text}
+                      </AppText>
+                    ) : (
+                      part.text
+                    ),
                   )
-                : notice.original}
+                : notice.original ||
+                  "본문 텍스트가 없습니다. 원문과 첨부를 확인해 주세요."}
             </AppText>
           </View>
-          <AppText size={14} secondary>
-            화면 검토용 예시 공문입니다. 실제 공고가 아닙니다.
-          </AppText>
+          {easy && (!notice.hasEasyText || !notice.easy) && (
+            <AppText>쉬운말 결과가 없어 원문을 표시합니다.</AppText>
+          )}
+          {easy && notice.hasEasyText && !notice.attachmentContentIncluded && (
+            <AppText>첨부 내용은 쉬운말 변환에 포함되지 않았습니다.</AppText>
+          )}
+          <NoticeLinks notice={notice} />
         </>
       )}
       <Modal

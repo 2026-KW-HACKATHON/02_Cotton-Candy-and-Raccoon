@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { NoticeQueryFeedback } from "../components/NoticeReadStatus";
+import { useEffect, useRef, useState } from "react";
 import {
   FlatList,
   Pressable,
@@ -33,20 +34,29 @@ export function HomeScreen() {
 }
 function StandardHomeScreen() {
   const query = useNotices();
-  const [index, setIndex] = useState(0);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const list = useRef<FlatList<Notice>>(null);
   // 공통 Screen의 최대 너비에 맞춰 페이지 간격을 계산하고, 좁은 화면에서는 그림만 축소한다.
   const width = Math.min(useWindowDimensions().width, 600);
   const pageWidth = Math.min(328.615, width);
   const scale = Math.min(1, (width - 24) / 313.846);
   const notices = query.data ?? [];
+  const selectedIndex = notices.findIndex((notice) => notice.id === selectedId);
+  const index = Math.max(0, selectedIndex);
+  const currentId = notices[index]?.id;
+  useEffect(() => {
+    list.current?.scrollToOffset({
+      offset: index * pageWidth,
+      animated: false,
+    });
+  }, [index, currentId, pageWidth]);
   function move(next: number) {
     const target = Math.max(0, Math.min(next, notices.length - 1));
     list.current?.scrollToOffset({
       offset: target * pageWidth,
       animated: true,
     });
-    setIndex(target);
+    setSelectedId(notices[target]?.id ?? null);
   }
   return (
     <Screen
@@ -56,13 +66,18 @@ function StandardHomeScreen() {
     >
       <View style={styles.greeting}>
         <AppText variant="display" size={32} lineHeight={44}>
-          이번 주 소식이{"\n"}도착했어요
+          동네 소식이{"\n"}도착했어요
         </AppText>
         <AppText secondary size={12.923}>
-          이번 주 공문 · 예시 09.28 — 10.04
+          등록일 최신순
         </AppText>
       </View>
-      {query.isPending || query.isError ? (
+      <NoticeQueryFeedback
+        error={query.error}
+        hasData={query.data !== undefined}
+        retry={() => void query.refetch()}
+      />
+      {query.isPending ? (
         <NoticeState
           loading={query.isPending}
           error={query.isError}
@@ -70,8 +85,8 @@ function StandardHomeScreen() {
             void query.refetch();
           }}
         />
-      ) : !notices.length ? (
-        <NoticeState message="이번 주에 도착한 공문이 없어요." />
+      ) : query.isError && query.data === undefined ? null : !notices.length ? (
+        <NoticeState message="등록된 공문이 없어요." />
       ) : (
         <>
           <FlatList
@@ -87,8 +102,16 @@ function StandardHomeScreen() {
               paddingHorizontal: (width - pageWidth) / 2,
             }}
             onMomentumScrollEnd={(event) =>
-              setIndex(
-                Math.round(event.nativeEvent.contentOffset.x / pageWidth),
+              setSelectedId(
+                notices[
+                  Math.max(
+                    0,
+                    Math.min(
+                      notices.length - 1,
+                      Math.round(event.nativeEvent.contentOffset.x / pageWidth),
+                    ),
+                  )
+                ]?.id ?? null,
               )
             }
             getItemLayout={(_, itemIndex) => ({
