@@ -21,7 +21,7 @@ test("한국 자정 전후와 연도 경계를 현지 기기 시간대에 관계
 test("요약 없는 오늘 공문도 표시하고 빈 응답과 실패는 구분한다", async () => {
   const notice = {
     id: "1",
-    registeredOn: "2026-10-09",
+    publishedAt: "2026-10-09",
     title: "공지",
     hasSummary: false,
   };
@@ -45,7 +45,7 @@ test("요약 없는 오늘 공문도 표시하고 빈 응답과 실패는 구분
 });
 test("이전 날짜 응답을 오늘 공문으로 사용하지 않는다", async () => {
   const state = await loadTodayNotice(
-    async () => ({ registeredOn: "2026-10-08" }),
+    async () => ({ publishedAt: "2026-10-08" }),
     fixed,
   );
   assert.equal(state.status, "error");
@@ -57,10 +57,10 @@ test("조회 중 자정이 지나면 새 날짜로 재조회한다", async () =>
   const state = await loadTodayNotice(
     async (date) => {
       calls.push(date);
-      return { registeredOn: date };
+      return { publishedAt: date };
     },
     () => new Date(dates.shift() ?? "2026-10-08T15:00:01Z"),
   );
   assert.deepEqual(calls, ["2026-10-08", "2026-10-09"]);
-  assert.equal(state.notice.registeredOn, "2026-10-09");
+  assert.equal(state.notice.publishedAt, "2026-10-09");
 });

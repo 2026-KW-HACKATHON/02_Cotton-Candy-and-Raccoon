@@ -7,19 +7,20 @@ import { Screen } from "@/shared/ui/Screen";
 import { Header } from "@/shared/ui/Header";
 import { IconButton } from "@/shared/ui/IconButton";
 import { AppText } from "@/shared/ui/AppText";
-import { COLORS, CARD_SHADOW, RADIUS, SPACE } from "@/shared/theme/tokens";
+import { COLORS, CARD_SHADOW, RADIUS } from "@/shared/theme/tokens";
 import { CategoryBadge } from "../components/CategoryBadge";
 import { NoticeState } from "../components/NoticeState";
-import { NoticeLinks } from "../components/NoticeLinks";
-import {
-  NoticeReadStatus,
-  NoticeQueryFeedback,
-} from "../components/NoticeReadStatus";
 import { useNotice } from "../hooks/useNotices";
 import { useBookmarkStore } from "../store/bookmarkStore";
 import { useDisplayPreferences } from "@/shared/accessibility/displayPreferences";
 import { EasyNoticeDetailScreen } from "./EasyNoticeDetailScreen";
 import { DetailCharacter } from "@/shared/ui/character/AnimatedCharacter";
+import { NoticeDocumentText } from "../components/NoticeDocumentText";
+import { NoticeTermOverlay } from "../components/NoticeTermOverlay";
+import { NoticeEvidence } from "../components/NoticeEvidence";
+import { NoticeFiles } from "../components/NoticeFiles";
+import { NoticeSummaryStatus } from "../components/NoticeSummaryStatus";
+import { type GlossaryTerm } from "../types/notice";
 
 const SUMMARY_ICONS = [
   require("@/assets/figma/detail-imgIconSummaryCalendar.svg"),
@@ -37,6 +38,24 @@ export function NoticeDetailScreen() {
   );
 }
 function StandardNoticeDetailScreen() {
+  const params = useLocalSearchParams<{ id: string }>();
+  const id = typeof params.id === "string" ? params.id : "";
+  const query = useNotice(id);
+  return (
+    <StandardNoticeContent
+      key={`${id}:${query.data?.hasEasyText === true}`}
+      id={id}
+      query={query}
+    />
+  );
+}
+function StandardNoticeContent({
+  id,
+  query,
+}: {
+  id: string;
+  query: ReturnType<typeof useNotice>;
+}) {
   const [animationActive, setAnimationActive] = useState(false);
   useFocusEffect(
     useCallback(() => {
@@ -44,25 +63,32 @@ function StandardNoticeDetailScreen() {
       return () => setAnimationActive(false);
     }, []),
   );
-  const params = useLocalSearchParams<{ id: string }>();
-  const id = typeof params.id === "string" ? params.id : "";
-  const query = useNotice(id);
   const saved = useBookmarkStore((state) => state.savedIds.includes(id));
   const toggleBookmark = useBookmarkStore((state) => state.toggleBookmark);
-  // DB에 저장된 결과만 표시하며 앱에서 AI를 호출하지 않는다.
-  const [easy, setEasy] = useState(false);
+  // 서버가 제공한 쉬운말만 표시하며 이 화면에서는 변환 요청을 실행하지 않는다.
+  const [easyRequested, setEasy] = useState(false);
+  const [term, setTerm] = useState<GlossaryTerm | null>(null);
   const notice = query.data;
+  const easy = easyRequested && notice?.hasEasyText === true;
   const rows = notice
     ? [
         ["기한", notice.deadline],
         ["대상", notice.audience],
         ["할 일", notice.task],
         ["유의사항", notice.caution],
-      ]
+      ].filter(([, value]) => Boolean(value))
     : [];
   return (
     <Screen
       headerBehavior="scroll"
+      contentStyle={{ paddingHorizontal: 20, gap: 20 }}
+      overlay={
+        <NoticeTermOverlay
+          term={notice?.hasEasyText ? term : null}
+          easy={easy}
+          onClose={() => setTerm(null)}
+        />
+      }
       header={
         <Header
           title=""
@@ -87,71 +113,78 @@ function StandardNoticeDetailScreen() {
         />
       }
     >
-      {query.isPending ? (
+      {query.isError && query.data && (
+        <NoticeState
+          error
+          errorDetail={query.error}
+          retrying={query.isFetching}
+          retry={() => {
+            void query.refetch();
+          }}
+        />
+      )}
+      {query.isPending || (query.isError && !query.data) ? (
         <NoticeState
           loading={query.isPending}
           error={query.isError}
+          errorDetail={query.error}
+          retrying={query.isFetching}
           retry={() => {
             void query.refetch();
           }}
         />
       ) : !notice ? (
-        query.isError ? (
-          <NoticeQueryFeedback
-            error={query.error}
-            hasData={false}
-            retry={() => void query.refetch()}
-          />
-        ) : (
-          <NoticeState message="공문을 찾을 수 없어요." />
-        )
+        <NoticeState message="공문을 찾을 수 없어요." />
       ) : (
         <>
-          <NoticeQueryFeedback
-            error={query.error}
-            hasData={true}
-            retry={() => void query.refetch()}
-          />
-          <NoticeReadStatus notice={notice} />
           <View style={styles.metadata}>
             <CategoryBadge>{notice.category}</CategoryBadge>
-            <AppText secondary size={11.08} style={{ flexShrink: 1 }}>
-              {notice.provider} · {notice.publishedAt}
+            <AppText
+              secondary
+              size={14}
+              lineHeight={22}
+              style={{ flexShrink: 1 }}
+            >
+              {notice.provider} · 공고 {notice.publishedAt}
             </AppText>
           </View>
           <View style={styles.titleRow}>
             <AppText
               variant="display"
-              size={25.846}
-              lineHeight={35.077}
+              size={28}
+              lineHeight={38}
               style={{ flex: 1 }}
             >
               {notice.title}
             </AppText>
             <DetailCharacter active={animationActive} />
           </View>
-          <View style={styles.summary}>
-            <AppText variant="bold" size={16.62}>
-              핵심만 먼저 확인해요
-            </AppText>
-            {rows.map(([label, value], index) => (
-              <View key={label} style={styles.summaryRow}>
-                <View style={styles.iconBadge}>
-                  <Image
-                    source={SUMMARY_ICONS[index]}
-                    style={{ width: 25.8462, height: 25.8462 }}
-                  />
+          <NoticeSummaryStatus status={notice.summaryStatus} />
+          {rows.length > 0 && (
+            <View style={styles.summary}>
+              <AppText variant="bold" size={18} lineHeight={27}>
+                핵심만 먼저 확인해요
+              </AppText>
+              {rows.map(([label, value], index) => (
+                <View key={label} style={styles.summaryRow}>
+                  <View style={styles.iconBadge}>
+                    <Image
+                      source={SUMMARY_ICONS[index]}
+                      style={{ width: 28, height: 28 }}
+                    />
+                  </View>
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <AppText variant="bold" size={16} lineHeight={26}>
+                      {label}
+                    </AppText>
+                    <AppText size={16} lineHeight={26}>
+                      {value}
+                    </AppText>
+                  </View>
                 </View>
-                <View style={{ flex: 1, gap: 3.692 }}>
-                  <AppText variant="bold">{label}</AppText>
-                  <AppText>{value}</AppText>
-                </View>
-              </View>
-            ))}
-            <AppText secondary size={11.08}>
-              AI 요약은 오류가 있을 수 있습니다. 정확한 조건은 원문을 확인해요.
-            </AppText>
-          </View>
+              ))}
+            </View>
+          )}
           <View style={styles.document}>
             <View
               style={styles.segment}
@@ -163,16 +196,25 @@ function StandardNoticeDetailScreen() {
                   key={String(mode)}
                   accessibilityRole="tab"
                   accessibilityLabel={mode ? "쉬운말" : "원문"}
-                  accessibilityState={{ selected: easy === mode }}
+                  accessibilityState={{
+                    selected: easy === mode,
+                    disabled: mode && !notice.hasEasyText,
+                  }}
+                  disabled={mode && !notice.hasEasyText}
                   aria-selected={easy === mode}
-                  onPress={() => setEasy(mode)}
+                  onPress={() => {
+                    setTerm(null);
+                    setEasy(mode);
+                  }}
                   style={[
                     styles.segmentItem,
-                    easy === mode && { backgroundColor: COLORS.primary },
+                    easy === mode && styles.segmentSelected,
                   ]}
                 >
                   <AppText
                     variant="bold"
+                    size={16}
+                    lineHeight={24}
                     style={{
                       color: easy === mode ? COLORS.surface : COLORS.secondary,
                     }}
@@ -182,30 +224,47 @@ function StandardNoticeDetailScreen() {
                 </Pressable>
               ))}
             </View>
-            <AppText secondary size={12.923}>
-              어려운 행정 단어를 쉬운말로 바꿔 읽어요.
+            <AppText secondary size={12} lineHeight={18}>
+              {!notice.hasEasyText
+                ? "쉬운말이 아직 준비되지 않았어요. 원문으로 확인해 주세요."
+                : easy
+                  ? "점선 표현을 누르면 원문 단어를 볼 수 있어요."
+                  : "밑줄 친 단어를 누르면 뜻을 볼 수 있어요."}
             </AppText>
-            <AppText variant="bold" size={16.615}>
+            <AppText variant="bold" size={18} lineHeight={27}>
               {notice.documentTitle}
             </AppText>
-            <AppText>
-              {easy && notice.hasEasyText && notice.easy
-                ? notice.easy
-                : notice.original ||
-                  "본문 텍스트가 없습니다. 원문과 첨부를 확인해 주세요."}
-            </AppText>
-            {easy && (!notice.hasEasyText || !notice.easy) && (
-              <AppText>쉬운말 결과가 없어 원문을 표시합니다.</AppText>
+            {easy && !notice.easyAttachmentContentIncluded && (
+              <AppText secondary size={12} lineHeight={18}>
+                첨부 파일 내용은 쉬운말에 포함되지 않아요. 파일을 따로 확인해
+                주세요.
+              </AppText>
             )}
-            {easy &&
-              notice.hasEasyText &&
-              !notice.attachmentContentIncluded && (
-                <AppText secondary>
-                  첨부파일 내용은 쉬운말 변환에 포함되지 않았습니다.
-                </AppText>
-              )}
+            <NoticeDocumentText
+              text={
+                (easy ? notice.easy : notice.original) ||
+                "본문 텍스트가 없어요. 아래 이미지 또는 공식 원문을 확인해 주세요."
+              }
+              parts={
+                easy
+                  ? notice.documentParts?.easy
+                  : notice.documentParts?.original
+              }
+              terms={notice.terms}
+              easy={easy}
+              onTermPress={setTerm}
+            />
           </View>
-          <NoticeLinks notice={notice} />
+          <NoticeEvidence notice={notice} />
+          <NoticeFiles files={notice.files} sourceUrl={notice.sourceUrl} />
+          <View style={{ gap: 4, paddingTop: 12 }}>
+            <AppText secondary size={12} lineHeight={18}>
+              월계알리미는 노원구청의 공식 서비스가 아닙니다.
+            </AppText>
+            <AppText secondary size={12} lineHeight={18}>
+              공개된 공지 정보를 모아 쉽게 전달해요.
+            </AppText>
+          </View>
         </>
       )}
     </Screen>
@@ -222,64 +281,53 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 11.077,
     alignItems: "center",
-    minHeight: 108,
+    minHeight: 117,
   },
   summary: {
     backgroundColor: COLORS.soft,
     borderRadius: RADIUS.card,
-    paddingHorizontal: 29.538,
-    paddingVertical: 22.154,
-    gap: SPACE.xl,
+    paddingHorizontal: 32,
+    paddingVertical: 24,
+    gap: 20,
     ...CARD_SHADOW,
   },
-  summaryRow: { flexDirection: "row", gap: 14.769, alignItems: "center" },
+  summaryRow: { flexDirection: "row", gap: 16, alignItems: "center" },
   iconBadge: {
-    width: 36.923,
-    height: 36.923,
+    width: 40,
+    height: 40,
     borderRadius: RADIUS.control,
     backgroundColor: COLORS.surface,
     alignItems: "center",
     justifyContent: "center",
   },
   document: {
-    padding: SPACE.xl,
+    padding: 20,
     borderColor: COLORS.border,
     borderWidth: 0.923,
     borderRadius: RADIUS.card,
-    gap: SPACE.md,
+    gap: 12,
   },
   segment: {
     flexDirection: "row",
     backgroundColor: COLORS.soft,
-    borderRadius: RADIUS.card,
-    padding: 2.769,
+    borderRadius: RADIUS.pill,
+    padding: 4,
   },
   segmentItem: {
     flex: 1,
-    minHeight: 46.154,
-    borderRadius: RADIUS.card,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  fileButton: {
     minHeight: 48,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: RADIUS.pill,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 0.923,
-    borderColor: "#73899B",
-    borderRadius: RADIUS.control,
   },
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(36,59,83,0.4)",
-    justifyContent: "center",
-    padding: 24,
-  },
-  modal: {
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.card,
-    padding: 24,
-    gap: 20,
-    maxHeight: "80%",
+  segmentSelected: {
+    backgroundColor: COLORS.primary,
+    shadowColor: COLORS.text,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
 });

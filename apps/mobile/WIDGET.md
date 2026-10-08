@@ -32,7 +32,7 @@ EAS 클라우드 빌드는 기존 `pjparks-team/mobile` 프로젝트에 연결�
 4. 긴 제목·큰 글꼴·위젯 크기 변경·공지 없음·오프라인·날짜 변경을 확인합니다.
 5. 앱 강제 중지 상태는 일반적인 앱 화면 종료와 구분해 기록합니다.
 
-그림 변경 시 `node scripts/build-widget-art.cjs`로 생성 파일을 갱신합니다. 원본 SVG는 `assets/figma`, 생성된 문자열은 `src/features/widget/letterArtwork.ts`입니다.
+그림 변경 시 `assets/widget/letter.svg`를 수정한 뒤 `node scripts/build-widget-art.cjs`로 생성 문자열을 갱신합니다. 이 SVG는 최초 구현 시 메인 화면의 Figma 레이어를 합친 위젯 전용 구성입니다. 앱 홈 레이아웃 변경과 독립적으로 검토된 위젯 배치를 유지합니다.
 
 `assets/widget/preview.png`는 위젯 선택 화면의 예시 이미지입니다. 예시 공문과 날짜를 사용한 디자인 미리보기이며 실기기 캡처가 아닙니다. 실제 내용은 위젯 추가 후 공개 API로 조회합니다.
 
@@ -41,7 +41,7 @@ EAS 클라우드 빌드는 기존 `pjparks-team/mobile` 프로젝트에 연결�
 ## 구현 시 검증 결과
 
 - TypeScript 및 Expo ESLint 통과
-- 모바일 Node 테스트 33개 통과
+- test 브랜치 통합 후 모바일 Node 테스트 74개 통과
 - React Compiler 적용 후 실제 라이브러리의 위젯 트리 생성 및 루트 접근성 라벨 검증
 - 동시 갱신, 위젯별 독립 갱신, 삭제 후 이전 응답 무시 검증
 - Android Expo prebuild 통과: 위젯 receiver, 30분 갱신 설정, 선택 화면 preview 생성 확인

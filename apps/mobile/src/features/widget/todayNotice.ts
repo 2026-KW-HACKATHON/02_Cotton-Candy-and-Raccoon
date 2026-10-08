@@ -29,7 +29,7 @@ export async function loadTodayNotice(
     if (koreaDate(clock()) !== date) {
       return { date: koreaDate(clock()), status: "error" };
     }
-    if (notice && notice.registeredOn !== date) {
+    if (notice && notice.publishedAt.replaceAll(".", "-") !== date) {
       return { date, status: "error" };
     }
     return notice
