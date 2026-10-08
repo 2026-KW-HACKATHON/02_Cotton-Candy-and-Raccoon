@@ -11,8 +11,10 @@ from pipeline.attachments.download import (
     MAX_IMAGE_BYTES,
     AttachmentDownloadError,
     DownloadedAttachment,
+    download_deadline,
     download_image,
     normalize_download_url,
+    remaining_seconds,
 )
 from pipeline.attachments.seoul_html import is_decorative_image_url
 from pipeline.transform.html_text import html_to_notice_text
@@ -69,6 +71,7 @@ def prepare_notice_body(
     max_image_bytes: int = MAX_IMAGE_BYTES,
     max_total_bytes: int = MAX_BODY_IMAGE_BYTES,
     image_cache: dict[str, DownloadedAttachment | str] | None = None,
+    deadline: float | None = None,
 ) -> PreparedNoticeBody:
     """Read img/src, download unique images, and report every failed reference.
 
@@ -87,15 +90,22 @@ def prepare_notice_body(
     images: list[DownloadedAttachment] = []
     failures: list[ImageFailure] = []
     outcomes: dict[str, str | None] = {}
-    digests: set[bytes] = set()
+    canonical: dict[bytes, DownloadedAttachment] = {}
+    included: set[bytes] = set()
     total_bytes = 0
     cache = image_cache if image_cache is not None else {}
+    end = download_deadline(180.0, deadline)
 
-    def collect(active_client: httpx.Client) -> None:
+    def collect(active_client: httpx.Client | None) -> None:
         nonlocal total_bytes
         for index, source in enumerate(parser.sources, start=1):
             try:
-                if is_decorative_image_url(urljoin(notice_url, source.strip())):
+                remaining_seconds(end)
+                try:
+                    resolved = urljoin(notice_url, source.strip())
+                except ValueError:
+                    raise AttachmentDownloadError("invalid_url") from None
+                if is_decorative_image_url(resolved):
                     continue
                 url = _normalize_image_url(notice_url, source)
                 if url in outcomes:
@@ -113,11 +123,14 @@ def prepare_notice_body(
                         cached
                         if cached is not None
                         else download_image(
-                            url, client=active_client, max_bytes=min(max_image_bytes, remaining)
+                            url, client=active_client, max_bytes=min(max_image_bytes, remaining),
+                            deadline=end,
                         )
                     )
                     if len(image.data) > min(max_image_bytes, remaining):
                         raise AttachmentDownloadError("too_large")
+                    digest = sha256(image.data).digest()
+                    image = canonical.setdefault(digest, image)
                     cache[url] = image
                 except AttachmentDownloadError as exc:
                     reason = exc.reason_code
@@ -127,18 +140,13 @@ def prepare_notice_body(
                     cache[url] = reason
                     raise AttachmentDownloadError(reason) from None
                 outcomes[url] = None
-                digest = sha256(image.data).digest()
-                if digest not in digests:
-                    digests.add(digest)
+                if digest not in included:
+                    included.add(digest)
                     images.append(image)
                     total_bytes += len(image.data)
             except AttachmentDownloadError as exc:
                 failures.append(ImageFailure(index, exc.reason_code))
 
     if parser.sources:
-        if client is not None:
-            collect(client)
-        else:
-            with httpx.Client() as owned_client:
-                collect(owned_client)
+        collect(client)
     return PreparedNoticeBody(html_to_notice_text(body_html), tuple(images), tuple(failures))

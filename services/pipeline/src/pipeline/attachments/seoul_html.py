@@ -52,6 +52,18 @@ def is_decorative_image_url(url: str) -> bool:
     )
 
 
+def normalize_seoul_news_url(url: str) -> str:
+    """Share the established official Seoul News HTTPS rule with downloads."""
+    parsed = urlsplit(url)
+    if (
+        parsed.hostname == "news.seoul.go.kr" and parsed.scheme in {"http", "https"}
+        and parsed.port in (None, 80, 443)
+        and parsed.username is None and parsed.password is None
+    ):
+        return urlunsplit(("https", "news.seoul.go.kr", parsed.path, parsed.query, parsed.fragment))
+    return url
+
+
 def normalize_file_url(base: str, reference: str) -> str:
     try:
         parsed = urlsplit(urljoin(base, reference.strip()))
@@ -64,7 +76,9 @@ def normalize_file_url(base: str, reference: str) -> str:
         ):
             raise ValueError
         if parsed.hostname == "news.seoul.go.kr":
-            return urlunsplit(("https", "news.seoul.go.kr", parsed.path, parsed.query, ""))
+            return normalize_seoul_news_url(
+                urlunsplit((parsed.scheme, parsed.netloc, parsed.path, parsed.query, "")),
+            )
         # Do not assume external hosts support HTTPS.
         return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, parsed.query, ""))
     except ValueError:

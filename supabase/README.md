@@ -53,6 +53,17 @@ URL 해시는 파일 내용 해시가 아니다. URL이 바뀌면 다른 참조�
 
 ## 요약 저장 계약 — 이슈 #14
 
+부분 요약의 누락 안내는 `20261008120000_notice_summary_omissions.sql`을 마지막으로 적용한 뒤
+조회할 수 있다. `notice_summaries.preparation_omissions`는 비공개 `file_manifest.omissions`에서
+생성되는 읽기 전용 JSON 컬럼이며 앱에 SELECT만 허용한다. 각 항목은 `notice_file_id`, `url`,
+`reason_code`로 구성된다. 등록되지 않은 본문 이미지는 파일 ID가 NULL이고 원문 공지 링크를 사용한다.
+파일 키·해시·상세 예외는 공개하지 않는다. 기존 결과를 보존하는 재처리는 기존 누락 안내도 보존하고,
+원문 변경으로 `result`가 NULL이 되면 이 컬럼도 NULL이 된다. 구버전 manifest의 누락 목록은 빈 배열이다.
+
+부분 요약은 `needs_review`이고 정렬 마감일은 NULL이다. 같은 원문 버전에서 기존 요약이 있으면
+새 부분 요약으로 교체하지 않으며 `input_preparation_failed` 코드와 시도 횟수만 기록한다.
+전체 입력 준비에 성공한 후 다시 요약하면 결과와 누락 안내를 함께 갱신한다.
+
 `notice_summaries`는 공지당 한 행을 저장하며 공지 삭제 시 함께 삭제된다. `category`는 공지 유형(`application`, `event`, `living`, `obligation`, `news`, `mixed`)이다. `unknown`은 JSON에 보존하고 DB 컬럼은 NULL로 저장한다.
 
 분야 `category_code`는 정수 `21=교통`, `22=안전`, `23=주택`, `24=경제`, `25=환경`, `26=문화`, `27=복지`, `30=행정`이다. 수집 출처인 `notices.category`, 게시판 식별자인 `source_board`와 별개다. 결과 JSON의 분류는 DB 컬럼과 일치해야 하며, 검토 결과의 미확인 분류는 NULL을 허용한다.

@@ -379,7 +379,7 @@ if source is None:
 prepared = prepare_summary_source(source, reference_datetime=datetime.now(timezone.utc))
 if prepared.failures:
     # stage/item_id/reason_code를 기록하고 재처리. 원문·URL·비밀값은 로그에 넣지 않습니다.
-    raise ValueError("일부 자료 준비 실패")
+    raise ValueError("요약 가능한 입력 준비 실패")
 # 경고가 있으면 표 배치/내부 그림 등의 정보 손실 정책을 먼저 확인합니다.
 warnings = prepared.warnings
 input_blocks = prepared.to_gemini_input()  # 입력 생성만 함. 실제 API 호출 아님.
@@ -391,12 +391,13 @@ input_blocks = prepared.to_gemini_input()  # 입력 생성만 함. 실제 API �
 있는 월계1동 이미지는 기존 허용 주소 규칙 안에서 처리합니다. 노원구 주소에 더해
 HTTPS news.seoul.go.kr·culture.seoul.go.kr의 직접 PDF/HWP/PNG/JPEG/WebP를 허용합니다.
 파일명이 없으면 URL의 명확한 파일명을 사용하고 확장자 없는 endpoint는 추정하지 않습니다.
-외부 호스트·서울시 HTTP 주소·리다이렉트·지원하지 않는 형식은 실패로 보고합니다.
+news.seoul.go.kr의 HTTP 주소는 수집기와 동일하게 HTTPS로 정규화합니다.
+외부 호스트·그 밖의 서울시 HTTP 주소·리다이렉트·지원하지 않는 형식은 누락으로 보고합니다.
 이는 파일 다운로드이며 서울시 원문 페이지 크롤링이 아닙니다.
 
 본문과 DB 목록의 동일한 정규화 이미지 URL은 준비 실행 내 캐시로 한 번만 요청합니다.
 실패한 URL도 같은 실행에서 재요청하지 않고 각 참조에 실패 코드를 남깁니다.
-다른 URL에서 내려받은 같은 바이트는 해시로 입력 중복을 제거합니다. 서울시 장식
+다른 URL에서 내려받은 같은 이미지는 캐시에서도 하나의 바이트 객체를 공유합니다. 서울시 장식
 필터를 재사용하며 원본 HTML·DB 파일 목록은 수정하지 않습니다.
 
 `prepared.file_manifest`에는 원문 버전과 원본 파일 행별 처리 결과를 함께 보존합니다.
@@ -408,7 +409,8 @@ DB 목록에 없는 본문 이미지는 가짜 파일 ID 대신 원문 공지 �
 
 준비 결과를 실제 요약·저장으로 연결할 때는 다음 계약을 사용합니다. 아래 코드는
 Gemini를 호출하고 지정한 DB에 저장하므로 테스트 환경에서 먼저 확인하세요.
-준비 실패도 job에 전달하면 API 호출 없이 실패를 기록하고 같은 원문 버전의 기존 요약은 보존합니다.
+입력 전체를 사용할 수 없는 준비 실패도 job에 전달하면 API 호출 없이 실패를 기록하고
+같은 원문 버전의 기존 요약은 보존합니다. 일부 파일만 읽지 못하면 아래 부분 요약 계약을 따릅니다.
 
 ```python
 from pipeline.storage.summary_metadata import build_summary_metadata_from_manifest
@@ -427,10 +429,28 @@ with psycopg.connect(database_url, autocommit=True) as conn:
 준비 후 원문이나 파일 목록이 변경되면 `superseded`로 종료하며 Gemini를 호출하지 않습니다.
 저장 직전 변경도 버전 검사로 차단합니다. 자동 실행·예약·재시도는 별도 실행 계층의 책임입니다.
 
-지원하지 않는 파일·이름을 판단할 수 없는 일반 첨부·다운로드/추출 실패는 조용히 버리지 않고
-`failures`에 남깁니다. 실패가 있으면 `to_gemini_input()`은 거부합니다. HWP 제한은
-`warnings`로 별도 유지하며 `complete=True`는 경고 없음이나 모든 시각 정보 확보를
-뜻하지 않습니다. 자료가 전혀 없는 공지도 실패합니다.
+지원하지 않는 파일·이름을 판단할 수 없는 일반 첨부·다운로드/추출 실패는 `warnings`와
+`file_manifest.omissions`에 남깁니다. 읽은 본문·첨부가 있으면 해당 범위만 요약하고
+`needs_review`, `deadline_on=NULL`로 저장합니다. 첨부를 하나도 못 읽었으면 `unread`,
+일부 읽었으면 `partial`입니다. DB 행이 없는 본문 이미지 누락도 별도로 검토 상태를 강제합니다.
+Gemini에는 누락 내용을 추측하지 말라는 처리 범위를 전달하고, 결과에는 미확인 안내를 추가합니다.
+제목만 있고 읽은 자료가 없거나 최종 입력 크기가 초과되면 `failures`로 차단합니다.
+원문 버전·파일 연결 정보 검증 오류도 부분 요약으로 우회하지 않습니다.
+`complete=True`는 전송 가능한 입력이 있다는 뜻이며, 전체 자료 읽기 성공을 뜻하지 않습니다.
+
+같은 원문 버전에 기존 결과가 있으면 새 부분 요약으로 교체하지 않는 보수적 정책을 사용합니다.
+최초 부분 요약은 공개할 수 있고, 이후 전체 첨부 준비가 성공하면 갱신할 수 있습니다.
+기존 부분 요약보다 더 많은 자료를 읽은 경우에도 일부 누락이 남아 있으면 기존 결과를 유지합니다.
+재시도 가능 여부와 예약은 별도 실행 계층에서 `reason_code`를 사용해 판단합니다.
+
+이미지 한 장은 10 MiB, 본문 이미지 합계는 `max_body_image_bytes`(기본 50 MiB)로 분리합니다.
+파일별 `max_seconds`는 기본 60초, 공지별 `max_preparation_seconds`는 기본 180초입니다.
+기본 다운로드는 내부 비동기 I/O와 전체 timeout으로 응답 헤더·본문 대기를 취소하고 연결을 닫습니다.
+시간 초과 파일은 `time_limit` 누락으로 남고, 공지 예산을 소진하면 다음 파일을 요청하지 않습니다.
+호출 API는 동기 방식이며, 이미 실행 중인 이벤트 루프 안에서는 별도 스레드에서 요청을 완료합니다.
+외부 `httpx.Client`를 직접 주입한 호환 경로는 호출자의 연결을 강제로 닫지 않으며 요청·청크 경계에서
+단조 시계로 시간을 검사하고 요청 timeout을 남은 시간 이하로 제한합니다. 이 경로의 실행 중 I/O
+취소는 클라이언트 소유자의 책임입니다. 운영 시 전체 대기 취소가 필요하면 기본 경로를 사용하세요.
 
 `max_input_bytes`는 기본 50 MiB의 로컬 안전 한도로, 다운로드 보관량과 최종 JSON 입력의
 텍스트·Base64 크기를 제한합니다. Gemini 모델별 실제 한도와 호출 비용을 보장하는 값은
@@ -443,8 +463,12 @@ PDF·이미지 입력을 받는 요약 경로가 추가됐습니다. #13 준비 
 본문 이미지 원문 링크, 준비 실패와 원문 버전 변경을 검증합니다. 전용 로컬 PostgreSQL에서
 실제 원본 조회→입력 준비→요약 job→결과·파일 연결 저장도 검증하며,
 이 테스트의 다운로드와 Gemini 응답은 대역을 사용합니다.
-2026-10-08 검증: 최신 develop(`5e9ebcc`) 통합 후 pipeline **3177 passed**,
-DB 스키마 **495 passed**, 두 검사 모두 **0 skipped**이며 Ruff와 diff 검사도 통과했습니다.
+추가 회귀는 `test_attachment_recovery.py`에서 URL 오류 격리, 캐시 공유, 이미지 합계 예산,
+시간 예산, 부분 요약 저장·재조회·복구·기존 결과 보존을 검증합니다.
+2026-10-08 검증: develop `edc975b` 통합 상태에서 pipeline **3559 passed**, DB 스키마
+**506 passed**, 모두 **0 skipped**. 공유 URL 정규화 변경 후 관련 회귀도 통과했습니다.
+기본 다운로드의 헤더·본문 대기 취소는 비동기 HTTP 대역으로, 저장·권한은 로컬 PostgreSQL로
+확인했으며 실제 Gemini 유료 호출이나 운영 DB 변경은 수행하지 않았습니다.
 
 실제 추가 검증(2026-10-06): 전용 DB 저장·조회·롤백 후 월계1동 PDF, 복구된 노원구 PNG,
 서울시 JPEG를 다운로드해 `prepare_gemini_request()`까지 통과했습니다. 별도로 월계1동
@@ -584,6 +608,14 @@ payload = view.model_dump(mode="json")
 
 저장 시 현재 원문 버전과 전체 파일 목록을 대조하며 요약과 연결 정보를 함께 씁니다.
 `file_manifest`는 비공개이고 앱은 자동 생성된 `file_references`만 조회합니다.
+새 마이그레이션 `20261008120000_notice_summary_omissions.sql` 적용 후 앱은
+`preparation_omissions`도 조회할 수 있습니다. 항목은 `notice_file_id`(본문 이미지는 null),
+`url`(등록 파일의 원본 URL 또는 원문 공지 URL), 안전한 `reason_code`만 포함합니다.
+모델이 만든 필드가 아니며 해시·파일 키·상세 예외는 노출하지 않습니다.
+`build_notice_summary_view(..., preparation_omissions=row["preparation_omissions"])`로
+전달하면 미확인 자료 안내와 링크가 응답에 포함됩니다. 화면은 reason code를 사용자 문구로
+변환해 표시해야 합니다. 기존 결과를 유지하면 누락 안내도 기존 결과 기준으로 유지하며,
+원문 변경으로 결과가 무효화되면 공개 누락 정보도 NULL이 됩니다.
 처리 실패나 기존 요약을 유지하는 보정 실패는 기존 링크도 유지합니다.
 파일 목록에 없는 본문 이미지는 **“원문에서 확인”**과 원문 공지 링크를 제공합니다.
 PDF·이미지 좌표는 제공하지 않습니다. 준비 결과에 연결 정보가 없는 기존 호출은

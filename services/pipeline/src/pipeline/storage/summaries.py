@@ -414,6 +414,12 @@ def save_prepared_summary(
         file_manifest=record.file_manifest,
     )
     reason_code = result.correction_failure_code
+    if reason_code is None and record.file_manifest is not None and (
+        record.file_manifest.omissions or metadata.attachment_status in {"partial", "unread"}
+    ):
+        # The same atomic preservation path also protects against less complete
+        # preparation on an unchanged source. First partial results remain usable.
+        reason_code = "input_preparation_failed"
     if reason_code is not None:
         record = replace(record, status="needs_review", deadline_on=None)
         notice_id, status, stored_deadline, stored_generated_at = _save_summary_correction_fallback(

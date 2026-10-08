@@ -77,6 +77,20 @@ class PreparedMediaBinding(FileModel):
     content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
+class PreparationOmission(FileModel):
+    """Trusted public omission; unregistered images link to the original notice."""
+
+    notice_file_id: int | None = Field(default=None, gt=0, le=MAX_DATABASE_ID)
+    url: str
+    reason_code: Literal[
+        "unsupported_type", "invalid_name", "invalid_url", "redirect", "rate_limited",
+        "http_error", "too_large", "type_mismatch", "timeout", "request_failed",
+        "empty_file", "total_size_limit", "time_limit", "extraction_failed",
+    ]
+
+    _url = field_validator("url")(_http_url)
+
+
 class PreparedSourceFile(PublicSourceFile):
     """One original DB row, including aliases combined into a single media block."""
 
@@ -124,11 +138,21 @@ class PrivateSummaryFileManifest(FileModel):
     original_url: str = Field(min_length=1, max_length=4096)
     files: tuple[PreparedSourceFile, ...] = Field(max_length=1024)
     media: tuple[PreparedMediaBinding, ...] = Field(max_length=1024)
+    omissions: tuple[PreparationOmission, ...] = Field(default=(), max_length=2048)
 
     _url = field_validator("original_url")(_http_url)
 
     @model_validator(mode="after")
     def unique_sources(self) -> "PrivateSummaryFileManifest":
+        by_id = {item.notice_file_id: item for item in self.files}
+        for omission in self.omissions:
+            if omission.notice_file_id is None:
+                if omission.url != self.original_url:
+                    raise ValueError("invalid_omission_source")
+            else:
+                item = by_id.get(omission.notice_file_id)
+                if item is None or item.outcome != "unread" or item.url != omission.url:
+                    raise ValueError("invalid_omission_source")
         if len({item.notice_file_id for item in self.files}) != len(self.files):
             raise ValueError("duplicate_source_file")
         if len({item.source_id for item in self.media}) != len(self.media) or len({

@@ -141,13 +141,13 @@ def test_unsupported_or_nameless_attachment_is_reported(name: str | None) -> Non
         result = prepare_summary_source(
             source(file(1, name)), reference_datetime=NOW, client=client
         )
-    assert not result.complete
-    assert result.failures[0].reason_code in {"unsupported_type", "invalid_name"}
-    with pytest.raises(ValueError, match="incomplete"):
-        result.to_gemini_input()
+    assert result.complete
+    assert result.warnings[0].reason_code in {"unsupported_type", "invalid_name"}
+    assert result.file_manifest.attachment_status == "unread"
+    assert result.to_gemini_input()[0]["type"] == "text"
 
 
-def test_failed_file_does_not_stop_other_files_or_produce_sendable_input() -> None:
+def test_failed_file_keeps_other_files_and_reports_partial_input() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.params["q_fileId"] == "1":
             raise httpx.ReadTimeout("private url", request=request)
@@ -157,11 +157,11 @@ def test_failed_file_does_not_stop_other_files_or_produce_sendable_input() -> No
         result = prepare_summary_source(
             source(file(1, "a.pdf"), file(2, "b.pdf")), reference_datetime=NOW, client=client
         )
-    assert result.failures[0].reason_code == "timeout"
+    assert result.warnings[0].reason_code == "timeout"
     assert len(result.media) == 1
     assert "private url" not in repr(result)
-    with pytest.raises(ValueError):
-        result.to_gemini_input()
+    assert result.file_manifest.attachment_status == "partial"
+    assert result.to_gemini_input()[1]["type"] == "document"
 
 
 def test_hwp_warning_is_not_discarded() -> None:
@@ -185,7 +185,8 @@ def test_broken_hwp_is_failure_not_blank_success() -> None:
         result = prepare_summary_source(
             source(file(1, "broken.hwp")), reference_datetime=NOW, client=client
         )
-    assert not result.complete
+    assert result.complete
+    assert result.file_manifest.omissions[0].reason_code == "extraction_failed"
     assert not result.notice.attachments
 
 
@@ -232,7 +233,7 @@ def test_duplicate_file_url_downloads_once() -> None:
     assert len(result.media) == 1
 
 
-def test_external_body_image_is_failure_without_network_request() -> None:
+def test_external_body_image_is_omitted_without_network_request() -> None:
     with httpx.Client(
         transport=httpx.MockTransport(lambda _: pytest.fail("external URL must not be fetched"))
     ) as client:
@@ -241,11 +242,11 @@ def test_external_body_image_is_failure_without_network_request() -> None:
             reference_datetime=NOW,
             client=client,
         )
-    assert not result.complete
-    assert result.failures[0].stage == "body_image"
-    assert result.failures[0].reason_code == "invalid_url"
-    with pytest.raises(ValueError):
-        result.to_gemini_input()
+    assert result.complete
+    assert result.warnings[0].stage == "body_image"
+    assert result.warnings[0].reason_code == "invalid_url"
+    assert result.file_manifest.omissions[0].url == source().url
+    assert result.to_gemini_input()
 
 
 @pytest.mark.parametrize("budget", [True, 0, -1, 1.5])

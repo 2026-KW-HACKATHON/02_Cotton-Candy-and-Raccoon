@@ -22,12 +22,11 @@ from pipeline.storage.summary_metadata import (
 )
 from pipeline.storage.summary_source import load_summary_source
 from pipeline.summary_job import (
-    StoredSummaryFailure,
     StoredSummarySuperseded,
     summarize_and_save_prepared_notice,
 )
 from pipeline.transform.gemini_client import DEFAULT_MODEL
-from pipeline.transform.prepared_summary import SummaryPreparationError, prepare_gemini_request
+from pipeline.transform.prepared_summary import prepare_gemini_request
 
 
 def _metadata(prepared):
@@ -113,7 +112,7 @@ def test_mixed_inputs_bind_media_by_transmitted_order_and_keep_body_image_fallba
     assert pdf.files[0].notice_file_id == 1
 
 
-def test_failure_keeps_unread_row_and_still_blocks_the_whole_request():
+def test_failure_keeps_unread_row_and_allows_only_the_read_content():
     with httpx.Client(transport=httpx.MockTransport(
         lambda _: httpx.Response(200, content=b"%PDF-source"),
     )) as client:
@@ -123,8 +122,9 @@ def test_failure_keeps_unread_row_and_still_blocks_the_whole_request():
         )
     assert [item.outcome for item in prepared.file_manifest.files] == ["unread", "media"]
     assert _metadata(prepared).attachment_status == "partial"
-    with pytest.raises(SummaryPreparationError, match="input_preparation_failed"):
-        prepare_gemini_request(prepared)
+    blocks, _ = prepare_gemini_request(prepared)
+    assert "입력 처리 범위" in blocks[2]["text"]
+    assert prepared.file_manifest.omissions[0].notice_file_id == 1
 
 
 @pytest.mark.parametrize("mutation", ["revision", "notice_id", "duplicate_file_id"])
@@ -201,12 +201,13 @@ def test_real_database_preparer_and_summary_job_store_aliases_and_preserve_them_
         item.model_dump(mode="json") for item in prepared.file_manifest.public_references()
     ]
     failed = _prepare(original, failure=True)
+    provider.return_value = json.dumps(_response("text"), ensure_ascii=False)
     outcome = summarize_and_save_prepared_notice(
         live_db, failed, _metadata(failed),
         expected_source_revision=original.content_revision, api_key="test-key",
     )
-    assert isinstance(outcome, StoredSummaryFailure)
-    assert provider.call_count == 1
+    assert outcome.status == saved["status"]
+    assert provider.call_count == 2
     after = _row(live_db, original.notice_id)
     for key in ("result", "file_manifest", "file_references", "status"):
         assert after[key] == saved[key]

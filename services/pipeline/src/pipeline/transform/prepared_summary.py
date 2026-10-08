@@ -122,6 +122,16 @@ def prepare_gemini_request(
         except (TypeError, ValueError):
             raise SummaryPreparationError("invalid_prepared_input") from None
     media = []
+    if manifest is not None and manifest.omissions:
+        blocks.append({
+            "type": "text",
+            "text": (
+                "[입력 처리 범위] 일부 본문 이미지 또는 첨부파일을 읽지 못했습니다. "
+                "제공된 본문·파일 내용만 요약하세요. 누락 파일의 내용, 대상, 기간, "
+                "신청 조건을 추측하지 말고 공지 전체를 확인했다고 표현하지 마세요. "
+                "확인할 수 없는 정보는 원문 확인이 필요함을 표시하세요."
+            ),
+        })
     descriptions = []
     for block in blocks:
         if block["type"] not in ("document", "image"):

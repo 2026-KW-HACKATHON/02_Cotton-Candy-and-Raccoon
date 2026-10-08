@@ -16,8 +16,10 @@ from pipeline.attachments.download import (
     AttachmentDownloadError,
     DownloadedAttachment,
     download_attachment,
+    download_deadline,
     download_image,
     normalize_download_url,
+    remaining_seconds,
 )
 from pipeline.attachments.hwp_text import HwpExtractionError, extract_hwp_text
 from pipeline.attachments.inline_images import prepare_notice_body
@@ -26,6 +28,7 @@ from pipeline.storage.summary_source import SummarySource
 from pipeline.transform.media_input import to_gemini_media_part
 from pipeline.transform.notice_input import AttachmentText, NoticeInput, render_notice_input
 from pipeline.transform.summary_files import (
+    PreparationOmission,
     PreparedMediaBinding,
     PreparedSourceFile,
     PrivateSummaryFileManifest,
@@ -79,10 +82,12 @@ def prepare_summary_source(
     reference_datetime: datetime,
     client: httpx.Client | None = None,
     max_input_bytes: int = MAX_PREPARED_INPUT_BYTES,
+    max_body_image_bytes: int = MAX_PREPARED_INPUT_BYTES,
+    max_preparation_seconds: float = 180.0,
 ) -> PreparedSummary:
-    """Download files, extract HWP, deduplicate bytes, retain failure/warning codes.
+    """Prepare readable sources and trusted omissions, without inventing missing content.
 
-    Unknown formats fail rather than disappear. Missing names can be inferred
+    Unknown formats remain unread with public omission codes. Missing names can be inferred
     from explicit URL filenames, never from ambiguous endpoints. Body images absent from
     notice_files are also read. The budget includes text and base64 growth;
     it is a local safety cap, not a claim about Gemini's model-specific limits.
@@ -103,6 +108,9 @@ def prepare_summary_source(
         department=source.department,
         published_on=source.registered_on,
     )
+    if type(max_body_image_bytes) is not int or max_body_image_bytes < 1:
+        raise ValueError("max_body_image_bytes must be a positive integer")
+    deadline = download_deadline(max_preparation_seconds)
     # Check source identities before any request. Keep the exact stored URLs;
     # download normalization must not change the identities checked by storage.
     manifest = PrivateSummaryFileManifest(
@@ -129,6 +137,7 @@ def prepare_summary_source(
 
     def retain(file: DownloadedAttachment, item_id: int) -> _RetainedContent:
         nonlocal retained_bytes, text_bytes
+        remaining_seconds(deadline)
         digest = sha256(file.data).digest()
         if digest in retained:
             return retained[digest]
@@ -136,6 +145,7 @@ def prepare_summary_source(
             raise AttachmentDownloadError("total_size_limit")
         if file.media_type == "application/x-hwp":
             result = extract_hwp_text(file)
+            remaining_seconds(deadline)
             extracted_bytes = len(result.attachment.text.encode("utf-8"))
             if text_bytes + extracted_bytes > max_input_bytes:
                 raise AttachmentDownloadError("total_size_limit")
@@ -168,14 +178,15 @@ def prepare_summary_source(
             content_sha256=content.content_sha256,
         )
 
-    def collect(active_client: httpx.Client) -> None:
+    def collect(active_client: httpx.Client | None) -> None:
         nonlocal text_bytes
         body = prepare_notice_body(
             source.body_html,
             source.url,
             client=active_client,
             image_cache=image_cache,
-            max_total_bytes=min(max_input_bytes, MAX_IMAGE_BYTES),
+            max_total_bytes=min(max_input_bytes, max_body_image_bytes),
+            deadline=deadline,
         )
         notice.body_text = body.body_text
         text_bytes = len(body.body_text.encode("utf-8"))
@@ -191,6 +202,7 @@ def prepare_summary_source(
         for index, item in enumerate(source.files):
             url = item.url
             try:
+                remaining_seconds(deadline)
                 if item.kind == "inline_image" and is_decorative_image_url(url):
                     warnings.append(PreparationIssue("file", item.id, "decorative_image_ignored"))
                     continue
@@ -226,7 +238,8 @@ def prepare_summary_source(
                     raise AttachmentDownloadError("total_size_limit")
                 if is_image:
                     file = download_image(
-                        url, client=active_client, max_bytes=min(remaining, MAX_IMAGE_BYTES)
+                        url, client=active_client, max_bytes=min(remaining, MAX_IMAGE_BYTES),
+                        deadline=deadline,
                     )
                 else:
                     file = download_attachment(
@@ -234,6 +247,7 @@ def prepare_summary_source(
                         filename,
                         client=active_client,
                         max_bytes=min(remaining, MAX_ATTACHMENT_BYTES),
+                        deadline=deadline,
                     )
                 content = retain(file, item.id)
                 bind(index, content)
@@ -242,12 +256,27 @@ def prepare_summary_source(
                 urls[url] = exc.reason_code
                 failures.append(PreparationIssue("file", item.id, exc.reason_code))
 
-    if client is None:
-        with httpx.Client() as owned_client:
-            collect(owned_client)
-    else:
-        collect(client)
+    collect(client)
     notice.attachments = texts
+    # Individual unavailable sources are omissions, not permission to invent content.
+    # Input-wide integrity/size/no-content failures below remain blocking.
+    omissions = []
+    original_files = {item.id: item for item in source.files}
+    for issue in failures:
+        item = original_files.get(issue.item_id) if issue.stage == "file" else None
+        try:
+            omission = PreparationOmission(
+                notice_file_id=item.id if item else None, url=item.url if item else source.url,
+                reason_code=issue.reason_code,
+            )
+        except ValueError:
+            omission = PreparationOmission(
+                notice_file_id=item.id if item else None, url=item.url if item else source.url,
+                reason_code="extraction_failed",
+            )
+        omissions.append(omission)
+        warnings.append(issue)
+    failures.clear()
     # Match json.dumps's default escaping/separators without allocating base64.
     size = len(json.dumps([{"type": "text", "text": render_notice_input(notice)}]).encode("utf-8"))
     for file in media:
@@ -264,6 +293,7 @@ def prepare_summary_source(
     manifest = PrivateSummaryFileManifest(
         notice_id=manifest.notice_id, source_revision=manifest.source_revision,
         original_url=manifest.original_url, files=tuple(file_outcomes), media=tuple(bindings),
+        omissions=tuple(omissions),
     )
     return PreparedSummary(
         source.notice_id, notice, tuple(media), tuple(failures), tuple(warnings), manifest,

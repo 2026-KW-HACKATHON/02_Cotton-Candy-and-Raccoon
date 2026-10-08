@@ -153,7 +153,7 @@ def test_nameless_url_pdf_uses_real_path_name_not_invented_id() -> None:
     assert prepared.media[0].data == b"%PDF-source"
 
 
-def test_body_and_db_image_failure_is_requested_once_and_blocks_handoff() -> None:
+def test_body_and_db_image_failure_is_requested_once_and_retained_as_omissions() -> None:
     calls = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -174,9 +174,9 @@ def test_body_and_db_image_failure_is_requested_once_and_blocks_handoff() -> Non
             client=client,
         )
     assert calls == [IMAGE_URL]
-    assert [f.reason_code for f in prepared.failures] == ["rate_limited", "rate_limited"]
-    with pytest.raises(ValueError, match="incomplete"):
-        prepared.to_gemini_input()
+    assert [f.reason_code for f in prepared.warnings] == ["rate_limited", "rate_limited"]
+    assert len(prepared.file_manifest.omissions) == 2
+    assert prepared.to_gemini_input()
 
 
 def test_nowon_body_and_db_image_query_order_download_once() -> None:

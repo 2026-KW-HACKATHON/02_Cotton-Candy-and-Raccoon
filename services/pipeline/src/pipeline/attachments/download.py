@@ -1,14 +1,21 @@
 """Bounded downloads from explicitly allowed official notice file hosts."""
 
+import asyncio
+import math
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import PurePath, PurePosixPath
+from time import monotonic
 from typing import Literal
 from urllib.parse import parse_qs, parse_qsl, unquote, urlencode, urlsplit, urlunsplit
 
 import httpx
 
+from pipeline.attachments.seoul_html import normalize_seoul_news_url
+
 MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
+MAX_DOWNLOAD_SECONDS = 60.0
 ImageMediaType = Literal["image/png", "image/jpeg", "image/webp"]
 _FILE_PATH = "/component/file/ND_fileDownload.do"
 SEOUL_FILE_HOSTS = frozenset({"news.seoul.go.kr", "culture.seoul.go.kr"})
@@ -28,6 +35,23 @@ class AttachmentDownloadError(ValueError):
         self.reason_code = reason_code
         self.status_code = status_code
         super().__init__(f"첨부파일 다운로드 실패: {reason_code}")
+
+
+def download_deadline(seconds: float, parent: float | None = None) -> float:
+    """Use a monotonic elapsed-time budget shared by files in one notice."""
+    if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not (
+        math.isfinite(seconds) and seconds > 0
+    ):
+        raise ValueError("download seconds must be finite and positive")
+    end = monotonic() + seconds
+    return end if parent is None else min(end, parent)
+
+
+def remaining_seconds(deadline: float) -> float:
+    remaining = deadline - monotonic()
+    if remaining <= 0:
+        raise AttachmentDownloadError("time_limit")
+    return remaining
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,7 +111,7 @@ def _validate_source_url(url: str, *, image: bool = False) -> None:
 
 
 def normalize_download_url(url: str, *, image: bool = False) -> str:
-    """Canonicalize Nowon query order/HTTP; other approved sources require HTTPS."""
+    """Canonicalize Nowon and Seoul News HTTP consistently with collection."""
     if (
         not isinstance(url, str)
         or not url
@@ -113,6 +137,8 @@ def normalize_download_url(url: str, *, image: bool = False) -> str:
                     parsed.fragment,
                 )
             )
+        else:
+            url = normalize_seoul_news_url(url)
     except ValueError:
         raise AttachmentDownloadError("invalid_url") from None
     _validate_source_url(url, image=image)
@@ -130,45 +156,106 @@ def _expected_format(file_name: str) -> Literal["pdf", "hwp"]:
     raise AttachmentDownloadError("unsupported_type")
 
 
+def _response_type(response: httpx.Response, expected_format: str, max_bytes: int) -> str:
+    if response.is_redirect:
+        raise AttachmentDownloadError("redirect")
+    if response.status_code == 429:
+        raise AttachmentDownloadError("rate_limited", status_code=429)
+    if response.status_code != 200:
+        raise AttachmentDownloadError("http_error", status_code=response.status_code)
+    length = response.headers.get("content-length", "")
+    if length.isdigit() and int(length) > max_bytes:
+        raise AttachmentDownloadError("too_large")
+    content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type not in _GENERIC_CONTENT_TYPES | _CONTENT_TYPES[expected_format]:
+        raise AttachmentDownloadError("type_mismatch")
+    return content_type
+
+
 def _download(
     client: httpx.Client,
     url: str,
     file_name: str,
     expected_format: Literal["pdf", "hwp", "image"],
     max_bytes: int,
+    deadline: float,
 ) -> DownloadedAttachment:
     try:
+        remaining = remaining_seconds(deadline)
         with client.stream(
-            "GET", url, follow_redirects=False, timeout=httpx.Timeout(20.0, connect=5.0)
+            "GET", url, follow_redirects=False,
+            timeout=httpx.Timeout(min(20.0, remaining), connect=min(5.0, remaining)),
         ) as response:
-            if response.is_redirect:
-                raise AttachmentDownloadError("redirect")
-            if response.status_code == 429:
-                raise AttachmentDownloadError("rate_limited", status_code=429)
-            if response.status_code != 200:
-                raise AttachmentDownloadError("http_error", status_code=response.status_code)
-
-            content_length = response.headers.get("content-length", "")
-            if content_length.isdigit() and int(content_length) > max_bytes:
-                raise AttachmentDownloadError("too_large")
-
-            content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-            if content_type not in _GENERIC_CONTENT_TYPES | _CONTENT_TYPES[expected_format]:
-                raise AttachmentDownloadError("type_mismatch")
+            remaining_seconds(deadline)
+            content_type = _response_type(response, expected_format, max_bytes)
 
             chunks: list[bytes] = []
             total = 0
             for chunk in response.iter_bytes():
+                remaining_seconds(deadline)
                 total += len(chunk)
                 if total > max_bytes:
                     raise AttachmentDownloadError("too_large")
                 chunks.append(chunk)
+            remaining_seconds(deadline)
     except httpx.TimeoutException:
         raise AttachmentDownloadError("timeout") from None
     except httpx.RequestError:
         raise AttachmentDownloadError("request_failed") from None
 
-    data = b"".join(chunks)
+    return _materialize(b"".join(chunks), file_name, expected_format, content_type)
+
+
+async def _download_owned(
+    url: str, file_name: str, expected_format: str, max_bytes: int, deadline: float,
+) -> DownloadedAttachment:
+    """Cancel headers and body waits at the total deadline, closing owned resources."""
+    try:
+        async with asyncio.timeout(remaining_seconds(deadline)):
+            async with httpx.AsyncClient() as client:
+                remaining = remaining_seconds(deadline)
+                async with client.stream(
+                    "GET", url, follow_redirects=False,
+                    timeout=httpx.Timeout(min(20.0, remaining), connect=min(5.0, remaining)),
+                ) as response:
+                    content_type = _response_type(response, expected_format, max_bytes)
+                    chunks = []
+                    total = 0
+                    async for chunk in response.aiter_bytes():
+                        remaining_seconds(deadline)
+                        total += len(chunk)
+                        if total > max_bytes:
+                            raise AttachmentDownloadError("too_large")
+                        chunks.append(chunk)
+                    remaining_seconds(deadline)
+        return _materialize(b"".join(chunks), file_name, expected_format, content_type)
+    except TimeoutError:
+        raise AttachmentDownloadError("time_limit") from None
+    except httpx.TimeoutException:
+        raise AttachmentDownloadError("timeout") from None
+    except httpx.RequestError:
+        raise AttachmentDownloadError("request_failed") from None
+
+
+def _owned_download(
+    url: str, file_name: str, expected_format: str, max_bytes: int, deadline: float,
+) -> DownloadedAttachment:
+    def run() -> DownloadedAttachment:
+        return asyncio.run(_download_owned(url, file_name, expected_format, max_bytes, deadline))
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return run()
+    # Keep this public API synchronous even inside an application's event loop.
+    # The child performs a cancellable bounded request and is always joined.
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(run).result()
+
+
+def _materialize(
+    data: bytes, file_name: str, expected_format: str, content_type: str,
+) -> DownloadedAttachment:
     if not data:
         raise AttachmentDownloadError("empty_file")
     if expected_format == "pdf" and data.startswith(b"%PDF-"):
@@ -200,6 +287,8 @@ def download_attachment(
     *,
     client: httpx.Client | None = None,
     max_bytes: int = MAX_ATTACHMENT_BYTES,
+    max_seconds: float = MAX_DOWNLOAD_SECONDS,
+    deadline: float | None = None,
 ) -> DownloadedAttachment:
     """Fetch one PDF/HWP into bounded memory without following redirects.
 
@@ -210,20 +299,21 @@ def download_attachment(
     expected_format = _expected_format(file_name)
     if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes < 1:
         raise ValueError("max_bytes must be a positive integer")
+    end = download_deadline(max_seconds, deadline)
     if client is not None:
-        return _download(client, url, file_name, expected_format, max_bytes)
-    with httpx.Client() as owned_client:
-        return _download(owned_client, url, file_name, expected_format, max_bytes)
+        return _download(client, url, file_name, expected_format, max_bytes, end)
+    return _owned_download(url, file_name, expected_format, max_bytes, end)
 
 
 def download_image(
-    url: str, *, client: httpx.Client | None = None, max_bytes: int = MAX_IMAGE_BYTES
+    url: str, *, client: httpx.Client | None = None, max_bytes: int = MAX_IMAGE_BYTES,
+    max_seconds: float = MAX_DOWNLOAD_SECONDS, deadline: float | None = None,
 ) -> DownloadedAttachment:
     """Fetch an official PNG/JPEG/WebP, including images without a filename."""
     _validate_source_url(url, image=True)
     if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes < 1:
         raise ValueError("max_bytes must be a positive integer")
+    end = download_deadline(max_seconds, deadline)
     if client is not None:
-        return _download(client, url, "", "image", max_bytes)
-    with httpx.Client() as owned_client:
-        return _download(owned_client, url, "", "image", max_bytes)
+        return _download(client, url, "", "image", max_bytes, end)
+    return _owned_download(url, "", "image", max_bytes, end)
