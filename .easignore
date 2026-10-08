@@ -1,0 +1,40 @@
+# dependencies
+node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.json
+
+# pipeline e2e run reports (uploaded as a CI artifact)
+services/pipeline/artifacts/
+
+# local env files
+.env
+.env*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local review/export artifacts are not build inputs.
+/output/
+/API_INTEGRATION_BLUEPRINT.md
+/backend-test-pipeline-issue.md
+**/.expo/
+**/dist/
+**/web-build/
+**/android/
+**/ios/
+*.jks
+*.keystore
+*.pem
+*.p8
+*.p12
+*.key
+credentials.json
