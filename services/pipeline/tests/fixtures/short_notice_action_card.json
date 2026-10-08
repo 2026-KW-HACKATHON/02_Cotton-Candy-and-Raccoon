@@ -1,0 +1,122 @@
+{
+  "notice": {
+    "title": "노원수학문화관 개천절 ~ 한글날 연휴기간 운영 안내",
+    "body_text": "노원수학문화관 개천절~한글날 운영 및 휴무일 안내드리오니, 이용에 참고하시기 바랍니다.\n※ 노원수학문화관 휴무일은 1월1일, 설날(당일), 추석(당일), 매주 월요일(월요일이 공휴일인 경우 화요일 휴관) 입니다.",
+    "reference_datetime": "2026-10-09T00:00:00+09:00",
+    "attachments": [],
+    "publisher": null,
+    "department": null,
+    "published_on": "2026-10-02"
+  },
+  "responses": [
+    {
+      "category": "living",
+      "category_code": 26,
+      "summary": "노원수학문화관 개천절 ~ 한글날 연휴기간 운영 안내",
+      "publisher": null,
+      "applicable_area": null,
+      "audience": null,
+      "audience_scope": "unknown",
+      "action": null,
+      "action_requirement": "none",
+      "location": "노원수학문화관",
+      "dates": [],
+      "status": "ongoing",
+      "status_detail": null,
+      "notice_update": "new",
+      "changed_details": null,
+      "notes": [
+        "노원수학문화관 휴무일은 1월1일, 설날(당일), 추석(당일), 매주 월요일(월요일이 공휴일인 경우 화요일 휴관) 입니다"
+      ],
+      "topics": [],
+      "uncertainties": [],
+      "evidence": [
+        {
+          "field": "summary",
+          "excerpt": "노원수학문화관 개천절 ~ 한글날 연휴기간 운영 안내",
+          "source_type": "text",
+          "verification": null
+        },
+        {
+          "field": "category_code",
+          "excerpt": "노원수학문화관 개천절 ~ 한글날 연휴기간 운영 안내",
+          "source_type": "text",
+          "verification": null
+        },
+        {
+          "field": "location",
+          "excerpt": "노원수학문화관 개천절~한글날 운영 및 휴무일 안내드리오니",
+          "source_type": "text",
+          "verification": null
+        },
+        {
+          "field": "notes",
+          "excerpt": "노원수학문화관 휴무일은 1월1일, 설날(당일), 추석(당일), 매주 월요일(월요일이 공휴일인 경우 화요일 휴관) 입니다.",
+          "source_type": "text",
+          "verification": null
+        }
+      ],
+      "card_summaries": {
+        "audience": null,
+        "deadline": null,
+        "action": null,
+        "notes": "노원수학문화관 휴무일은 1월 1일, 설날 당일, 추석 당일, 매주 월요일이에요. 월요일이 공휴일인 경우 화요일에 휴관해요."
+      }
+    },
+    {
+      "category": "living",
+      "category_code": 26,
+      "summary": "노원수학문화관 개천절 ~ 한글날 연휴기간 운영 안내",
+      "publisher": null,
+      "applicable_area": null,
+      "audience": null,
+      "audience_scope": "unknown",
+      "action": null,
+      "action_requirement": "none",
+      "location": "노원수학문화관",
+      "dates": [],
+      "status": "ongoing",
+      "status_detail": null,
+      "notice_update": "new",
+      "changed_details": null,
+      "notes": [
+        "노원수학문화관 휴무일은 1월1일, 설날(당일), 추석(당일) 등임"
+      ],
+      "topics": [],
+      "uncertainties": [],
+      "evidence": [
+        {
+          "field": "summary",
+          "excerpt": "노원수학문화관 개천절 ~ 한글날 연휴기간 운영 안내",
+          "source_type": "text",
+          "verification": null
+        },
+        {
+          "field": "category_code",
+          "excerpt": "노원수학문화관 개천절 ~ 한글날 연휴기간 운영 안내",
+          "source_type": "text",
+          "verification": null
+        },
+        {
+          "field": "location",
+          "excerpt": "노원수학문화관 개천절~한글날 운영 및 휴무일 안내드리오니",
+          "source_type": "text",
+          "verification": null
+        },
+        {
+          "field": "notes",
+          "excerpt": "노원수학문화관 휴무일은 1월1일, 설날(당일), 추석(당일), 매주 월요일(월요일이 공휴일인 경우 화요일 휴관) 입니다.",
+          "source_type": "text",
+          "verification": null
+        }
+      ],
+      "card_summaries": {
+        "audience": null,
+        "deadline": null,
+        "action": null,
+        "notes": "노원수학문화관 휴무일은 1월 1일, 설날 당일, 추석 당일, 매주 월요일이에요. 월요일이 공휴일인 경우 화요일에 휴관해요."
+      }
+    }
+  ],
+  "source_url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_estnColumn1=11&q_bbscttSn=20261002170555544"
+}

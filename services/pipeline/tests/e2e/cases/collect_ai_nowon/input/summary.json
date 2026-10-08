@@ -1,0 +1,68 @@
+{
+  "category": "application",
+  "category_code": 27,
+  "summary": "지원 사업 신청",
+  "publisher": null,
+  "applicable_area": null,
+  "audience": "월계1동 주민",
+  "audience_scope": "specific",
+  "action": "월계1동 주민센터 방문 신청",
+  "action_requirement": "optional",
+  "location": null,
+  "dates": [
+    {
+      "kind": "application",
+      "label": "신청 기간",
+      "text": "2026-10-03~2026-10-20",
+      "start_date": "2026-10-03",
+      "end_date": "2026-10-20",
+      "start_time": null,
+      "end_time": null
+    }
+  ],
+  "status": "open",
+  "status_detail": null,
+  "notice_update": "new",
+  "changed_details": null,
+  "notes": [
+    "신분증 지참"
+  ],
+  "topics": [],
+  "uncertainties": [],
+  "evidence": [
+    {
+      "field": "summary",
+      "excerpt": "지원 사업 신청"
+    },
+    {
+      "field": "category",
+      "excerpt": "지원 사업 신청"
+    },
+    {
+      "field": "category_code",
+      "excerpt": "지원 사업 신청"
+    },
+    {
+      "field": "audience",
+      "excerpt": "월계1동 주민"
+    },
+    {
+      "field": "action",
+      "excerpt": "월계1동 주민센터 방문 신청"
+    },
+    {
+      "field": "dates",
+      "excerpt": "신청 기간: 2026-10-03~2026-10-20"
+    },
+    {
+      "field": "notes",
+      "excerpt": "신분증 지참"
+    }
+  ],
+  "card_summaries": {
+    "audience": "월계1동 주민이 대상이에요.",
+    "deadline": "신청 기간은 2026년 10월 3일부터 10월 20일까지예요.",
+    "action": "월계1동 주민센터를 방문해 신청하세요.",
+    "notes": "방문할 때 신분증을 준비하세요."
+  }
+}

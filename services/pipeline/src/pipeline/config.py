@@ -69,6 +69,20 @@ class DatabaseSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class DictionarySettings:
+    """Server-only dictionary credentials, loaded only on an external lookup."""
+
+    api_key: str = field(repr=False)
+
+    @classmethod
+    def from_env(cls) -> Self:
+        key = os.getenv("STDICT_API_KEY", "").strip()
+        if not key:
+            raise ConfigError("STDICT_API_KEY가 필요합니다.")
+        return cls(api_key=key)
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     database_url: str = field(repr=False)
     seoul_api_key: str = field(repr=False)

@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Bookmark } from "lucide-react-native";
@@ -10,6 +10,11 @@ import { AppText } from "@/shared/ui/AppText";
 import { COLORS, CARD_SHADOW, RADIUS } from "@/shared/theme/tokens";
 import { CategoryBadge } from "../components/CategoryBadge";
 import { NoticeState } from "../components/NoticeState";
+import { NoticeLinks } from "../components/NoticeLinks";
+import {
+  NoticeReadStatus,
+  NoticeQueryFeedback,
+} from "../components/NoticeReadStatus";
 import { useNotice } from "../hooks/useNotices";
 import { useBookmarkStore } from "../store/bookmarkStore";
 import { useDisplayPreferences } from "@/shared/accessibility/displayPreferences";
@@ -47,9 +52,8 @@ function StandardNoticeDetailScreen() {
   const query = useNotice(id);
   const saved = useBookmarkStore((state) => state.savedIds.includes(id));
   const toggleBookmark = useBookmarkStore((state) => state.toggleBookmark);
-  // 쉬운말은 미리 작성된 예시 문구를 전환한다. 이 화면에서 AI 변환 요청을 실행하지 않는다.
+  // DB에 저장된 결과만 표시하며 앱에서 AI를 호출하지 않는다.
   const [easy, setEasy] = useState(false);
-  const [documentOpen, setDocumentOpen] = useState(false);
   const [term, setTerm] = useState<GlossaryTerm | null>(null);
   const notice = query.data;
   const rows = notice
@@ -95,7 +99,7 @@ function StandardNoticeDetailScreen() {
         />
       }
     >
-      {query.isPending || query.isError ? (
+      {query.isPending ? (
         <NoticeState
           loading={query.isPending}
           error={query.isError}
@@ -104,9 +108,23 @@ function StandardNoticeDetailScreen() {
           }}
         />
       ) : !notice ? (
-        <NoticeState message="공문을 찾을 수 없어요." />
+        query.isError ? (
+          <NoticeQueryFeedback
+            error={query.error}
+            hasData={false}
+            retry={() => void query.refetch()}
+          />
+        ) : (
+          <NoticeState message="공문을 찾을 수 없어요." />
+        )
       ) : (
         <>
+          <NoticeQueryFeedback
+            error={query.error}
+            hasData={true}
+            retry={() => void query.refetch()}
+          />
+          <NoticeReadStatus notice={notice} />
           <View style={styles.metadata}>
             <CategoryBadge>{notice.category}</CategoryBadge>
             <AppText
@@ -151,8 +169,8 @@ function StandardNoticeDetailScreen() {
                 </View>
               </View>
             ))}
-            <AppText secondary size={12} lineHeight={18}>
-              화면 검토용 예시 요약입니다. 정확한 조건은 원문을 확인해요.
+            <AppText secondary size={11.08}>
+              AI 요약은 오류가 있을 수 있습니다. 정확한 조건은 원문을 확인해요.
             </AppText>
           </View>
           <View style={styles.document}>
@@ -199,64 +217,22 @@ function StandardNoticeDetailScreen() {
               {notice.documentTitle}
             </AppText>
             <NoticeDocumentText
-              text={easy ? notice.easy : notice.original}
-              terms={notice.terms}
+              notice={notice}
               easy={easy}
               onTermPress={setTerm}
             />
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setDocumentOpen(true)}
-            style={styles.fileButton}
-          >
-            <AppText
-              variant="medium"
-              size={16}
-              lineHeight={24}
-              style={{ color: COLORS.primary }}
-            >
-              원문 파일 보기
-            </AppText>
-          </Pressable>
-          <AppText secondary size={12.923}>
-            화면 검토용 예시 공문입니다. 실제 공고가 아닙니다.
-          </AppText>
-          <View style={{ gap: 4, paddingTop: 12 }}>
-            <AppText secondary size={12} lineHeight={18}>
-              월계알리미는 노원구청의 공식 서비스가 아닙니다.
-            </AppText>
-            <AppText secondary size={12} lineHeight={18}>
-              공개된 공지 정보를 모아 쉽게 전달해요.
-            </AppText>
-          </View>
-          {/* 첨부 파일 연동 전에는 다운로드 대신 로컬 예시 원문을 모달로 보여준다. */}
-          <Modal
-            visible={documentOpen}
-            animationType="slide"
-            transparent
-            onRequestClose={() => setDocumentOpen(false)}
-          >
-            <View style={styles.overlay}>
-              <View accessibilityViewIsModal style={styles.modal}>
-                <AppText variant="bold" size={18}>
-                  예시 원문
+            {easy && (!notice.hasEasyText || !notice.easy) && (
+              <AppText>쉬운말 결과가 없어 원문을 표시합니다.</AppText>
+            )}
+            {easy &&
+              notice.hasEasyText &&
+              !notice.attachmentContentIncluded && (
+                <AppText secondary>
+                  첨부파일 내용은 쉬운말 변환에 포함되지 않았습니다.
                 </AppText>
-                <ScrollView>
-                  <AppText variant="bold">{notice.documentTitle}</AppText>
-                  <AppText>{notice.original}</AppText>
-                  <AppText>실제 원문 파일은 서버 연동 후 제공됩니다.</AppText>
-                </ScrollView>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => setDocumentOpen(false)}
-                  style={styles.fileButton}
-                >
-                  <AppText>닫기</AppText>
-                </Pressable>
-              </View>
-            </View>
-          </Modal>
+              )}
+          </View>
+          <NoticeLinks notice={notice} />
         </>
       )}
     </Screen>
@@ -314,14 +290,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  fileButton: {
-    minHeight: 52,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 0.923,
-    borderColor: "#73899B",
-    borderRadius: RADIUS.control,
-  },
   segmentSelected: {
     backgroundColor: COLORS.primary,
     shadowColor: COLORS.text,
@@ -329,18 +297,5 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
-  },
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(36,59,83,0.4)",
-    justifyContent: "center",
-    padding: 24,
-  },
-  modal: {
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.card,
-    padding: 24,
-    gap: 20,
-    maxHeight: "80%",
   },
 });

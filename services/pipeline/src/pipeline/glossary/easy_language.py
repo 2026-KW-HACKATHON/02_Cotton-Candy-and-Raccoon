@@ -1,4 +1,4 @@
-"""Apply contextual easy-language swaps while retaining the exact notice."""
+"""Attest contextual easy-language swaps and dictionary candidates against the notice."""
 
 import re
 import unicodedata
@@ -17,6 +17,13 @@ from pydantic import (
     model_validator,
 )
 
+from pipeline.gemini_execution import (
+    ExecutionBudget,
+    FailureKind,
+    GeminiExecutionError,
+    current_execution,
+    execution_budget,
+)
 from pipeline.glossary.source import (
     MAX_SOURCE_CHARACTERS,
     NoticeGlossaryInput,
@@ -25,7 +32,7 @@ from pipeline.glossary.source import (
 )
 
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
-PROMPT_VERSION = "easy-language-v7"
+PROMPT_VERSION = "easy-language-v8"
 PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "gemini_easy_language.md"
 MAX_TERM_CHARACTERS = 100
 
@@ -42,8 +49,24 @@ class EasyLanguageConfigurationError(ValueError):
     """The local source, prompt or Gemini settings cannot be used."""
 
 
-class EasyLanguageAPIError(RuntimeError):
+class EasyLanguageAPIError(GeminiExecutionError):
     """Gemini failed; remote details and credentials are deliberately excluded."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason_code: str = "api_error",
+        failure_kind: FailureKind = "permanent",
+        retryable: bool = False,
+        retry_at: datetime | None = None,
+        status_code: int | None = None,
+    ) -> None:
+        super().__init__(
+            reason_code, failure_kind=failure_kind, retryable=retryable,
+            retry_at=retry_at, status_code=status_code,
+        )
+        self.args = (message,)
 
 
 class EasyLanguageValidationError(ValueError):
@@ -91,11 +114,48 @@ class ProposedChange(BaseModel):
         return self
 
 
+def _validate_dictionary_term(value: str) -> None:
+    if not value.strip() or value != value.strip():
+        raise ValueError("사전 후보와 조회어는 바깥 공백 없이 입력해야 합니다.")
+    # Keep lexical punctuation (e.g. 외래어·전문어, e-메일) while excluding
+    # URL/query operators, hidden characters and whole sentence fragments.
+    if not any(unicodedata.category(character)[0] == "L" for character in value) or any(
+        unicodedata.category(character)[0] not in {"L", "M", "N"}
+        and unicodedata.category(character) != "Pd"
+        and character not in {" ", "·", "ㆍ", "'", "’"}
+        for character in value
+    ):
+        raise ValueError("사전 후보와 조회어에는 실제 용어만 사용할 수 있습니다.")
+    if (
+        not _is_word_character(value[0])
+        or not _is_word_character(value[-1])
+        or any(word in {"AND", "OR", "NOT"} for word in value.split())
+        or any(pattern.search(value) for pattern in _PROTECTED_PATTERNS)
+    ):
+        raise ValueError("사전 후보와 조회어에는 검색 연산자나 보호 표기를 넣을 수 없습니다.")
+
+
+class ProposedDictionaryCandidate(BaseModel):
+    """An exact source expression and its proposed dictionary lookup form."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+    original: str = Field(min_length=1, max_length=MAX_TERM_CHARACTERS, strict=True)
+    query_word: str = Field(min_length=1, max_length=MAX_TERM_CHARACTERS, strict=True)
+    context: str = Field(min_length=1, max_length=MAX_SOURCE_CHARACTERS, strict=True)
+
+    @model_validator(mode="after")
+    def validate_terms(self) -> Self:
+        _validate_dictionary_term(self.original)
+        _validate_dictionary_term(self.query_word)
+        return self
+
+
 class EasyLanguageResponse(BaseModel):
-    """Require contextual replacement proposals, possibly empty."""
+    """Require both independently chosen proposal lists, possibly empty."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
     changes: tuple[ProposedChange, ...]
+    dictionary_candidates: tuple[ProposedDictionaryCandidate, ...]
 
 
 class AppliedChange(BaseModel):
@@ -113,6 +173,19 @@ class AppliedChange(BaseModel):
         _validate_term(self.original, self.replacement)
         if self.start >= self.end or self.end - self.start != len(self.original):
             raise ValueError("용어의 원문 위치가 올바르지 않습니다.")
+        return self
+
+
+class DictionaryCandidate(ProposedDictionaryCandidate):
+    """An attested candidate at half-open original Unicode code-point offsets."""
+
+    start: int = Field(ge=0, strict=True)
+    end: int = Field(gt=0, strict=True)
+
+    @model_validator(mode="after")
+    def validate_interval(self) -> Self:
+        if self.start >= self.end or self.end - self.start != len(self.original):
+            raise ValueError("사전 후보의 원문 위치가 올바르지 않습니다.")
         return self
 
 
@@ -196,21 +269,58 @@ def _resolve_changes(text: str, response: EasyLanguageResponse) -> tuple[Applied
     return changes
 
 
+def _body_text(text: str, title: str | None) -> tuple[str, int]:
+    if title is None:
+        return text, 0
+    prefix = title + "\n"
+    if not text.startswith(prefix) or not text[len(prefix) :].strip():
+        raise ValueError("쉬운말 변환에는 제목과 구분된 본문이 필요합니다.")
+    return text[len(prefix) :], len(prefix)
+
+
 def _resolve_body_changes(
     text: str, response: EasyLanguageResponse, title: str | None
 ) -> tuple[AppliedChange, ...]:
     """Validate model excerpts inside the body, retaining complete-original offsets."""
-    if title is None:
-        return _resolve_changes(text, response)
-    prefix = title + "\n"
-    if not text.startswith(prefix) or not text[len(prefix) :].strip():
-        raise ValueError("쉬운말 변환에는 제목과 구분된 본문이 필요합니다.")
+    body, offset = _body_text(text, title)
     return tuple(
-        change.model_copy(
-            update={"start": change.start + len(prefix), "end": change.end + len(prefix)}
-        )
-        for change in _resolve_changes(text[len(prefix) :], response)
+        change.model_copy(update={"start": change.start + offset, "end": change.end + offset})
+        for change in _resolve_changes(body, response)
     )
+
+
+def _resolve_dictionary_candidates(
+    text: str, proposals: tuple[ProposedDictionaryCandidate, ...], title: str | None
+) -> tuple[DictionaryCandidate, ...]:
+    body, offset = _body_text(text, title)
+    protected = _protected_spans(body)
+    candidates: dict[tuple[int, int, str, str], DictionaryCandidate] = {}
+    for proposed in proposals:
+        start = _unique_start(body, proposed.context) + _unique_start(
+            proposed.context, proposed.original
+        )
+        end = start + len(proposed.original)
+        if (
+            start > 0
+            and _is_word_character(body[start - 1])
+            or end < len(body)
+            and _is_word_character(body[end])
+        ):
+            raise ValueError("사전 후보는 조사·어미를 포함한 원문 단어 전체여야 합니다.")
+        if any(start < stop and begin < end for begin, stop in protected):
+            raise ValueError("숫자·날짜·주소·연락처는 사전 후보가 될 수 없습니다.")
+        candidate = DictionaryCandidate(
+            **proposed.model_dump(), start=start + offset, end=end + offset
+        )
+        # Different exact contexts can attest the same occurrence. Keep one,
+        # but never collapse separate occurrences of the same dictionary word.
+        key = (candidate.start, candidate.end, candidate.original, candidate.query_word)
+        candidates.setdefault(key, candidate)
+    ordered = tuple(sorted(candidates.values(), key=lambda candidate: candidate.start))
+    for previous, current in zip(ordered, ordered[1:], strict=False):
+        if previous.end > current.start:
+            raise ValueError("사전 후보 위치가 겹치거나 같은 위치의 조회어가 충돌합니다.")
+    return ordered
 
 
 def _credential_forms(api_key: str) -> tuple[str, ...]:
@@ -228,11 +338,17 @@ def _validate_raw_credentials(
 def _validate_decoded_credentials(
     response: EasyLanguageResponse, original_text: str, credentials: tuple[str, ...]
 ) -> None:
-    # Original/context are later attested source copies, so an existing source
-    # credential may remain there. Never add it as replacement text.
-    added = tuple(change.replacement for change in response.changes)
+    # Contexts may copy an existing source credential, but never add it as
+    # replacement/lookup text or select it as a dictionary candidate itself.
+    added = tuple(change.replacement for change in response.changes) + tuple(
+        text
+        for candidate in response.dictionary_candidates
+        for text in (candidate.original, candidate.query_word)
+    )
     copied = tuple(
-        text for change in response.changes for text in (change.original, change.context)
+        text
+        for proposal in (*response.changes, *response.dictionary_candidates)
+        for text in (proposal.original, proposal.context)
     )
     if any(secret in text for text in added for secret in credentials) or any(
         secret in text and secret not in original_text for text in copied for secret in credentials
@@ -279,6 +395,8 @@ class EasyLanguageResult(BaseModel):
     prompt_version: str = Field(min_length=1, strict=True)
     generated_at: AwareDatetime
     changes: tuple[AppliedChange, ...]
+    # None is legacy/unknown; an empty tuple means extraction completed with no candidates.
+    dictionary_candidates: tuple[DictionaryCandidate, ...] | None = None
     attempt_count: int = Field(ge=1, le=2, strict=True)
     # None means provenance is unknown, not that a body/attachment was absent.
     # False for attachment content does not assert that the notice has files.
@@ -307,6 +425,7 @@ class EasyLanguageResult(BaseModel):
                     )
                     for change in self.changes
                 ),
+                dictionary_candidates=(),
             ),
             self.original_title,
         )
@@ -315,6 +434,21 @@ class EasyLanguageResult(BaseModel):
             or apply_easy_language_changes(source.text, resolved) != self.easy_text
         ):
             raise ValueError("보관한 변경 목록으로 쉬운 공지를 재현할 수 없습니다.")
+        if self.dictionary_candidates is not None:
+            candidates = _resolve_dictionary_candidates(
+                source.text,
+                tuple(
+                    ProposedDictionaryCandidate(
+                        original=candidate.original,
+                        query_word=candidate.query_word,
+                        context=candidate.context,
+                    )
+                    for candidate in self.dictionary_candidates
+                ),
+                self.original_title,
+            )
+            if self.dictionary_candidates != candidates:
+                raise ValueError("보관한 사전 후보와 원문 위치가 일치하지 않습니다.")
         return self
 
 
@@ -338,13 +472,45 @@ def simplify_notice(
     model: str = DEFAULT_MODEL,
     request: Callable[..., str] | None = None,
     clock: Callable[[], datetime] | None = None,
+    budget: ExecutionBudget | None = None,
+) -> EasyLanguageResult:
+    """Share one execution deadline across generation, validation and correction."""
+    with execution_budget(budget) as active:
+        try:
+            result = _simplify_notice(
+                source, api_key=api_key, model=model, request=request, clock=clock
+            )
+            active.check()
+            return result
+        except GeminiExecutionError as error:
+            # Preserve scheduling metadata, but never an injected client's message.
+            safe_error = EasyLanguageAPIError(
+                "Gemini easy-language request failed.",
+                reason_code=error.reason_code,
+                failure_kind=error.failure_kind,
+                retryable=error.retryable,
+                retry_at=error.retry_at,
+                status_code=error.status_code,
+            )
+            active.last_failure = safe_error
+            raise safe_error from None
+
+
+def _simplify_notice(
+    source: NoticeGlossaryInput,
+    *,
+    api_key: str,
+    model: str,
+    request: Callable[..., str] | None,
+    clock: Callable[[], datetime] | None,
 ) -> EasyLanguageResult:
     """Retry invalid JSON/spans once; API failures never become successful empty work.
 
     DB inputs send the same body on both attempts; the title stays outside Gemini.
     Direct text inputs have no known title boundary and are treated as body text. The model
-    chooses contextual equivalents; local validation checks literal spans and
-    protected formats, but cannot prove that two Korean expressions mean the same.
+    chooses contextual equivalents and dictionary lookup forms; local validation
+    checks literal spans and protected formats, but cannot prove Korean semantic
+    equivalence or dictionary membership.
     """
     if not isinstance(source, NoticeGlossaryInput):
         raise EasyLanguageConfigurationError("A validated notice source is required.")
@@ -366,11 +532,17 @@ def simplify_notice(
     credentials = _credential_forms(api_key)
     for attempt in (1, 2):
         try:
+            active = current_execution()
+            assert active is not None
+            active.check()
             output = request(prompt=prompt, notice_text=request_text, api_key=api_key, model=model)
+            active.check()
         except EasyLanguageConfigurationError:
             raise EasyLanguageConfigurationError(
                 "Gemini easy-language configuration failed."
             ) from None
+        except GeminiExecutionError:
+            raise
         except Exception:
             # This is an external request boundary, including injected SDK/network clients.
             # No arbitrary exception strings, response bodies or keys enter public errors.
@@ -382,9 +554,13 @@ def simplify_notice(
             response = EasyLanguageResponse.model_validate_json(output)
             _validate_decoded_credentials(response, request_text, credentials)
             changes = _resolve_body_changes(source.text, response, title)
+            dictionary_candidates = _resolve_dictionary_candidates(
+                source.text, response.dictionary_candidates, title
+            )
             easy_text = apply_easy_language_changes(source.text, changes)
             _validate_generated_credentials(easy_text, changes, credentials)
         except (ValidationError, ValueError) as error:
+            active.check()
             if attempt == 2:
                 raise EasyLanguageValidationError(
                     "Gemini easy-language JSON or source validation failed after two attempts."
@@ -400,7 +576,9 @@ def simplify_notice(
             prompt += (
                 "\n\n이전 응답은 JSON 형식 또는 원문 위치 검사에 실패했습니다. "
                 "같은 전체 원문을 다시 읽고, 정확히 복사한 문맥과 용어만 반환하세요. "
-                "changes만 반환하세요. 원문에 없는 말이나 예시의 용어를 넣지 마세요. "
+                "changes와 dictionary_candidates를 모두 반환하세요. "
+                "각 목록은 독립적으로 고르고 없으면 빈 배열로 반환하세요. "
+                "원문에 없는 말이나 예시의 용어를 넣지 마세요. "
                 "확신할 수 없는 변경은 제외하고, 앞뒤 문맥에 맞는 조사·어미를 포함한 "
                 "최소 구간을 고르세요. 바꾼 문장을 실제로 이어 읽어 확인하세요."
             )
@@ -449,6 +627,7 @@ def simplify_notice(
             prompt_version=PROMPT_VERSION,
             generated_at=clock() if clock else datetime.now(UTC),
             changes=changes,
+            dictionary_candidates=dictionary_candidates,
             attempt_count=attempt,
             body_text_present=source.body_text_present
             if isinstance(source, StoredNoticeInput)

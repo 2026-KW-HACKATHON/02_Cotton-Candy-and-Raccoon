@@ -10,8 +10,10 @@ readme = "README.md"
 requires-python = ">=3.12,<3.15"
 dependencies = [
     "beautifulsoup4>=4.13.4,<5",
+    "cryptography>=46,<51",
     "google-genai>=2.25.0,<3",
     "httpx>=0.28.1,<1",
+    "olefile>=0.47,<1",
     "psycopg[binary]>=3.2.9,<4",
     "pydantic>=2.11.0,<3",
 ]
@@ -24,6 +26,7 @@ notice-glossary = "pipeline.glossary.cli:main"
 [dependency-groups]
 dev = [
     "pytest>=8.4.1,<10",
+    "pytest-cov>=6,<8",
     "ruff>=0.12.0,<1",
 ]
 
@@ -31,8 +34,9 @@ dev = [
 packages = ["src/pipeline"]
 
 [tool.pytest.ini_options]
-addopts = "-ra"
+addopts = "-ra --import-mode=importlib"
 testpaths = ["tests"]
+pythonpath = ["tests"]
 
 [tool.ruff]
 line-length = 100

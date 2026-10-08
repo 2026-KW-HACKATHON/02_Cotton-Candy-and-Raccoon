@@ -1,3 +1,4 @@
+import { NoticeQueryFeedback } from "../components/NoticeReadStatus";
 import { useEffect, useRef, useState } from "react";
 import {
   FlatList,
@@ -22,6 +23,7 @@ import {
 } from "../components/LetterIllustration";
 import { NoticeState } from "../components/NoticeState";
 import { ScopeDropdown } from "../components/ScopeDropdown";
+import { useNoticeScopeStore } from "../store/noticeScopeStore";
 import { useNotices } from "../hooks/useNotices";
 import { type Notice } from "../types/notice";
 import { useDisplayPreferences } from "@/shared/accessibility/displayPreferences";
@@ -36,30 +38,37 @@ export function HomeScreen() {
   );
 }
 function StandardHomeScreen() {
-  const query = useNotices();
-  const [index, setIndex] = useState(0);
+  const source = useNoticeScopeStore((state) => state.source);
+  const query = useNotices({ source });
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const list = useRef<FlatList<Notice>>(null);
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const width = Math.min(useWindowDimensions().width, 600);
   const pageWidth = Math.min(328.615, width);
   const scale = Math.min(1, (width - 40) / LETTER_WIDTH);
   const notices = query.data ?? [];
-  const activeIndex = Math.min(index, Math.max(0, notices.length - 1));
+  const selectedIndex = notices.findIndex((notice) => notice.id === selectedId);
+  const index = Math.max(0, selectedIndex);
+  const currentId = notices[index]?.id;
+  useEffect(() => {
+    list.current?.scrollToOffset({
+      offset: index * pageWidth,
+      animated: false,
+    });
+  }, [index, currentId, pageWidth]);
   useEffect(
     () => () => {
       if (scrollTimer.current !== null) clearTimeout(scrollTimer.current);
     },
-    [pageWidth],
+    [pageWidth, query.data],
   );
-  const today = new Date();
-  const date = `${today.getFullYear()}. ${String(today.getMonth() + 1).padStart(2, "0")}. ${String(today.getDate()).padStart(2, "0")}`;
   function move(next: number) {
     const target = Math.max(0, Math.min(next, notices.length - 1));
     list.current?.scrollToOffset({
       offset: target * pageWidth,
       animated: true,
     });
-    setIndex(target);
+    setSelectedId(notices[target]?.id ?? null);
   }
   return (
     <Screen
@@ -87,12 +96,17 @@ function StandardHomeScreen() {
             lineHeight={20.308}
             style={{ flex: 1 }}
           >
-            오늘의 공문 · {date} · 예시
+            등록일 최신순
           </AppText>
           <ScopeDropdown />
         </View>
       </View>
-      {query.isPending || query.isError ? (
+      <NoticeQueryFeedback
+        error={query.error}
+        hasData={query.data !== undefined}
+        retry={() => void query.refetch()}
+      />
+      {query.isPending ? (
         <NoticeState
           loading={query.isPending}
           error={query.isError}
@@ -100,15 +114,15 @@ function StandardHomeScreen() {
             void query.refetch();
           }}
         />
-      ) : !notices.length ? (
-        <NoticeState message="도착한 공문이 없어요." />
+      ) : query.isError && query.data === undefined ? null : !notices.length ? (
+        <NoticeState message="등록된 공문이 없어요." />
       ) : (
         <>
           <FlatList
             ref={list}
             horizontal
             data={notices}
-            extraData={activeIndex}
+            extraData={index}
             CellRendererComponent={({
               children,
               index: cellIndex,
@@ -117,13 +131,13 @@ function StandardHomeScreen() {
             }) => (
               <View
                 onLayout={onLayout}
-                style={[style, { zIndex: cellIndex === activeIndex ? 1 : 0 }]}
+                style={[style, { zIndex: cellIndex === index ? 1 : 0 }]}
               >
                 {children}
               </View>
             )}
             key={pageWidth}
-            initialScrollIndex={activeIndex}
+            initialScrollIndex={index}
             keyExtractor={(notice) => notice.id}
             showsHorizontalScrollIndicator={false}
             snapToInterval={pageWidth}
@@ -147,14 +161,16 @@ function StandardHomeScreen() {
               paddingBottom: 92,
             }}
             onMomentumScrollEnd={(event) =>
-              setIndex(
-                Math.max(
-                  0,
-                  Math.min(
-                    notices.length - 1,
-                    Math.round(event.nativeEvent.contentOffset.x / pageWidth),
-                  ),
-                ),
+              setSelectedId(
+                notices[
+                  Math.max(
+                    0,
+                    Math.min(
+                      notices.length - 1,
+                      Math.round(event.nativeEvent.contentOffset.x / pageWidth),
+                    ),
+                  )
+                ]?.id ?? null,
               )
             }
             getItemLayout={(_, itemIndex) => ({
@@ -163,9 +179,9 @@ function StandardHomeScreen() {
               index: itemIndex,
             })}
             renderItem={({ item, index: itemIndex }) => {
-              const selected = itemIndex === activeIndex;
+              const selected = itemIndex === index;
               const ItemContainer = selected ? View : Pressable;
-              const direction = itemIndex < activeIndex ? -1 : 1;
+              const direction = itemIndex < index ? -1 : 1;
               // 중앙 편지 기준 Figma의 원호 배치를 적용하되 페이지 간격은 그대로 둔다.
               const envelopeOffset =
                 direction < 0
@@ -184,16 +200,12 @@ function StandardHomeScreen() {
                   accessibilityLabel={
                     selected
                       ? undefined
-                      : itemIndex < activeIndex
+                      : itemIndex < index
                         ? "이전 공문 봉투"
                         : "다음 공문 봉투"
                   }
                   // 중앙 편지의 상세 이동과 접근성 포커스는 내부 버튼이 담당한다.
-                  onPress={
-                    selected
-                      ? undefined
-                      : () => move(activeIndex + direction)
-                  }
+                  onPress={selected ? undefined : () => move(index + direction)}
                   style={{
                     width: pageWidth,
                     height: LETTER_HEIGHT * scale,
@@ -233,9 +245,9 @@ function StandardHomeScreen() {
           <View style={styles.controls}>
             <IconButton
               accessibilityLabel="이전 공문"
-              accessibilityState={{ disabled: activeIndex === 0 }}
-              disabled={activeIndex === 0}
-              onPress={() => move(activeIndex - 1)}
+              accessibilityState={{ disabled: index === 0 }}
+              disabled={index === 0}
+              onPress={() => move(index - 1)}
               style={styles.arrow}
             >
               <ChevronLeft size={20} color={COLORS.primary} />
@@ -248,20 +260,36 @@ function StandardHomeScreen() {
               accessibilityLiveRegion="polite"
               style={{ width: 64, textAlign: "center" }}
             >
-              {activeIndex + 1} / {notices.length}
+              {index + 1} / {notices.length}
             </AppText>
             <IconButton
               accessibilityLabel="다음 공문"
               accessibilityState={{
-                disabled: activeIndex === notices.length - 1,
+                disabled: index === notices.length - 1,
               }}
-              disabled={activeIndex === notices.length - 1}
-              onPress={() => move(activeIndex + 1)}
+              disabled={index === notices.length - 1}
+              onPress={() => move(index + 1)}
               style={styles.arrow}
             >
               <ChevronRight size={20} color={COLORS.primary} />
             </IconButton>
           </View>
+          {query.hasNextPage && (
+            <Pressable
+              accessibilityRole="button"
+              disabled={query.isFetchingNextPage}
+              onPress={() => void query.fetchNextPage()}
+              style={{
+                minHeight: 48,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <AppText>
+                {query.isFetchingNextPage ? "불러오는 중" : "더 보기"}
+              </AppText>
+            </Pressable>
+          )}
         </>
       )}
       <Pressable

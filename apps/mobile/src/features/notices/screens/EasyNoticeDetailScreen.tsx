@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Modal, ScrollView, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
 import { useLocalSearchParams } from "expo-router";
 import { Screen } from "@/shared/ui/Screen";
@@ -7,12 +7,17 @@ import { goBack } from "@/shared/ui/Header";
 import { AppText } from "@/shared/ui/AppText";
 import { EasyButton } from "@/shared/ui/EasyButton";
 import { COLORS, EASY } from "@/shared/theme/tokens";
+import { NoticeLinks } from "../components/NoticeLinks";
+import {
+  NoticeReadStatus,
+  NoticeQueryFeedback,
+} from "../components/NoticeReadStatus";
 import { useNotice } from "../hooks/useNotices";
 import { useBookmarkStore } from "../store/bookmarkStore";
 import { EasyNoticeState } from "../components/EasyNoticeState";
 import { NoticeDocumentText } from "../components/NoticeDocumentText";
 import { NoticeTermOverlay } from "../components/NoticeTermOverlay";
-import { getSummaryRows, isNoticeExpired } from "../domain/noticePresentation";
+import { getSummaryRows } from "../domain/noticePresentation";
 import { type GlossaryTerm } from "../types/notice";
 
 // Figma QYCEBzvJCSX22QZ1VmJn8Q, 460:955/1231 및 연결 오버레이, 조회 2026-10-08.
@@ -24,7 +29,6 @@ export function EasyNoticeDetailScreen() {
   const toggleBookmark = useBookmarkStore((state) => state.toggleBookmark);
   const [easy, setEasy] = useState(false);
   const [term, setTerm] = useState<GlossaryTerm | null>(null);
-  const [documentOpen, setDocumentOpen] = useState(false);
   const notice = query.data;
   const rows = notice ? getSummaryRows(notice) : [];
   return (
@@ -68,7 +72,7 @@ export function EasyNoticeDetailScreen() {
         gap: EASY.gap,
       }}
     >
-      {query.isPending || query.isError ? (
+      {query.isPending ? (
         <EasyNoticeState
           loading={query.isPending}
           error={query.isError}
@@ -77,9 +81,23 @@ export function EasyNoticeDetailScreen() {
           }}
         />
       ) : !notice ? (
-        <EasyNoticeState message="공문을 찾을 수 없습니다" />
+        query.isError ? (
+          <NoticeQueryFeedback
+            error={query.error}
+            hasData={false}
+            retry={() => void query.refetch()}
+          />
+        ) : (
+          <EasyNoticeState message="공문을 찾을 수 없습니다" />
+        )
       ) : (
         <>
+          <NoticeQueryFeedback
+            error={query.error}
+            hasData={true}
+            retry={() => void query.refetch()}
+          />
+          <NoticeReadStatus notice={notice} />
           <View style={{ gap: 12 }}>
             <AppText size={EASY.title} variant="bold">
               {notice.title}
@@ -89,18 +107,6 @@ export function EasyNoticeDetailScreen() {
               secondary
             >{`공고 ${notice.publishedAt.replaceAll(" ", "")}\n정보제공처 ${notice.provider}`}</AppText>
           </View>
-          {isNoticeExpired(notice) && (
-            <View style={styles.card}>
-              <AppText
-                size={EASY.body}
-                variant="bold"
-                style={{ color: EASY.expired }}
-              >
-                종료된 공문 · 신청기한{"\n"}
-                {notice.deadline}
-              </AppText>
-            </View>
-          )}
           {rows.length > 0 && (
             <View
               style={[styles.card, { backgroundColor: COLORS.soft, gap: 12 }]}
@@ -141,57 +147,18 @@ export function EasyNoticeDetailScreen() {
             </AppText>
             <NoticeDocumentText
               comfortable
-              text={easy ? notice.easy : notice.original}
-              terms={notice.terms}
+              notice={notice}
               easy={easy}
               onTermPress={setTerm}
             />
           </View>
-          <EasyButton
-            label="원문 파일 보기"
-            filled
-            onPress={() => setDocumentOpen(true)}
-          />
-          <AppText size={EASY.body} secondary>
-            화면 검토용 예시 공문입니다. 실제 공고가 아닙니다.
-          </AppText>
-          <AppText size={EASY.body} secondary>
-            {
-              "월계알리미는 노원구청의 공식 서비스가 아닙니다.\n공개된 공지 정보를 모아 쉽게 전달해요."
-            }
-          </AppText>
-          {/* 첨부 파일 연동 전에는 기본 화면과 동일하게 로컬 예시 원문을 제공한다. */}
-          <Modal
-            visible={documentOpen}
-            transparent
-            animationType="slide"
-            onRequestClose={() => setDocumentOpen(false)}
-          >
-            <View style={styles.overlay}>
-              <View
-                accessibilityViewIsModal
-                style={[styles.card, styles.fileModal]}
-              >
-                <AppText variant="bold" size={EASY.heading}>
-                  예시 원문
-                </AppText>
-                <ScrollView contentContainerStyle={{ gap: 16 }}>
-                  <AppText variant="bold" size={EASY.body}>
-                    {notice.documentTitle}
-                  </AppText>
-                  <AppText size={EASY.body}>{notice.original}</AppText>
-                  <AppText size={EASY.body}>
-                    실제 원문 파일은 서버 연동 후 제공됩니다.
-                  </AppText>
-                </ScrollView>
-                <EasyButton
-                  label="닫기"
-                  filled
-                  onPress={() => setDocumentOpen(false)}
-                />
-              </View>
-            </View>
-          </Modal>
+          {easy && (!notice.hasEasyText || !notice.easy) && (
+            <AppText>쉬운말 결과가 없어 원문을 표시합니다.</AppText>
+          )}
+          {easy && notice.hasEasyText && !notice.attachmentContentIncluded && (
+            <AppText>첨부 내용은 쉬운말 변환에 포함되지 않았습니다.</AppText>
+          )}
+          <NoticeLinks notice={notice} />
         </>
       )}
     </Screen>
@@ -210,18 +177,5 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     borderRadius: EASY.cardRadius,
     backgroundColor: COLORS.surface,
-  },
-  overlay: {
-    flex: 1,
-    justifyContent: "center",
-    padding: 20,
-    backgroundColor: "rgba(36,59,83,0.24)",
-  },
-  fileModal: {
-    gap: EASY.gap,
-    maxWidth: 500,
-    width: "100%",
-    maxHeight: "85%",
-    alignSelf: "center",
   },
 });

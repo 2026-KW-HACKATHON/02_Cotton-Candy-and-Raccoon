@@ -19,8 +19,10 @@ const ICONS = {
 };
 
 export function ScopeDropdown() {
-  const scope = useNoticeScopeStore((state) => state.scope);
-  const setScope = useNoticeScopeStore((state) => state.setScope);
+  const source = useNoticeScopeStore((state) => state.source);
+  const scope =
+    NOTICE_SCOPES.find((option) => option.source === source)?.label ?? "전체";
+  const setSource = useNoticeScopeStore((state) => state.setSource);
   const anchor = useRef<View>(null);
   const { width, height } = useWindowDimensions();
   const [position, setPosition] = useState<{
@@ -37,7 +39,13 @@ export function ScopeDropdown() {
     anchor.current?.measureInWindow((x, y, anchorWidth, anchorHeight) => {
       setPosition({
         left: Math.max(12, Math.min(width - 176, x + anchorWidth - 164)),
-        top: Math.max(12, Math.min(height - 174, y + anchorHeight + 7)),
+        top: Math.max(
+          12,
+          Math.min(
+            height - (NOTICE_SCOPES.length * 48 + 16) - 12,
+            y + anchorHeight + 7,
+          ),
+        ),
       });
     });
   }
@@ -82,26 +90,31 @@ export function ScopeDropdown() {
             >
               {NOTICE_SCOPES.map((option) => (
                 <Pressable
-                  key={option}
+                  key={option.label}
                   accessibilityRole="menuitem"
-                  accessibilityState={{ selected: option === scope }}
+                  accessibilityState={{ selected: option.source === source }}
                   onPress={() => {
-                    setScope(option);
+                    setSource(option.source);
                     setPosition(null);
                   }}
-                  style={[styles.option, option === scope && styles.selected]}
+                  style={[
+                    styles.option,
+                    option.source === source && styles.selected,
+                  ]}
                 >
                   <AppText
                     size={14}
                     lineHeight={22}
                     style={{
                       color:
-                        option === scope ? COLORS.primary : COLORS.secondary,
+                        option.source === source
+                          ? COLORS.primary
+                          : COLORS.secondary,
                     }}
                   >
-                    {option}
+                    {option.label}
                   </AppText>
-                  {option === scope && (
+                  {option.source === source && (
                     <Image source={ICONS.check} style={styles.icon} />
                   )}
                 </Pressable>

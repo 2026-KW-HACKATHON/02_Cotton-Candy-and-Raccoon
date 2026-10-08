@@ -1,3 +1,4 @@
+import { NoticeQueryFeedback } from "../components/NoticeReadStatus";
 import {
   Pressable,
   ScrollView,
@@ -48,8 +49,8 @@ function StandardNoticeListScreen() {
             <View style={styles.search}>
               <Search color={COLORS.secondary} size={20} strokeWidth={1.5} />
               <TextInput
-                accessibilityLabel="공문 제목이나 내용 검색"
-                placeholder="공문 제목이나 내용을 검색해요"
+                accessibilityLabel="불러온 공문 제목이나 요약 검색"
+                placeholder="불러온 제목·요약에서 검색해요"
                 placeholderTextColor={COLORS.secondary}
                 value={vm.search}
                 onChangeText={vm.setSearch}
@@ -95,7 +96,7 @@ function StandardNoticeListScreen() {
     >
       <View style={styles.count}>
         <AppText secondary size={12.923}>
-          전체 {vm.notices.length}건
+          불러온 공문 {vm.notices.length}건
         </AppText>
         <Pressable
           accessibilityRole="button"
@@ -112,7 +113,12 @@ function StandardNoticeListScreen() {
           </AppText>
         </Pressable>
       </View>
-      {vm.isPending || vm.isError ? (
+      <NoticeQueryFeedback
+        error={vm.error}
+        hasData={vm.data !== undefined}
+        retry={() => void vm.refetch()}
+      />
+      {vm.isPending ? (
         <NoticeState
           loading={vm.isPending}
           error={vm.isError}
@@ -120,15 +126,25 @@ function StandardNoticeListScreen() {
             void vm.refetch();
           }}
         />
-      ) : vm.notices.length ? (
+      ) : vm.isError && vm.data === undefined ? null : vm.notices.length ? (
         vm.notices.map((notice) => (
           <NoticeCard key={notice.id} notice={notice} />
         ))
       ) : (
         <NoticeState message="검색 조건에 맞는 공문이 없어요." />
       )}
+      {vm.hasNextPage && (
+        <Pressable
+          accessibilityRole="button"
+          disabled={vm.isFetchingNextPage}
+          onPress={() => void vm.fetchNextPage()}
+          style={{ minHeight: 48, justifyContent: "center" }}
+        >
+          <AppText>{vm.isFetchingNextPage ? "불러오는 중" : "더 보기"}</AppText>
+        </Pressable>
+      )}
       <AppText secondary size={11.08}>
-        화면 검토용 예시 공문입니다. 실제 공고가 아닙니다.
+        공식 기관에서 제공한 공지입니다.
       </AppText>
     </Screen>
   );
