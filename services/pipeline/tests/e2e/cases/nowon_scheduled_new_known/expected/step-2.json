@@ -80,7 +80,8 @@
     "notice_files": 0,
     "notice_summaries": 0,
     "notice_summary_executions": 0,
-    "notices": 3
+    "notices": 3,
+    "standard_dictionary_cache": 0
   },
   "anon": {
     "notices": {
