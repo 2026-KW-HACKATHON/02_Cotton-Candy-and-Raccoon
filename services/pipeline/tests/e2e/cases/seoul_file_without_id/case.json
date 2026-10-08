@@ -1,0 +1,27 @@
+{
+  "title": "서울시 식별자 없는 파일: 파일 ID가 없는 본문 이미지와 첨부는 URL 기반 file_key로 저장된다",
+  "steps": [
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "seoul",
+        "--mode",
+        "new",
+        "--source-board",
+        "25"
+      ],
+      "http": [
+        {
+          "route": "seoul_api",
+          "board": "25",
+          "start": 1,
+          "end": 25,
+          "body": "input/seoul_25.xml"
+        }
+      ],
+      "expect_exit": 0
+    }
+  ],
+  "strict_unused": true
+}
