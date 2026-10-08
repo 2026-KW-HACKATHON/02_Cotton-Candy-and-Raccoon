@@ -19,6 +19,7 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npx expo lint
+      - run: node --test tests/*.test.cjs
 
   pipeline:
     runs-on: ubuntu-latest
