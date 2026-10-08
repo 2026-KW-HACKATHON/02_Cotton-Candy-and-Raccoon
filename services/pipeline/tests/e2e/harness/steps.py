@@ -6,6 +6,7 @@ import sys
 import time
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -17,8 +18,10 @@ from e2e.harness.http_replay import API_KEY, CaseDefinitionError
 from e2e.harness.snapshot import normalize, normalize_json, read_anon, read_database
 from support.db import database_uri
 
-STEP_TYPES = ("collect", "collect-one", "notice-glossary", "sql")
-# Values in the CLI JSON report that change between runs; none are known today.
+STEP_TYPES = ("collect", "collect-one", "process-pending", "notice-glossary", "sql")
+# Retry timestamps depend on real DB time and jitter. Preserve their presence;
+# policy intervals and Retry-After floors are checked in the runner boundary tests.
+REPORT_TIME_KEYS = frozenset({"next_attempt_at"})
 VOLATILE_REPORT_KEYS: frozenset[str] = frozenset()
 
 
@@ -107,7 +110,10 @@ def _patch_sleep(monkeypatch: pytest.MonkeyPatch, sleeps: list[float]) -> None:
 
 def _drop_volatile(value: Any) -> Any:
     if isinstance(value, dict):
-        return {k: _drop_volatile(v) for k, v in value.items() if k not in VOLATILE_REPORT_KEYS}
+        return {
+            k: "<set>" if k in REPORT_TIME_KEYS and v is not None else _drop_volatile(v)
+            for k, v in value.items() if k not in VOLATILE_REPORT_KEYS
+        }
     if isinstance(value, list):
         return [_drop_volatile(v) for v in value]
     return value
@@ -145,6 +151,27 @@ def run_step(
     http_replay.install(monkeypatch, result.http)
     gemini_replay.install(monkeypatch, result.gemini)
     _patch_sleep(monkeypatch, result.sleeps)
+    if case.now is not None:
+        from pipeline import clock
+
+        fixed_now = datetime.fromisoformat(case.now)
+        if fixed_now.tzinfo is None:
+            raise CaseDefinitionError("case now must include a timezone")
+        monkeypatch.setattr(clock, "now", lambda: fixed_now)
+    if step["type"] == "process-pending":
+        from pipeline import processing_runner
+        from pipeline.processing_worker import process_claim
+
+        # Keep the production claim, worker, guarded writes and completion flow;
+        # only process isolation is replaced so the HTTP/SDK replay stays visible.
+        # Worker termination and real subprocess behavior belong in boundary tests.
+        monkeypatch.setattr(
+            processing_runner,
+            "execute_claim",
+            lambda database, claim, api_key, timeout_seconds: process_claim(
+                database, claim, api_key=api_key
+            ),
+        )
 
     if step["type"] == "sql":
         conn.execute(step["sql"])

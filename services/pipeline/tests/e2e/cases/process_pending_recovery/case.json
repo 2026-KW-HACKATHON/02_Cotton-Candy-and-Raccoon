@@ -1,0 +1,120 @@
+{
+  "title": "후처리 재실행: 미생성·원문 변경 공지의 4카드 시간 초과를 수집 없이 복구하고, 성공한 쉬운말과 캐시를 재사용한다",
+  "now": "2026-10-08T03:00:00+00:00",
+  "strict_unused": true,
+  "steps": [
+    {
+      "type": "collect-one",
+      "args": [
+        "--source",
+        "nowon"
+      ],
+      "http": [
+        {
+          "route": "nowon_api",
+          "start": 1,
+          "end": 1,
+          "body": "input/nowon_list_one.xml"
+        },
+        {
+          "route": "nowon_page",
+          "post_sn": "900611",
+          "body": "input/nowon_page_900611.html"
+        }
+      ]
+    },
+    {
+      "type": "process-pending",
+      "args": [
+        "--dry-run"
+      ]
+    },
+    {
+      "type": "process-pending",
+      "args": [],
+      "gemini": {
+        "summary": [
+          "input/summary_timeout.json"
+        ],
+        "easy_text": [
+          "input/easy.json"
+        ]
+      },
+      "expect_exit": 1
+    },
+    {
+      "type": "process-pending",
+      "args": []
+    },
+    {
+      "type": "sql",
+      "reason": "백오프가 지난 다음 실행을 실제 대기 없이 재현한다. 저장된 실패·시도 횟수와 쉬운말 결과는 그대로 둔다.",
+      "sql": "update public.notice_processing_jobs set next_attempt_at = now() - interval '1 second' where feature = 'summary' and state = 'retry_wait';"
+    },
+    {
+      "type": "process-pending",
+      "args": [],
+      "gemini": {
+        "summary": [
+          "input/summary.json"
+        ]
+      }
+    },
+    {
+      "type": "process-pending",
+      "args": []
+    },
+    {
+      "type": "collect-one",
+      "args": [
+        "--source",
+        "nowon"
+      ],
+      "http": [
+        {
+          "route": "nowon_api",
+          "start": 1,
+          "end": 1,
+          "body": "input/nowon_list_changed.xml"
+        },
+        {
+          "route": "nowon_page",
+          "post_sn": "900611",
+          "body": "input/nowon_page_900611.html"
+        }
+      ]
+    },
+    {
+      "type": "process-pending",
+      "args": [],
+      "gemini": {
+        "summary": [
+          "input/summary_timeout.json"
+        ],
+        "easy_text": [
+          "input/easy.json"
+        ]
+      },
+      "expect_exit": 1
+    },
+    {
+      "type": "sql",
+      "reason": "변경된 원문의 첫 요약이 실패한 뒤 백오프가 지난 다음 실행을 실제 대기 없이 재현한다.",
+      "sql": "update public.notice_processing_jobs set next_attempt_at = now() - interval '1 second' where feature = 'summary' and state = 'retry_wait';"
+    },
+    {
+      "type": "process-pending",
+      "args": [],
+      "gemini": {
+        "summary": [
+          "input/summary.json"
+        ]
+      }
+    },
+    {
+      "type": "process-pending",
+      "args": []
+    }
+  ],
+  "known_limitation": "원문 변경 직후 기존 summary.result가 비워지는 동작은 #26 미적용 상태를 기록한 것이다. 이전 버전 결과 보존의 완료 조건을 검증한 것으로 해석하지 않는다."
+}

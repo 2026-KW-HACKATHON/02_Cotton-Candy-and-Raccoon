@@ -155,7 +155,7 @@ services/pipeline 폴더에서 PowerShell로 실행한다.
 
 ```powershell
 $env:SCHEMA_TEST_DATABASE_URL = 'postgresql://pipeline_test@127.0.0.1:55442/pipeline_schema_test_init'
-.\.venv\Scripts\python.exe -m pytest ../../supabase/tests -q -p no:cacheprovider
+.\.venv\Scripts\python.exe -m pytest ../../supabase/tests -c pyproject.toml -q -p no:cacheprovider
 ```
 
 먼저 해당 주소의 빈 테스트 DB를 준비해야 하며 위 URI만 입력한다고 DB가 생성되지는 않는다. 환경 변수는 테스트에만 사용한다. 테스트는 루프백 주소와 테스트 DB 이름을 확인하고, 마이그레이션·seed·검증용 변경을 마지막에 롤백한다. 운영 DATABASE_URL을 사용하지 않는다.
