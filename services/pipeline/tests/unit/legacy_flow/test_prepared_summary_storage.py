@@ -33,6 +33,7 @@ from pipeline.transform.summary_schema import NoticeSummary, SummaryValidationEr
 PRIVATE_MARKER = "MOCK_PRIVATE_PREPARATION_WARNING_123"
 GENERATED_AT = datetime(2026, 10, 3, 7, tzinfo=UTC)
 DEADLINE = date(2026, 10, 20)
+_AUTOMATIC_ROW = object()
 
 
 def _summarize(
@@ -50,10 +51,25 @@ def _summarize(
     return prepared, result, calls
 
 
-def _connection(row: Any = (17,)) -> tuple[MagicMock, MagicMock]:
+def _connection(row: Any = _AUTOMATIC_ROW) -> tuple[MagicMock, MagicMock]:
     conn = MagicMock()
     cursor = conn.cursor.return_value.__enter__.return_value
-    cursor.fetchone.return_value = row
+    if row is not _AUTOMATIC_ROW:
+        cursor.fetchone.return_value = row
+    else:
+        def written_row() -> tuple:
+            # Model RETURNING shapes only; real PostgreSQL tests cover whether
+            # an existing row is preserved or replaced under concurrency.
+            sql, values = cursor.execute.call_args.args
+            if "returning notice_id, status, deadline_on, generated_at" in sql:
+                payload = values[2:] if "active_execution" in sql else values
+                outcome = (payload[0], payload[1], payload[5], payload[12])
+                if "generated_at, last_error_code" in sql:
+                    return outcome + (payload[11],)
+                return outcome
+            return (17,)
+
+        cursor.fetchone.side_effect = written_row
     return conn, cursor
 
 

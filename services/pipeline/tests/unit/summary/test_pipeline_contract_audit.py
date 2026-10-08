@@ -120,7 +120,10 @@ def test_job_shape_retry_preserves_source_payload_facts_and_persisted_v5_cards(m
     )
     conn = MagicMock()
     cursor = conn.cursor.return_value.__enter__.return_value
-    cursor.fetchone.return_value = (17,)
+    cursor.fetchone.side_effect = [
+        (17,),
+        (17, "summarized", date(2026, 10, 20), datetime(2026, 10, 7, tzinfo=UTC), None),
+    ]
     stored = summary_job.summarize_and_save_prepared_notice(
         conn, prepared, metadata, api_key="audit-only-mocked-key",
         expected_source_revision=1,
@@ -132,7 +135,10 @@ def test_job_shape_retry_preserves_source_payload_facts_and_persisted_v5_cards(m
     assert prepared.blocks == before
     execution_calls = cursor.execute.call_args_list
     assert execution_calls[0].args == (REGISTER_SUMMARY_EXECUTION_AT_REVISION, (17, 1))
-    assert execution_calls[-1].args[0] == GUARDED_UPSERT_SUMMARY
+    assert execution_calls[-1].args[0] == GUARDED_UPSERT_SUMMARY.replace(
+        "returning notice_id",
+        "returning notice_id, status, deadline_on, generated_at, last_error_code",
+    )
     guarded_values = execution_calls[-1].args[1]
     assert guarded_values[:2] == (17, 17)  # Notice ID and the mocked registration token.
     values = guarded_values[2:]

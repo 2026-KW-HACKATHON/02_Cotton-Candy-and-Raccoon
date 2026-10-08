@@ -164,12 +164,16 @@ def summarize_one(
                 )
         except SummaryStorageError as error:
             return stopped(
-                "storage_failed", error.reason_code, requests[0],
+                "storage_failed",
+                error.reason_code,
+                requests[0],
                 attachment_status=attachment_status,
             )
         except psycopg.Error:
             return stopped(
-                "storage_failed", "summary_storage_failed", requests[0],
+                "storage_failed",
+                "summary_storage_failed",
+                requests[0],
                 attachment_status=attachment_status,
             )
 
@@ -189,7 +193,9 @@ def summarize_one(
     except (psycopg.Error, SummaryStorageError):
         # The write may have committed, but it cannot be confirmed: never report success.
         return stopped(
-            "storage_failed", "summary_read_failed", requests[0],
+            "storage_failed",
+            "summary_read_failed",
+            requests[0],
             attachment_status=attachment_status,
         )
     view = _public_view(row, prepared.notice, metadata.source_hash)

@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Callable, Iterator
+from copy import deepcopy
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -10,6 +11,7 @@ import psycopg
 import pytest
 from google import genai
 from psycopg.rows import dict_row
+from support.card_deadline_endpoints import _input_response
 from support.db import database_uri, owned_migrated_database
 from support.prepared_summary_storage import _response
 from support.summary_bundle import PNG, URL
@@ -81,32 +83,66 @@ def gemini(monkeypatch) -> Gemini:
     return Gemini(monkeypatch)
 
 
-@pytest.fixture
-def downloads(monkeypatch) -> dict[str, httpx.Response]:
-    """URL -> response for attachment downloads; any other request fails the test."""
-    responses: dict[str, httpx.Response] = {}
+class Downloads(dict):
+    """URL -> response for attachment downloads, with every requested URL recorded."""
 
-    def handle(self, request: httpx.Request) -> httpx.Response:
+    def __init__(self) -> None:
+        super().__init__()
+        self.requested: list[str] = []
+        self.unexpected: list[str] = []
+
+    @staticmethod
+    def _key(url: str) -> tuple[object, ...]:
+        # Downloads normalize query order, so compare the query as a set of pairs.
+        parts = httpx.URL(url)
+        return parts.scheme, parts.host, parts.path, tuple(sorted(parts.params.multi_items()))
+
+    def respond(self, request: httpx.Request) -> httpx.Response:
         url = str(request.url)
-        if url not in responses:
+        self.requested.append(url)
+        stored = next((v for k, v in self.items() if self._key(k) == self._key(url)), None)
+        if stored is None:
+            self.unexpected.append(url)
             raise AssertionError(f"unexpected request {url}")
-        stored = responses[url]
         return httpx.Response(stored.status_code, headers=stored.headers, content=stored.content)
 
+
+@pytest.fixture(autouse=True)
+def downloads(monkeypatch) -> Iterator[Downloads]:
+    """Replace both httpx transports: the default owned download uses AsyncClient.
+
+    Autouse so no test in this module can reach a real server; an unregistered URL
+    fails the test even when the pipeline turns the error into an omission.
+    """
+    replay = Downloads()
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        return replay.respond(request)
+
+    async def handle_async(self, request: httpx.Request) -> httpx.Response:
+        return replay.respond(request)
+
     monkeypatch.setattr(httpx.HTTPTransport, "handle_request", handle)
-    return responses
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", handle_async)
+    yield replay
+    assert replay.unexpected == [], f"unregistered requests: {replay.unexpected}"
 
 
 def _notice(
-    db: dict[str, str], *, body: str | None = BODY, visible: bool = True,
+    db: dict[str, str],
+    *,
+    body: str | None = BODY,
+    visible: bool = True,
     files: tuple[tuple[str, str], ...] = (),
+    title: str = "행사 안내",
+    registered_on: str = "2026-10-08",
 ) -> int:
     with psycopg.connect(**db, autocommit=True) as conn:
         notice_id = conn.execute(
             "insert into notices(category,source_board,post_sn,title,registered_on,url,"
-            "body_html,is_visible) values ('nowon','1001',%s,'행사 안내','2026-10-08',"
+            "body_html,is_visible) values ('nowon','1001',%s,%s,%s,"
             "'https://www.nowon.kr/www/user/bbs/BD_selectBbs.do',%s,%s) returning id",
-            (f"run-{datetime.now().timestamp()}", body, visible),
+            (f"run-{datetime.now().timestamp()}", title, registered_on, body, visible),
         ).fetchone()[0]
         for index, (name, url) in enumerate(files, 1):
             conn.execute(
@@ -175,7 +211,9 @@ def test_missing_or_hidden_notice_is_not_found_without_any_write(db, settings, g
     notice_id = _notice(db, visible=False) if hidden else 999_999
     result = summarize_one(settings, notice_id, api_key="test-key")
     assert (result.execution_status, result.reason_code, result.exit_code) == (
-        "not_found", "notice_not_found_or_hidden", 3,
+        "not_found",
+        "notice_not_found_or_hidden",
+        3,
     )
     assert result.stored_status is None and result.public_result is False
     assert gemini.calls == 0
@@ -188,7 +226,9 @@ def test_notice_without_readable_content_fails_without_calling_gemini(db, settin
     # The preparer records a no_content failure; summary_job stores every preparation
     # failure as input_preparation_failed before any Gemini request.
     assert (result.execution_status, result.reason_code, result.exit_code) == (
-        "failed", "input_preparation_failed", 1,
+        "failed",
+        "input_preparation_failed",
+        1,
     )
     assert result.gemini_called is False and gemini.calls == 0
     assert result.stored_status == "failed" and result.public_result is False
@@ -201,6 +241,7 @@ def test_unread_attachment_is_summarized_from_the_body_and_reported(
     downloads[URL + "1"] = httpx.Response(503)
     gemini.replies.append(_response("text"))
     result = summarize_one(settings, notice_id, api_key="test-key")
+    assert len(downloads.requested) == 1  # the registered 503, not a network error
     assert result.attachment_status == "unread"
     assert result.execution_status == "needs_review"
     assert result.reason_code == "attachments_unread"
@@ -219,7 +260,9 @@ def test_gemini_timeout_keeps_the_existing_public_summary(db, settings, gemini):
     gemini.replies.append(httpx.ReadTimeout("timeout"))
     result = summarize_one(settings, notice_id, api_key="test-key")
     assert (result.execution_status, result.reason_code, result.exit_code) == (
-        "failed", "api_timeout", 1,
+        "failed",
+        "api_timeout",
+        1,
     )
     assert result.stored_status == "summarized" and result.public_result is True
     assert result.report()["view"]["status"] == "summarized"
@@ -232,16 +275,18 @@ def test_temporary_attachment_failure_keeps_the_existing_public_result(
     db, settings, gemini, downloads
 ):
     notice_id = _notice(db, files=(("poster.png", URL + "1"),))
-    downloads[URL + "1"] = httpx.Response(
-        200, headers={"content-type": "image/png"}, content=PNG
-    )
+    downloads[URL + "1"] = httpx.Response(200, headers={"content-type": "image/png"}, content=PNG)
     gemini.replies.append(_response("image"))
     first = summarize_one(settings, notice_id, api_key="test-key")
+    # The scenario needs a first run that really read the attachment.
+    assert first.attachment_status == "all_read"
     assert first.public_result is True
     before = _row(db, notice_id)
+    assert before["attachment_status"] == "all_read" and before["file_references"]
     downloads[URL + "1"] = httpx.Response(503)
     gemini.replies.append(_response("text"))
     second = summarize_one(settings, notice_id, api_key="test-key")
+    assert len(downloads.requested) == 2
     assert second.attachment_status == "unread"
     assert second.public_result is True
     after = _row(db, notice_id)
@@ -275,7 +320,9 @@ def test_stale_execution_is_superseded_and_never_reported_as_success(
     gemini.replies.append(_concurrent(db, interference, notice_id))
     result = summarize_one(settings, notice_id, api_key="test-key")
     assert (result.execution_status, result.reason_code, result.exit_code) == (
-        "superseded", "summary_execution_superseded", 4,
+        "superseded",
+        "summary_execution_superseded",
+        4,
     )
     assert result.public_result is False
     row = _row(db, notice_id)
@@ -376,3 +423,41 @@ def test_no_transaction_or_lock_is_held_while_gemini_runs(db, settings, gemini):
     gemini.replies.append(inspect)
     assert summarize_one(settings, notice_id, api_key="test-key").exit_code == 0
     assert observed == {"open_transactions": 0, "source_locks": 0}
+
+
+def test_same_source_rerun_missing_audience_and_deadline_keeps_the_public_result(
+    db, settings, gemini, monkeypatch
+):
+    # Issue #41 feedback with #40: an incomplete candidate for the same source must not
+    # erase the committed audience, deadline and cards.
+    notice, baseline = _input_response()
+    body = notice.body_text.replace("\n노원구민\n", "\n대상: 노원구민\n").replace("\n", "<br>")
+    notice_id = _notice(db, body=body, title=notice.title, registered_on="2026-10-07")
+    monkeypatch.setattr(clock, "now", lambda: notice.reference_datetime)
+    gemini.replies.append(baseline)
+    first = summarize_one(settings, notice_id, api_key="test-key")
+    assert first.execution_status == first.stored_status == "summarized"
+    before = _row(db, notice_id)
+    assert before["deadline_on"] is not None
+    assert before["result"]["audience"] == "노원구민"
+    assert before["card_summaries"]["audience"] and before["card_summaries"]["deadline"]
+    anon_before = _anon_row(db, notice_id)
+
+    candidate = deepcopy(baseline)
+    candidate.update(audience=None, audience_scope="unknown", dates=[])
+    candidate["card_summaries"].update(audience=None, deadline=None)
+    candidate["evidence"] = [
+        item
+        for item in candidate["evidence"]
+        if item["field"] not in {"audience", "audience_scope", "dates"}
+    ]
+    gemini.replies.append(candidate)
+    second = summarize_one(settings, notice_id, api_key="test-key")
+
+    after = _row(db, notice_id)
+    for key in ("status", "result", "deadline_on", "card_summaries", "generated_at"):
+        assert after[key] == before[key], key
+    assert after["last_error_code"] == "summary_information_loss"
+    assert _anon_row(db, notice_id) == anon_before
+    assert second.stored_status == "summarized" and second.public_result is True
+    assert second.report()["view"] == first.report()["view"]

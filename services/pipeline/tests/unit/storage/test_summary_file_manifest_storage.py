@@ -14,6 +14,7 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 from support.summary_execution_storage import (
+    NEW_BODY,
     OLD_BODY,
     _completed,
     _metadata,
@@ -257,13 +258,28 @@ def test_first_usable_correction_fallback_keeps_candidate_links(source_case):
     assert row["file_references"] == _public(manifest)
 
 
-def test_legacy_new_result_does_not_inherit_previous_file_links(source_case):
+@pytest.mark.parametrize("source_changed", [False, True])
+def test_legacy_result_preserves_same_source_links_without_inheriting_stale_links(
+    source_case, source_changed,
+):
     conn, manifest = source_case
     _save(conn, manifest)
-    storage.save_notice_summary(conn, _completed(manifest.notice_id, OLD_BODY, "2026-10-20"))
+    before = _row(conn, manifest.notice_id)
+    body = NEW_BODY if source_changed else OLD_BODY
+    if source_changed:
+        conn.execute("update notices set body_html=%s where id=%s", (body, manifest.notice_id))
+    storage.save_notice_summary(conn, _completed(manifest.notice_id, body, "2026-10-20"))
     row = _row(conn, manifest.notice_id)
     assert row["result"] is not None
-    assert row["file_manifest"] is row["file_references"] is None
+    if source_changed:
+        assert row["file_manifest"] is row["file_references"] is None
+        assert row["last_error_code"] is None
+    else:
+        changed = {"attempt_count", "last_error_code", "updated_at"}
+        assert {k: v for k, v in row.items() if k not in changed} == {
+            k: v for k, v in before.items() if k not in changed
+        }
+        assert row["last_error_code"] == "summary_information_loss"
 
 
 @pytest.mark.parametrize("source_edit", ["notice", "file"])
