@@ -1,0 +1,35 @@
+{
+  "title": "노원구 신규 공지: 본문 이미지와 첨부 2개가 파일로 저장되고 쉬운말이 생성되며, 앱에는 파일 이름이 공개되지 않는다",
+  "steps": [
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "nowon",
+        "--mode",
+        "new",
+        "--easy-text"
+      ],
+      "gemini": {
+        "easy_text": [
+          "input/easy_900401.json"
+        ]
+      },
+      "http": [
+        {
+          "route": "nowon_api",
+          "start": 1,
+          "end": 50,
+          "body": "input/nowon_list.xml"
+        },
+        {
+          "route": "nowon_page",
+          "post_sn": "900401",
+          "body": "input/nowon_page_900401.html"
+        }
+      ],
+      "expect_exit": 0
+    }
+  ],
+  "strict_unused": true
+}

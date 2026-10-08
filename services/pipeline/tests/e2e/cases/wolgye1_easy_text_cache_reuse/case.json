@@ -1,0 +1,71 @@
+{
+  "title": "월계1동 예약 수집과 쉬운말 캐시: new 실행에서 쉬운말을 만들고, 내용이 같은 refresh 실행은 Gemini를 다시 부르지 않는다",
+  "steps": [
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "wolgye1",
+        "--mode",
+        "new",
+        "--easy-text"
+      ],
+      "http": [
+        {
+          "route": "wolgye1_list",
+          "page": 1,
+          "body": "input/wolgye1_list_1.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261007090000402",
+          "body": "input/wolgye1_detail_20261007090000402.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261006090000401",
+          "body": "input/wolgye1_detail_20261006090000401.html"
+        }
+      ],
+      "gemini": {
+        "easy_text": [
+          "input/easy_402.json",
+          "input/easy_401.json"
+        ]
+      },
+      "expect_exit": 0
+    },
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "wolgye1",
+        "--mode",
+        "refresh",
+        "--easy-text"
+      ],
+      "http": [
+        {
+          "route": "wolgye1_list",
+          "page": 1,
+          "body": "input/wolgye1_list_1.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261007090000402",
+          "body": "input/wolgye1_detail_20261007090000402.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261006090000401",
+          "body": "input/wolgye1_detail_20261006090000401.html"
+        }
+      ],
+      "gemini": {
+        "easy_text": []
+      },
+      "expect_exit": 0
+    }
+  ],
+  "strict_unused": true
+}

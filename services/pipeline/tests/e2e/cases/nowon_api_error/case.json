@@ -1,0 +1,23 @@
+{
+  "title": "노원구 API 5xx: 재시도 후 실패로 끝나고 기존 행은 바뀌지 않는다",
+  "steps": [
+    {
+      "type": "collect",
+      "args": ["--source", "nowon", "--mode", "new"],
+      "http": [
+        {"route": "nowon_api", "start": 1, "end": 50, "body": "input/nowon_list.xml"},
+        {"route": "nowon_page", "post_sn": "900301", "body": "input/nowon_page_900301.html"}
+      ],
+      "expect_exit": 0
+    },
+    {
+      "type": "collect",
+      "args": ["--source", "nowon", "--mode", "refresh"],
+      "http": [
+        {"route": "nowon_api", "start": 1, "end": 50, "status": 500, "text": "Internal Server Error"}
+      ],
+      "expect_exit": 1
+    }
+  ],
+  "strict_unused": true
+}
