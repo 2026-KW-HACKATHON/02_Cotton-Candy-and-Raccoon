@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Pressable, View, useWindowDimensions } from "react-native";
-import { FloatingSettingsButton } from "@/shared/ui/FloatingSettingsButton";
 import { Header } from "@/shared/ui/Header";
 import { Screen } from "@/shared/ui/Screen";
 import { AppText } from "@/shared/ui/AppText";
 import { COLORS } from "@/shared/theme/tokens";
 import { NoticeCard } from "../components/NoticeCard";
 import { NoticeState } from "../components/NoticeState";
+import { ScopeDropdown } from "../components/ScopeDropdown";
 import { useNotices } from "../hooks/useNotices";
 import { useBookmarkStore } from "../store/bookmarkStore";
 import { useDisplayPreferences } from "@/shared/accessibility/displayPreferences";
@@ -40,12 +40,8 @@ function StandardSavedScreen() {
   return (
     <Screen
       headerBehavior="reveal"
-      overlay={<FloatingSettingsButton />}
       header={
-        <Header
-          title="다시 볼 소식"
-          right={<View style={{ width: 44.308 }} />}
-        />
+        <Header title="다시 볼 소식" variant="home" right={<ScopeDropdown />} />
       }
       floating
       contentStyle={{ paddingHorizontal: 15.692 }}

@@ -14,26 +14,43 @@ export function Header({
   title,
   back = false,
   right,
+  variant = "default",
 }: {
   title: string;
   back?: boolean;
   right?: React.ReactNode;
+  variant?: "default" | "home";
 }) {
   return (
-    <View style={styles.header}>
+    <View style={[styles.header, variant === "home" && styles.homeHeader]}>
       {back && (
         <IconButton accessibilityLabel="뒤로 가기" onPress={goBack}>
           <ChevronLeft color={COLORS.secondary} size={20} strokeWidth={1.5} />
         </IconButton>
       )}
       <View style={[styles.title, back && styles.center]}>
-        <AppText variant="display" size={back ? 22.15 : 25.85}>
+        <AppText
+          variant="display"
+          size={back ? 22.15 : variant === "home" ? 28 : 25.85}
+          lineHeight={variant === "home" ? 38 : undefined}
+        >
           {title}
         </AppText>
         {!back && (
           <Image
-            source={require("@/assets/figma/home-imgEllipse3.svg")}
-            style={styles.dot}
+            source={
+              variant === "home"
+                ? require("@/assets/figma/home-current/imgEllipse3.svg")
+                : require("@/assets/figma/home-imgEllipse3.svg")
+            }
+            style={[
+              styles.dot,
+              variant === "home" && {
+                width: 7,
+                height: 7,
+                transform: [{ translateY: -7 }],
+              },
+            ]}
           />
         )}
       </View>
@@ -43,16 +60,24 @@ export function Header({
         ) : (
           <IconButton
             accessibilityLabel="설정 열기"
-            style={CARD_SHADOW}
+            style={[
+              CARD_SHADOW,
+              variant === "home" && { minWidth: 48, minHeight: 48 },
+            ]}
             onPress={() => router.push("/settings")}
           >
-            <Settings size={22} color={COLORS.secondary} strokeWidth={1.5} />
+            <Settings
+              size={variant === "home" ? 24 : 22}
+              color={COLORS.secondary}
+              strokeWidth={1.5}
+            />
           </IconButton>
         ))}
     </View>
   );
 }
 const styles = StyleSheet.create({
+  homeHeader: { minHeight: 68, paddingHorizontal: 20 },
   header: {
     minHeight: 62.77,
     flexDirection: "row",

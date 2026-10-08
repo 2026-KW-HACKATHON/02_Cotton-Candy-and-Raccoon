@@ -6,7 +6,6 @@ import {
   View,
 } from "react-native";
 import { Search } from "lucide-react-native";
-import { FloatingSettingsButton } from "@/shared/ui/FloatingSettingsButton";
 import { Header } from "@/shared/ui/Header";
 import { Screen } from "@/shared/ui/Screen";
 import { AppText } from "@/shared/ui/AppText";
@@ -14,6 +13,7 @@ import { COLORS, FONTS, RADIUS, SPACE } from "@/shared/theme/tokens";
 import { useDisplayPreferences } from "@/shared/accessibility/displayPreferences";
 import { NoticeCard } from "../components/NoticeCard";
 import { NoticeState } from "../components/NoticeState";
+import { ScopeDropdown } from "../components/ScopeDropdown";
 import {
   CATEGORIES,
   useNoticeListViewModel,
@@ -34,14 +34,17 @@ function StandardNoticeListScreen() {
   return (
     <Screen
       headerBehavior="reveal"
-      overlay={<FloatingSettingsButton />}
       header={
         <View>
           <Header
             title="우리 동네 공문"
-            right={<View style={{ width: 44.308 }} />}
+            variant="home"
+            right={<ScopeDropdown />}
           />
           <View style={styles.filters}>
+            <AppText secondary size={16} lineHeight={26}>
+              필요한 소식을 한곳에서 찾아보세요.
+            </AppText>
             <View style={styles.search}>
               <Search color={COLORS.secondary} size={20} strokeWidth={1.5} />
               <TextInput
@@ -90,7 +93,6 @@ function StandardNoticeListScreen() {
       }
       floating
     >
-      <AppText secondary>필요한 소식을 한곳에서 찾아보세요.</AppText>
       <View style={styles.count}>
         <AppText secondary size={12.923}>
           전체 {vm.notices.length}건
@@ -133,7 +135,8 @@ function StandardNoticeListScreen() {
 }
 const styles = StyleSheet.create({
   filters: {
-    paddingHorizontal: SPACE.xl,
+    paddingHorizontal: 20,
+    paddingTop: 8,
     paddingBottom: SPACE.lg,
     gap: SPACE.lg,
   },
