@@ -1,4 +1,4 @@
-"""Validate summary/review constraints, incremental migrations, and app RLS."""
+"""Validate summary/review constraints and app RLS."""
 
 from copy import deepcopy
 from datetime import UTC, date, datetime

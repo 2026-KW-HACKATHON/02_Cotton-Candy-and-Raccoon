@@ -1,32 +1,28 @@
 # 공지 DB — 수집 원문과 생성된 요약
 
-팀이 실제 DB를 아직 생성·사용하지 않았다고 확인한 전제로, 공지 관련 변경을 기존 init에 통합했다. 별도 `notice_file_identity.sql`·`notice_source_identity.sql`은 init에 반영 후 제거했다. Holidays는 원본 그대로 유지했다. 통합 SQL은 develop에 반영됐으며 공식 DB에는 적용하지 않았다.
+원격 Supabase DB를 만들기 전에, 2026-10-08까지 쌓인 마이그레이션 14개를 기능별 최종 상태의 4개 파일로 재구성했다. 재구성 전후의 스키마는 Supabase식 기본 권한을 재현한 DB에서 `pg_dump -s`로 비교했고, 의도한 차이는 아래 세 가지뿐이다.
 
-이 통합본은 **비어 있는 DB의 최초 생성용**이다. 이미 옛 마이그레이션을 적용한 DB를 업그레이드하는 파일이 아니며 init을 바꿔도 기존 DB는 바뀌지 않는다. 기존 데이터/마이그레이션 이력이 있는 환경에서는 그대로 적용하지 말고 팀과 별도 변경·초기화 절차를 정해야 한다. 이 작업은 사용자의 명시적인 초기 구조 통합 요청에 따른 협업 규칙의 예외이며, 향후 적용된 마이그레이션은 다시 수정하지 않는다.
+- `summary_file_references`, `summary_preparation_omissions`, 원문 변경 trigger 함수 2개의 실행 권한을 `anon`, `authenticated`에서도 회수했다. Supabase는 새 함수에 두 역할의 실행 권한을 따로 주므로 `public`에서만 회수하면 앱이 실행할 수 있었다.
+- `notices_id_seq`, `notice_files_id_seq`의 `anon`, `authenticated` 권한을 회수했다.
+- `holidays` 테이블 설명을 실제 사용 여부에 맞게 고쳤다.
+
+이 파일들은 **비어 있는 DB의 최초 생성용**이다. 기존 DB를 업그레이드하는 파일이 아니다. 협업 규칙("이미 공유·적용된 마이그레이션은 수정하지 않는다")의 예외이며, 원격 DB가 아직 없어서 가능했다. 이후 스키마 변경은 이 파일들을 고치지 않고 새 마이그레이션으로 추가한다.
+
+재구성 전 마이그레이션 14개를 적용한 로컬 DB는 마이그레이션 이력이 달라 새 파일을 적용하지 못한다(`already exists`). 로컬 Supabase는 `npx supabase db reset`으로 다시 만들고, 테스트용 임시 DB는 지우고 다시 준비한다.
 
 ## SQL 파일별 역할과 적용 순서
 
-마이그레이션 14개를 파일명 순서대로 적용한다. 기존 DB에는 미적용 파일만 순서대로 적용하며, 이미 적용한 마이그레이션은 수정하지 않는다.
+마이그레이션 4개를 파일명 순서대로 적용한다. 요약과 쉬운말 파일은 notices 파일에만 의존하고 서로 의존하지 않는다.
 
 | 파일 | 역할 |
 | --- | --- |
-| [20260922053900_init.sql](migrations/20260922053900_init.sql) | 노원구·동·서울시 notices와 notice_files, 최종 식별 키·검증 제약·외래 키 생성 |
-| [20260922053901_rls.sql](migrations/20260922053901_rls.sql) | 공개 공지·파일의 앱 조회 정책과 허용 파일 컬럼 설정 |
-| [20260923044500_holidays.sql](migrations/20260923044500_holidays.sql) | 공휴일 판단·캐시용 holidays 테이블과 앱 접근 제한 설정 |
-| [20261006120000_notice_summaries.sql](migrations/20261006120000_notice_summaries.sql) | notice_summaries, 내용 변경 시각, 요약의 제약·인덱스·읽기 권한 추가 |
-| [20261007000000_notice_easy_text.sql](migrations/20261007000000_notice_easy_text.sql) | 쉬운말 변환 결과 캐시와 저장 함수 |
-| [20261007000004_notice_easy_text_scope.sql](migrations/20261007000004_notice_easy_text_scope.sql) | 쉬운말 변환 범위 및 버전 검사 |
-| [20261007000005_notice_easy_text_body_only.sql](migrations/20261007000005_notice_easy_text_body_only.sql) | 본문 기반 쉬운말 변환 계약 |
-| [20261007120000_notice_summaries_review_content.sql](migrations/20261007120000_notice_summaries_review_content.sql) | 검토 내용 보존·공개, 검토 마감 정렬 차단 |
-| [20261007123000_notice_summary_card_summaries.sql](migrations/20261007123000_notice_summary_card_summaries.sql) | 조회용 generated 카드 컬럼·제약·읽기 권한 |
-| [20261007130000_notice_summary_executions.sql](migrations/20261007130000_notice_summary_executions.sql) | 비공개 실행 토큰·백엔드 권한 |
-| [20261007133000_notice_summary_source_revisions.sql](migrations/20261007133000_notice_summary_source_revisions.sql) | 원문 버전·변경 시 요약 무효화·오래된 결과 저장 차단 |
-| [20261007140000_notice_summary_file_references.sql](migrations/20261007140000_notice_summary_file_references.sql) | 비공개 파일 연결 정보·조회용 generated 근거 링크·앱 권한 |
-| [20261008120000_notice_summary_omissions.sql](migrations/20261008120000_notice_summary_omissions.sql) | 읽지 못한 자료의 공개 안내와 입력 예산 초과 사유 |
-| [20261008130000_notice_summary_information_loss.sql](migrations/20261008130000_notice_summary_information_loss.sql) | 같은 원문 재요약의 정보 손실 비교 함수·비공개 보존 사유 |
+| [20260922053900_notices.sql](migrations/20260922053900_notices.sql) | 노원구·동·서울시 notices와 notice_files, 식별 키·검증 제약, 앱 조회 정책과 허용 파일 컬럼, service_role 권한 |
+| [20260922053901_holidays.sql](migrations/20260922053901_holidays.sql) | holidays 테이블과 앱 접근 차단. 현재 pipeline은 읽지 않는다 |
+| [20260922053902_notice_summaries.sql](migrations/20260922053902_notice_summaries.sql) | notice_summaries와 생성 컬럼 함수, 정보 손실 비교 함수, notice_summary_executions, 원문 변경 trigger(`content_revision`, 요약 무효화), 앱 조회 컬럼과 backend 권한 |
+| [20260922053903_notice_easy_texts.sql](migrations/20260922053903_notice_easy_texts.sql) | 쉬운말 결과, 버전·제목 보존 검사 함수, 범위 무효화 trigger, 앱 조회 정책 |
 | [seed.sql](seed.sql) | 테스트용 공지·파일, 요약 상태 4종·부분 읽기·숨김 공지 데이터. 스키마 변경 SQL이 아님 |
 
-init부터 공지 고유 키는 `(category, source_board, post_sn)`, 파일 고유 키는 `(notice_id, file_key, kind)`다. 별도의 새 init 파일을 추가한 것이 아니라 기존 init에 공지 변경을 합쳤다.
+공지 고유 키는 `(category, source_board, post_sn)`, 파일 고유 키는 `(notice_id, file_key, kind)`다.
 
 ## 공지의 식별 기준
 
@@ -54,12 +50,11 @@ init부터 공지 고유 키는 `(category, source_board, post_sn)`, 파일 고�
 
 URL 해시는 파일 내용 해시가 아니다. URL이 바뀌면 다른 참조로 판단한다. URL 정규화는 저장 코드의 책임이며, SQL은 저장 URL과 file_key가 일치하는지만 검사한다. 최초 INSERT부터 저장 코드가 file_key를 전달해야 한다.
 
-앱의 조회 범위는 기존과 같다. nowon/dong/seoul의 공개 공지는 조회할 수 있고, 파일은 `id, notice_id, kind, url`만 허용한다. `file_name, file_sn, file_id, file_key`는 허용 컬럼이 아니다. RLS에서 숨김 공지와 그 파일을 제외한다. 기본 테이블 권한을 회수하고 읽기 권한만 명시하여 INSERT/UPDATE/DELETE/TRUNCATE를 허용하지 않는다. Holidays 접근 제한은 기존 파일 그대로다.
+앱의 조회 범위는 기존과 같다. nowon/dong/seoul의 공개 공지는 조회할 수 있고, 파일은 `id, notice_id, kind, url`만 허용한다. `file_name, file_sn, file_id, file_key`는 허용 컬럼이 아니다. RLS에서 숨김 공지와 그 파일을 제외한다. 기본 테이블 권한을 회수하고 읽기 권한만 명시하여 INSERT/UPDATE/DELETE/TRUNCATE를 허용하지 않는다. Holidays는 앱이 접근할 수 없다.
 
 ## 요약 저장 계약 — 이슈 #14
 
-부분 요약의 누락 안내는 `20261008120000_notice_summary_omissions.sql`을 마지막으로 적용한 뒤
-조회할 수 있다. `notice_summaries.preparation_omissions`는 비공개 `file_manifest.omissions`에서
+부분 요약의 누락 안내는 `notice_summaries.preparation_omissions`로 조회한다. 이 컬럼은 비공개 `file_manifest.omissions`에서
 생성되는 읽기 전용 JSON 컬럼이며 앱에 SELECT만 허용한다. 각 항목은 `notice_file_id`, `url`,
 `reason_code`로 구성된다. 등록되지 않은 본문 이미지는 파일 ID가 NULL이고 원문 공지 링크를 사용한다.
 파일 키·해시·상세 예외는 공개하지 않는다. 기존 결과를 보존하는 재처리는 기존 누락 안내도 보존하고,
@@ -95,7 +90,7 @@ job의 실패는 원문 버전·실행 토큰이 유효하면 `last_error_code`,
 모두 보존하고 코드·시도 횟수·갱신 시각만 기록한다. 판정 함수는 백엔드만 호출할 수 있으며
 앱의 조회 컬럼·권한은 바뀌지 않는다. 세부 비교 기준과 반환값은
 [파이프라인 저장 계약](../services/pipeline/README.md#같은-원문의-재요약에서-정보-보존-40)을 따른다.
-새 저장 코드 배포 **전에** `20261008130000_notice_summary_information_loss.sql`까지 적용한다.
+저장 코드가 이 함수를 호출하므로 `20260922053902_notice_summaries.sql`을 코드보다 먼저 적용한다.
 
 `source_hash`는 본문 평문과 읽은 첨부 텍스트를 `file_key` 순으로 구성한 입력의 SHA-256 소문자 64자리다. PDF·이미지 바이트를 포함하는 확장은 후속 작업이다. 모델·프롬프트 버전은 안전한 식별자만, 오류는 코드 목록만 저장한다. `attempt_count`는 누적 실행 횟수이며 성공 후 초기화 정책은 추가하지 않는다.
 
@@ -109,7 +104,7 @@ job 연동에서는 원문·파일과 같은 DB snapshot에서 읽은 `content_r
 
 `file_manifest`는 준비기가 제공하는 원본 파일별 처리 결과와 전송 블록 연결 정보이며 비공개다. 저장 시 원문 버전·URL·전체 파일 ID/키/종류/URL을 대조한다. `file_references`는 파일 ID·종류·URL만 공개하는 generated 컬럼으로 직접 쓰지 않는다. 미등록 본문 이미지는 원문 공지 URL과 “원문에서 확인” 안내를 제공한다. 기존 요약을 유지하는 실패·보정 실패는 연결 정보도 유지하고, 원문 변경으로 `result`가 NULL이 되면 공개 링크도 NULL이 된다.
 
-`notices.content_updated_at`은 기존 공지에는 `created_at`으로 채우고 신규 공지에는 현재 시각을 넣는다. 이후 파이프라인이 실제 본문·제목 등의 내용 또는 파일 목록 변경 시에만 갱신한다. 단순 재수집 시간인 `updated_at`, 수정 이력 표시인 `is_modified`와 역할이 다르다. 앱은 기존 공지 읽기 권한으로 이 새 컬럼을 조회한다.
+`notices.content_updated_at`은 신규 공지에 현재 시각을 넣는다. 이후 파이프라인이 실제 본문·제목 등의 내용 또는 파일 목록 변경 시에만 갱신한다. 단순 재수집 시간인 `updated_at`, 수정 이력 표시인 `is_modified`와 역할이 다르다. 앱은 기존 공지 읽기 권한으로 이 새 컬럼을 조회한다.
 
 ## BE 호환과 배포 주의사항
 
@@ -124,11 +119,13 @@ job 연동에서는 원문·파일과 같은 DB snapshot에서 읽은 `content_r
 
 ## DB 검증
 
+2026-10-08 마이그레이션 4개와 seed를 Supabase식 기본 권한(테이블, sequence, 함수)을 재현한 임시 PostgreSQL에 적용하는 스키마 테스트가 통과했다. `test_function_and_sequence_privileges.py`가 앱 역할의 함수 실행과 sequence 권한 회수를 검증하며, 재구성 전 마이그레이션에서는 이 검사가 실패한다. 재구성 전 업그레이드 경로(기존 행 backfill) 검사는 업그레이드 경로가 없어져 삭제했다.
+
 2026-10-06 임시 PostgreSQL **17.11**에서 마이그레이션 4개와 seed를 적용하는 스키마 테스트가 **153 passed, 0 skipped**로 통과했다. 이전 공지의 내용 변경 시각 backfill, 요약 상태·JSON 분류 제약, 앱의 실제 역할별 SQL 조회·쓰기 차단, 서비스 역할 권한을 검증했다. Ruff와 diff 검사도 통과했다. 테스트 변경은 롤백했으며 실제 Supabase 프로젝트나 Data API에는 접근하지 않았다. `npx supabase db reset` 성공을 뜻하는 검증은 아니다.
 
 2026-10-04 임시 PostgreSQL17.11에서 **39 passed, 0 skipped**, Ruff와 diff 검사 통과. 기존5개 SQL과 통합3개 SQL의 컬럼28개·제약15개·인덱스·RLS정책2개·RLS활성 상태를 비교해 동일함을 확인했다(컬럼의 물리적 순서는 비교하지 않음). 앱의 테이블 쓰기 권한은 명시적으로 회수했다. Holidays·seed는 diff가 없다. 검증용 임시 서버·DB·로그는 종료/삭제했으며 실제 Supabase 프로젝트 키 조회는 수행하지 않았다.
 
-`supabase/tests/`의 `test_source_identity.py`, `test_notice_summary_schema.py`, `test_notice_summary_execution_schema.py`, `test_notice_summary_source_revision_schema.py`가 수집·요약·실행·원문 버전 계약을 검증한다. 마이그레이션 14개와 seed를 빈 임시 DB에 적용하며 검증 후 롤백한다. 파일 연결·실패 보존·실제 앱 권한·저장 경합은 파이프라인의 `test_summary_file_manifest_storage.py`에서 검사한다.
+`supabase/tests/`의 `test_source_identity.py`, `test_notice_summary_schema.py`, `test_notice_summary_execution_schema.py`, `test_notice_summary_source_revision_schema.py`, `test_summary_omissions_schema.py`, `test_function_and_sequence_privileges.py`가 수집·요약·실행·원문 버전·권한 계약을 검증한다. 마이그레이션 4개와 seed를 빈 임시 DB에 파일명 순서대로 적용하며 검증 후 롤백한다. 파일 연결·실패 보존·실제 앱 권한·저장 경합은 파이프라인의 `test_summary_file_manifest_storage.py`에서 검사한다.
 
 services/pipeline 폴더에서 PowerShell로 실행한다.
 

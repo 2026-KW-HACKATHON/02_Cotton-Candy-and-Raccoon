@@ -4,15 +4,18 @@ Python·uv 기반 공지 수집 파이프라인입니다. 노원구 `NowonNewsNo
 
 ## #18 현재 구현 범위와 새 저장 계약
 
-노원구·월계1동·서울시 수집 모델·변환·저장은 #16의 통합 초기 스키마를 사용합니다. 비어 있는 DB에 아래 3개 SQL을 파일명 순서대로 적용해야 합니다. 별도의 identity 후속 SQL은 init에 통합되어 더 이상 적용하지 않습니다.
+노원구·월계1동·서울시 수집 모델·변환·저장은 `supabase/migrations`의 최초 생성용 스키마를 사용합니다. 비어 있는 DB에 아래 4개 SQL을 파일명 순서대로 적용해야 합니다.
 
-1. `20260922053900_init.sql`: 공지·파일의 최종 컬럼과 제약 생성
-2. `20260922053901_rls.sql`: 앱의 공개 데이터 읽기 권한 설정
-3. `20260923044500_holidays.sql`: 기존 공휴일 테이블·접근 제한 설정
+1. `20260922053900_notices.sql`: 공지·파일의 컬럼과 제약, 앱 읽기 권한
+2. `20260922053901_holidays.sql`: 공휴일 테이블과 앱 접근 차단
+3. `20260922053902_notice_summaries.sql`: 요약, 요약 실행, 원문 변경 trigger
+4. `20260922053903_notice_easy_texts.sql`: 쉬운말 결과
+
+재구성 전 마이그레이션 14개를 적용한 로컬 DB는 다시 만들어야 합니다(`npx supabase db reset`).
 
 파일별 역할과 제약은 [공지 DB README](../../supabase/README.md)를 참고하세요. 이 초기 구조는 이미 생성된 DB를 자동 변경하는 업그레이드 SQL이 아닙니다. CLI도 스키마를 생성하거나 마이그레이션을 자동 적용하지 않습니다.
 
-공지 식별은 `(category, source_board, post_sn)`이고 source_board는 노원구 `1001`, 월계1동 게시판 `1042`입니다. 같은 게시판에 표시되는 다른 동 고정 공지도 source_board는 `1042`입니다. 서울시는 BLOG_ID를 사용합니다. SQL 구성은 5개에서 3개로 통합됐지만 BE의 최종 저장 계약은 같습니다.
+공지 식별은 `(category, source_board, post_sn)`이고 source_board는 노원구 `1001`, 월계1동 게시판 `1042`입니다. 같은 게시판에 표시되는 다른 동 고정 공지도 source_board는 `1042`입니다. 서울시는 BLOG_ID를 사용합니다. SQL 파일 구성이 바뀌어도 BE의 저장 계약은 같습니다.
 
 파일 식별은 `(notice_id, file_key, kind)`입니다. `FileRecord.file_key`는 읽기 전용 계산 속성으로, 실제 ID가 있으면 `id:<file_id>`, 없으면 `url:<저장할 정규화 URL의 UTF-8 SHA256>`을 반환합니다. `file_sn`·`file_id`는 출처에 없을 때 None/SQL NULL이며, 빈 값이나 가짜 UUID를 넣지 않습니다. URL 해시는 파일 내용 해시가 아닙니다.
 
@@ -556,9 +559,8 @@ DB의 UPSERT 행 잠금 안에서 기존 행과 후보를 비교하며 다음 �
 같은 개수의 항목을 다른 내용으로 바꾸거나 기존 오류를 삭제해야 하는 상황은 별도 검토가
 필요합니다. 검토자용 강제 교체 기능은 포함하지 않습니다.
 
-배포 전 `supabase/migrations/20261008130000_notice_summary_information_loss.sql`을
-기존 마이그레이션 뒤에 적용해야 합니다. 코드가 새 DB 함수를 호출하므로 코드보다 먼저
-적용합니다. 자동 검증에서는 임시 PostgreSQL에만 적용하며 공식 DB 적용은 별도입니다.
+코드가 DB 함수 `summary_information_loss`를 호출하므로, 이 함수를 만드는
+`supabase/migrations/20260922053902_notice_summaries.sql`을 코드보다 먼저 적용합니다. 자동 검증에서는 임시 PostgreSQL에만 적용하며 공식 DB 적용은 별도입니다.
 
 ### 분야 코드
 
@@ -640,8 +642,7 @@ payload = view.model_dump(mode="json")
 
 저장 시 현재 원문 버전과 전체 파일 목록을 대조하며 요약과 연결 정보를 함께 씁니다.
 `file_manifest`는 비공개이고 앱은 자동 생성된 `file_references`만 조회합니다.
-새 마이그레이션 `20261008120000_notice_summary_omissions.sql` 적용 후 앱은
-`preparation_omissions`도 조회할 수 있습니다. 항목은 `notice_file_id`(본문 이미지는 null),
+앱은 `preparation_omissions`도 조회할 수 있습니다. 항목은 `notice_file_id`(본문 이미지는 null),
 `url`(등록 파일의 원본 URL 또는 원문 공지 URL), 안전한 `reason_code`만 포함합니다.
 모델이 만든 필드가 아니며 해시·파일 키·상세 예외는 노출하지 않습니다.
 `build_notice_summary_view(..., preparation_omissions=row["preparation_omissions"])`로
