@@ -447,6 +447,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },
+    { name = "cryptography" },
     { name = "google-genai" },
     { name = "httpx" },
     { name = "olefile" },
@@ -464,6 +465,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.13.4,<5" },
+    { name = "cryptography", specifier = ">=46,<51" },
     { name = "google-genai", specifier = ">=2.25.0,<3" },
     { name = "httpx", specifier = ">=0.28.1,<1" },
     { name = "olefile", specifier = ">=0.47,<1" },
