@@ -29,7 +29,10 @@
         "pending_count": 0,
         "failures": []
       }
-    }
+    },
+    "skipped_count": 0,
+    "failed_count": 0,
+    "skipped": []
   },
   "stderr": [],
   "http_calls": [

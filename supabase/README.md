@@ -12,7 +12,7 @@
 
 ## SQL 파일별 역할과 적용 순서
 
-최초 생성 스키마 4개와 사전 캐시 추가 마이그레이션 1개, 총 5개를 파일명 순서대로 적용한다. 요약과 쉬운말 파일은 notices 파일에만 의존하고 서로 의존하지 않는다. 사전 캐시는 공지 테이블과 독립적이다.
+마이그레이션을 파일명 순서대로 적용한다. 앞의 4개는 최초 생성용이고, 이후 변경은 새 파일로 추가한다. 요약과 쉬운말 파일은 notices 파일에만 의존하고 서로 의존하지 않는다.
 
 | 파일 | 역할 |
 | --- | --- |
@@ -20,10 +20,37 @@
 | [20260922053901_holidays.sql](migrations/20260922053901_holidays.sql) | holidays 테이블과 앱 접근 차단. 현재 pipeline은 읽지 않는다 |
 | [20260922053902_notice_summaries.sql](migrations/20260922053902_notice_summaries.sql) | notice_summaries와 생성 컬럼 함수, 정보 손실 비교 함수, notice_summary_executions, 원문 변경 trigger(`content_revision`, 요약 무효화), 앱 조회 컬럼과 backend 권한 |
 | [20260922053903_notice_easy_texts.sql](migrations/20260922053903_notice_easy_texts.sql) | 쉬운말 결과, 버전·제목 보존 검사 함수, 범위 무효화 trigger, 앱 조회 정책 |
-| [20261008150000_standard_dictionary_cache.sql](migrations/20261008150000_standard_dictionary_cache.sql) | 서버 전용 표준국어대사전 공유 결과 캐시·만료되는 조회 권한·실패 대기 |
-| [seed.sql](seed.sql) | 테스트용 공지·파일, 요약 상태 4종·부분 읽기·숨김 공지 데이터. 스키마 변경 SQL이 아님 |
+| [20261008150000_app_notice_views.sql](migrations/20261008150000_app_notice_views.sql) | develop의 기존 앱 공개 조회 계약 |
+| [20261008160000_standard_dictionary_cache.sql](migrations/20261008160000_standard_dictionary_cache.sql) | 서버 전용 표준국어대사전 공유 캐시 |
+| [20261008170000_notice_dictionary_candidates.sql](migrations/20261008170000_notice_dictionary_candidates.sql) | 쉬운말의 사전 후보 저장 |
+| [20261008190000_notice_dictionary_links.sql](migrations/20261008190000_notice_dictionary_links.sql) | 공지별 사전 연결·공개 조회 |
+| [20261008210000_notice_processing_jobs.sql](migrations/20261008210000_notice_processing_jobs.sql) | 후속 처리 작업·재시도 관리 |
+| [20261008220000_app_notice_views.sql](migrations/20261008220000_app_notice_views.sql) | backend의 호환 앱 조회 계약 재적용 |
+| [seed.sql](seed.sql) | 로컬 개발용 공지·파일과 앱 화면 상태별 요약·쉬운말 데이터. 스키마 변경 SQL이 아님 |
 
 공지 고유 키는 `(category, source_board, post_sn)`, 파일 고유 키는 `(notice_id, file_key, kind)`다.
+
+## 앱 공개 조회 계약 — 이슈 #58
+
+앱(Expo)은 publishable key(anon)로 Supabase REST API를 통해 **view 2개만** 읽는다. view가 앱과 DB 사이의 계약이며, 컬럼 추가는 하위 호환으로 허용하고 이름 변경과 삭제는 FE와 합의한 뒤 새 마이그레이션으로 한다. 전체 설계는 프로젝트 문서 "프론트엔드와 백엔드 API 연결 청사진"의 3장을 따른다.
+
+| view | 용도 | 컬럼 |
+| --- | --- | --- |
+| `app_notice_list` | 목록, 홈, 보관함 | `id, source, dong_group, is_pinned, title, department, registered_on, content_updated_at, is_modified, summary_status, display_status, notice_type, category_code, deadline_on, headline, card_summaries, attachment_status, has_easy_text` |
+| `app_notice_detail` | 상세 | 목록 컬럼 + `url, license_type, body_text, result, generated_at, file_references, preparation_omissions, files, easy_original_text, easy_text, easy_changes, easy_body_text_present, easy_attachment_content_included, easy_generated_at` |
+
+- 두 view는 `security_invoker = true`다. 이 옵션이 없으면 view가 소유자 권한으로 실행되어 RLS를 건너뛰고 숨긴 공지가 보인다. 옵션 덕분에 보이는 공지만, 현재 원문 버전의 쉬운말만 나온다.
+- 앱 역할은 두 view를 읽기만 한다. view에 쓰기를 시도하면 PostgreSQL이 "자동 갱신할 수 없는 view"(`55000`)로 거부하며, REST API에서는 HTTP 500으로 보인다.
+- 다른 동 글(`dong_group = 'other'`)은 고정 해제 글 숨김 처리 전까지 view에서 제외한다. 테이블 RLS로는 여전히 보인다.
+- `display_status`: 요약 행이 없으면 `none`, `summarized`인데 `preparation_omissions`가 있으면 `needs_review`, 그 외에는 저장된 `status`다. Python `build_notice_summary_view`와 같은 규칙이다. pipeline 저장 코드는 검토가 필요한 결과를 `summarized`로 저장하지 않으므로, pipeline이 쓴 행에서는 두 결과가 같다.
+- `category_code`가 null이면 미분류다. 요약이 없는 공지도 포함되므로 `category_code=is.null` 한 조건으로 미분류 필터를 만든다.
+- `body_text`는 pipeline이 저장할 때마다 `html_to_notice_text(body_html)`로 만드는 평문이다. 요약 입력의 본문 평문과 같은 함수이며, 평문이 비면 null이다. 파생 값이라 원문 변경 trigger의 비교 대상이 아니다. 따라서 `body_text`만 다시 채워도 `content_revision`과 기존 요약은 그대로다.
+- `files`는 원본 첨부와 본문 이미지의 `[{id, kind, url}]`이다. 파일 이름은 공개하지 않는다.
+- `easy_changes`의 `start`, `end`는 `easy_original_text` 기준 Python 코드포인트 위치다. JavaScript 문자열 인덱스(UTF-16)와 다르다.
+- `notice_easy_texts` 테이블의 앱 공개 컬럼은 `notice_id, original_text, easy_text, changes, body_text_present, attachment_content_included, generated_at`으로 좁혔다. `notice_revision, source_hash, model, prompt_version, attempt_count`는 비공개다. 읽기 policy는 `notice_revision`을 참조하지만 policy 식은 컬럼 권한 검사를 받지 않으므로 그대로 동작한다.
+- 비공개 컬럼이 있는 테이블(`notice_summaries`, `notice_files`, `notice_easy_texts`)에서 `select=*`는 `42501`로 거부된다. view는 모든 컬럼이 공개 계약이라 `select=*`가 되지만, 앱은 컬럼을 명시해 요청한다.
+
+`seed.sql`의 6~11번 공지는 화면 상태별 확인용이다(`summarized`와 카드·마감일, 첨부 일부 누락, 미분류 검토, 실패, 요약 없음, 이전 본문 기준이라 숨는 쉬운말). 요약과 쉬운말 행은 손으로 쓰지 않고, pipeline `summarize-one`과 쉬운말 처리를 Gemini, 파일 다운로드 대역으로 실행해 저장된 행을 옮겼다. `file_manifest`의 공지와 파일 id는 `db reset`의 삽입 순서로 정해지므로, seed 앞부분의 삽입 순서를 바꾸면 이 구역을 다시 만들어야 한다.
 
 ## 공지의 식별 기준
 
@@ -101,7 +128,7 @@ job의 실패는 원문 버전·실행 토큰이 유효하면 `last_error_code`,
 
 job 연동에서는 원문·파일과 같은 DB snapshot에서 읽은 `content_revision`을 `expected_source_revision`으로 **반드시 전달한다**. 비공개 실행 토큰과 원문 버전이 맞는 결과만 저장하며 오래된 실행은 `summary_execution_superseded`로 반환한다. 버전을 생략하는 호환 경로는 등록 전 원문 변경을 보호하지 못한다. API 호출 중 잠금을 유지하지 않으려면 autocommit 연결을 사용하며 commit은 호출자 책임이다.
 
-앱 역할 `anon`, `authenticated`는 보이는 공지의 **10개 컬럼만** 읽는다: `notice_id`, `status`, `category`, `category_code`, `deadline_on`, `result`, `card_summaries`, `attachment_status`, `generated_at`, `file_references`. 내부 메타데이터·실행 레지스트리와 앱 쓰기는 차단하며 `service_role`에는 백엔드 조회·쓰기를 허용한다.
+앱 역할 `anon`, `authenticated`는 보이는 공지의 **11개 컬럼만** 읽는다: `notice_id`, `status`, `category`, `category_code`, `deadline_on`, `result`, `card_summaries`, `attachment_status`, `generated_at`, `file_references`, `preparation_omissions`. 내부 메타데이터·실행 레지스트리와 앱 쓰기는 차단하며 `service_role`에는 백엔드 조회·쓰기를 허용한다.
 
 `file_manifest`는 준비기가 제공하는 원본 파일별 처리 결과와 전송 블록 연결 정보이며 비공개다. 저장 시 원문 버전·URL·전체 파일 ID/키/종류/URL을 대조한다. `file_references`는 파일 ID·종류·URL만 공개하는 generated 컬럼으로 직접 쓰지 않는다. 미등록 본문 이미지는 원문 공지 URL과 “원문에서 확인” 안내를 제공한다. 기존 요약을 유지하는 실패·보정 실패는 연결 정보도 유지하고, 원문 변경으로 `result`가 NULL이 되면 공개 링크도 NULL이 된다.
 
@@ -132,7 +159,7 @@ DB 시각 기준 만료 여부를 재검사한다. 늦게 끝난 이전 실행�
 
 RLS를 활성화하고 `PUBLIC`, `anon`, `authenticated`의 접근을 회수한다.
 `service_role`에만 조회·쓰기 권한과 정책을 부여하며 API 키는 어느 컬럼에도 저장하지 않는다.
-새 사전 서비스 사용 전에 `20261008150000_standard_dictionary_cache.sql`을 적용한다.
+새 사전 서비스 사용 전에 `20261008160000_standard_dictionary_cache.sql`을 적용한다.
 마이그레이션을 실행하는 테스트는 로컬 임시 PostgreSQL을 사용하며 운영 DB에는 자동 적용하지 않는다.
 앱에 공개할 공지별 뜻풀이는 후속 연결 작업에서 별도의 조회 계약으로 구성한다.
 
@@ -142,6 +169,8 @@ RLS를 활성화하고 `PUBLIC`, `anon`, `authenticated`의 접근을 회수한�
 4개와 사전 캐시 1개를 적용했다. 스키마·권한 테스트 **603 passed, 0 skipped**로 사전 캐시의
 앱 접근 차단과 기존 함수·sequence 권한 회수를 함께 확인했다. 파이프라인 단위·저장소 3,658개와
 E2E 41개도 통과했다. 검증은 로컬 임시 DB에서 수행했으며 운영 DB에는 적용하지 않았다.
+
+2026-10-08(#58) 마이그레이션 5개와 seed를 적용한 임시 PostgreSQL에서 `test_app_notice_views.py`가 view의 `security_invoker`, 컬럼 계약, 앱 역할 권한, 보이는 공지와 다른 동 제외, 미분류 필터, `display_status`와 Python 결과 일치, 쉬운말 비공개 컬럼 거부를 검증한다. 같은 DB에 PostgREST 12.2.3을 anon으로 띄워 목록, 미분류 필터, keyset 다음 페이지, 상세, 숨긴 공지, `select=*`, 쓰기 거부를 HTTP로 확인했다. Supabase CLI(`npx supabase db reset`)와 호스팅 Supabase에서는 확인하지 않았다.
 
 2026-10-08 마이그레이션 4개와 seed를 Supabase식 기본 권한(테이블, sequence, 함수)을 재현한 임시 PostgreSQL에 적용하는 스키마 테스트가 통과했다. `test_function_and_sequence_privileges.py`가 앱 역할의 함수 실행과 sequence 권한 회수를 검증하며, 재구성 전 마이그레이션에서는 이 검사가 실패한다. 재구성 전 업그레이드 경로(기존 행 backfill) 검사는 업그레이드 경로가 없어져 삭제했다.
 
@@ -159,3 +188,20 @@ $env:SCHEMA_TEST_DATABASE_URL = 'postgresql://pipeline_test@127.0.0.1:55442/pipe
 ```
 
 먼저 해당 주소의 빈 테스트 DB를 준비해야 하며 위 URI만 입력한다고 DB가 생성되지는 않는다. 환경 변수는 테스트에만 사용한다. 테스트는 루프백 주소와 테스트 DB 이름을 확인하고, 마이그레이션·seed·검증용 변경을 마지막에 롤백한다. 운영 DATABASE_URL을 사용하지 않는다.
+
+## PR #74 기존 DB 전환
+
+이번 통합은 `20261008150000`을 앱 view와 사전 캐시에 중복 사용한 브랜치 이력을 정리한다.
+앱 view는 기존 번호를 유지하고 사전 캐시 파일만 `20261008160000`으로 이동한다. 사전 캐시 SQL 내용은 변경하지 않는다.
+이미 적용된 파일의 일반적인 재번호화가 아니라 이번 번호 충돌에 한정된 조정이다.
+
+운영 적용 전 백업을 확보하고 `supabase_migrations.schema_migrations`의 version/name과 실제 테이블·view·함수·권한을 함께 확인한다.
+SQL Editor로 수동 적용한 DB는 이력이 없거나 불완전할 수 있으므로 이력만으로 적용 여부를 판정하지 않는다.
+
+- **빈 DB:** 현재 파일을 번호순으로 모두 적용한다.
+- **develop의 앱 view를 150000으로 적용한 DB:** 150000 이력을 유지하고 160000 사전 캐시부터 미적용 migration을 적용한다.
+- **backend의 사전 캐시를 150000으로 적용한 DB:** 동일한 캐시 SQL이 적용된 사실을 먼저 검증한다. 캐시를 삭제하거나 SQL을 다시 실행하지 않는다. 배포 도구의 migration repair로 기존 캐시 적용 이력을 160000에 대응시키고, 150000은 앱 view SQL의 실제 적용 여부에 맞게 정리한다. 앱 view가 없다면 해당 SQL을 적용한 뒤 이력에 반영한다. 220000 view가 이미 적용됐다면 두 view 계약의 호환성을 확인한 뒤 150000 적용 이력을 정리한다. 모든 이력 조정이 끝나기 전에는 db push를 실행하지 않는다.
+- **SQL Editor로 수동 적용한 DB:** 적용된 SQL 내용과 객체 정의를 먼저 대조하고 적용 이력을 맞춘 뒤, 실제로 빠진 migration만 실행한다.
+
+이력 조정은 스키마를 생성하지 않으므로 존재하지 않는 객체를 적용 완료로 표시하면 안 된다.
+원격 DB 초기화나 기존 캐시 삭제는 필요하지 않다. 이 PR에서는 운영 DB·이력·활성화 설정을 변경하지 않는다.

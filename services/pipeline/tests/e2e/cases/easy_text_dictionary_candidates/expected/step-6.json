@@ -34,7 +34,10 @@
           }
         ]
       }
-    }
+    },
+    "skipped_count": 0,
+    "skipped": [],
+    "failed_count": 0
   },
   "stderr": [],
   "http_calls": [

@@ -1,5 +1,5 @@
 {
-  "exit_code": 1,
+  "exit_code": 0,
   "report": {
     "mode": "new",
     "total_count": 3,
@@ -9,8 +9,11 @@
     "initial_baseline": true,
     "listing_complete": true,
     "failed_ranges": [],
-    "complete": false,
-    "failures": [
+    "complete": true,
+    "failures": [],
+    "skipped_count": 1,
+    "failed_count": 0,
+    "skipped": [
       {
         "post_sn": "900442",
         "stage": "page_missing",

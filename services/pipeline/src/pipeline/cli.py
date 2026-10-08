@@ -41,7 +41,7 @@ from pipeline.processing_runner import (
     run_processing,
 )
 from pipeline.sources.nowon_api import NowonSourceError, collect_one
-from pipeline.sources.nowon_page import NowonPageError, fetch_notice_page
+from pipeline.sources.nowon_page import NowonPageError, NowonPageMissing, fetch_notice_page
 from pipeline.sources.seoul_api import SeoulSourceError
 from pipeline.sources.seoul_api import collect_one as collect_one_seoul
 from pipeline.sources.wolgye1_board import WolgyeSourceError
@@ -383,6 +383,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "total_count": scheduled.total_count,
                         "selected_count": scheduled.selected_count,
                         "saved_count": scheduled.saved_count,
+                        "skipped_count": scheduled.skipped_count,
+                        "skipped": [
+                            {"post_sn": settings.redact(item.post_sn), "stage": item.stage,
+                             "reason_code": item.reason_code} for item in scheduled.skipped
+                        ],
+                        "failed_count": len(scheduled.failures),
                         "pages_read": scheduled.pages_read,
                         "initial_baseline": scheduled.initial_baseline,
                         "listing_complete": scheduled.listing_complete,
@@ -426,6 +432,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "listed_count": result.listed_count,
                 "attempted_count": result.attempted_count,
                 "saved_count": result.saved_count,
+                "skipped_count": result.skipped_count,
+                "skipped": [
+                    {"post_sn": settings.redact(item.post_sn), "stage": item.stage,
+                     "reason_code": item.reason_code} for item in result.skipped
+                ],
+                "failed_count": len(result.failures),
                 "listing_complete": result.listing_complete,
                 "limited": result.limited,
                 "complete": result.complete,
@@ -558,6 +570,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             page_files = extract_page_files(notice, page_html, page_url)
             files = merge_files(body_files, page_files)
             record = transform_nowon_notice(notice)
+        except NowonPageMissing:
+            _print_summary({
+                "selected_count": 1, "saved_count": 0, "skipped_count": 1,
+                "failed_count": 0, "complete": True, "failures": [],
+                "skipped": [{"post_sn": settings.redact(notice.post_sn),
+                             "stage": "page_missing", "reason_code": "source_page_missing"}],
+            }, None)
+            return 0
         except (NowonSourceError, NowonPageError, AttachmentError, TransformError) as error:
             hint = (
                 " 잠시 후 다시 실행할 수 있습니다."

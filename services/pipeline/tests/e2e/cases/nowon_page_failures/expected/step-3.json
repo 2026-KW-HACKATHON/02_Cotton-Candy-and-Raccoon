@@ -1,130 +1,150 @@
 {
-  "exit_code": 0,
+  "exit_code": 1,
   "report": {
     "mode": "refresh",
-    "total_count": 2,
-    "selected_count": 2,
-    "saved_count": 2,
+    "total_count": 3,
+    "selected_count": 3,
+    "saved_count": 0,
+    "skipped_count": 2,
+    "skipped": [
+      {
+        "post_sn": "900442",
+        "stage": "page_missing",
+        "reason_code": "source_page_missing"
+      },
+      {
+        "post_sn": "900441",
+        "stage": "page_missing",
+        "reason_code": "source_page_missing"
+      }
+    ],
+    "failed_count": 1,
     "pages_read": 1,
     "initial_baseline": false,
     "listing_complete": true,
     "failed_ranges": [],
-    "complete": true,
-    "failures": [],
-    "skipped_count": 0,
-    "failed_count": 0,
-    "skipped": []
+    "complete": false,
+    "failures": [
+      {
+        "post_sn": "900443",
+        "stage": "page",
+        "reason_code": "page_unavailable"
+      }
+    ]
   },
   "stderr": [],
   "http_calls": [
     "nowon_api 1-50",
-    "nowon_page 900202",
-    "nowon_page 900201"
+    "nowon_page 900443",
+    "nowon_page 900443",
+    "nowon_page 900443",
+    "nowon_page 900442",
+    "nowon_page 900441"
   ],
   "gemini_calls": {},
   "db": {
     "notices": {
-      "nowon/1001/900201": {
+      "nowon/1001/900441": {
         "dong_group": null,
         "is_pinned": false,
-        "title": "가을 문화행사 일정 안내",
-        "department": "문화체육과",
+        "title": "보건소 진료 시간 변경",
+        "department": "보건정책과",
         "registered_on": "2026-10-07",
-        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900201",
-        "body_html": "<p>가을 문화행사 일정을 안내합니다.</p><p>일시: 2026-10-25(토) 14:00</p>",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900441",
+        "body_html": "<p>진료 시간이 변경됩니다.</p>",
         "license_type": "KOGL-4",
         "is_modified": false,
         "is_visible": true,
         "created_at": "<unchanged>",
-        "updated_at": "<changed>",
+        "updated_at": "<unchanged>",
         "content_updated_at": "<unchanged>",
         "content_revision": 1,
-        "body_text": "가을 문화행사 일정을 안내합니다.\n일시: 2026-10-25(토) 14:00"
+        "body_text": "진료 시간이 변경됩니다."
       },
-      "nowon/1001/900202": {
+      "nowon/1001/900443": {
         "dong_group": null,
         "is_pinned": false,
-        "title": "구립도서관 휴관일 변경 안내",
+        "title": "도서관 휴관 안내",
         "department": "문화체육과",
         "registered_on": "2026-10-08",
-        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900202",
-        "body_html": "<p>구립도서관 휴관일 변경을 안내합니다.</p><p>변경 휴관일: 매월 둘째 주 월요일</p>",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900443",
+        "body_html": "<p>도서관 휴관을 안내합니다.</p>",
         "license_type": "KOGL-4",
         "is_modified": false,
         "is_visible": true,
         "created_at": "<unchanged>",
-        "updated_at": "<changed>",
+        "updated_at": "<unchanged>",
         "content_updated_at": "<unchanged>",
         "content_revision": 1,
-        "body_text": "구립도서관 휴관일 변경을 안내합니다.\n변경 휴관일: 매월 둘째 주 월요일"
+        "body_text": "도서관 휴관을 안내합니다."
       }
     },
     "notice_files": {},
     "notice_summaries": {},
     "notice_easy_texts": {},
+    "notice_summary_executions": {},
     "notice_dictionary_links": {},
     "standard_dictionary_cache": {},
-    "notice_summary_executions": {},
     "notice_processing_jobs": {}
   },
   "row_counts": {
     "holidays": 0,
-    "notice_dictionary_links": 0,
     "notice_easy_texts": 0,
     "notice_files": 0,
-    "notice_processing_jobs": 0,
     "notice_summaries": 0,
     "notice_summary_executions": 0,
     "notices": 2,
-    "standard_dictionary_cache": 0
+    "notice_dictionary_links": 0,
+    "standard_dictionary_cache": 0,
+    "notice_processing_jobs": 0
   },
   "anon": {
     "notices": {
-      "nowon/1001/900201": {
+      "nowon/1001/900441": {
         "dong_group": null,
         "is_pinned": false,
-        "title": "가을 문화행사 일정 안내",
-        "department": "문화체육과",
+        "title": "보건소 진료 시간 변경",
+        "department": "보건정책과",
         "registered_on": "2026-10-07",
-        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900201",
-        "body_html": "<p>가을 문화행사 일정을 안내합니다.</p><p>일시: 2026-10-25(토) 14:00</p>",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900441",
+        "body_html": "<p>진료 시간이 변경됩니다.</p>",
         "license_type": "KOGL-4",
         "is_modified": false,
         "is_visible": true,
         "created_at": "<unchanged>",
-        "updated_at": "<changed>",
+        "updated_at": "<unchanged>",
         "content_updated_at": "<unchanged>",
         "content_revision": 1,
-        "body_text": "가을 문화행사 일정을 안내합니다.\n일시: 2026-10-25(토) 14:00"
+        "body_text": "진료 시간이 변경됩니다."
       },
-      "nowon/1001/900202": {
+      "nowon/1001/900443": {
         "dong_group": null,
         "is_pinned": false,
-        "title": "구립도서관 휴관일 변경 안내",
+        "title": "도서관 휴관 안내",
         "department": "문화체육과",
         "registered_on": "2026-10-08",
-        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900202",
-        "body_html": "<p>구립도서관 휴관일 변경을 안내합니다.</p><p>변경 휴관일: 매월 둘째 주 월요일</p>",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900443",
+        "body_html": "<p>도서관 휴관을 안내합니다.</p>",
         "license_type": "KOGL-4",
         "is_modified": false,
         "is_visible": true,
         "created_at": "<unchanged>",
-        "updated_at": "<changed>",
+        "updated_at": "<unchanged>",
         "content_updated_at": "<unchanged>",
         "content_revision": 1,
-        "body_text": "구립도서관 휴관일 변경을 안내합니다.\n변경 휴관일: 매월 둘째 주 월요일"
+        "body_text": "도서관 휴관을 안내합니다."
       }
     },
     "notice_files": {},
     "notice_summaries": {},
     "notice_easy_texts": {},
     "app_notice_list": {
-      "nowon/1001/900201": {
+      "nowon/1001/900441": {
         "source": "nowon",
         "dong_group": null,
         "is_pinned": false,
-        "title": "가을 문화행사 일정 안내",
-        "department": "문화체육과",
+        "title": "보건소 진료 시간 변경",
+        "department": "보건정책과",
         "registered_on": "2026-10-07",
         "content_updated_at": "<unchanged>",
         "is_modified": false,
@@ -138,11 +158,11 @@
         "attachment_status": null,
         "has_easy_text": false
       },
-      "nowon/1001/900202": {
+      "nowon/1001/900443": {
         "source": "nowon",
         "dong_group": null,
         "is_pinned": false,
-        "title": "구립도서관 휴관일 변경 안내",
+        "title": "도서관 휴관 안내",
         "department": "문화체육과",
         "registered_on": "2026-10-08",
         "content_updated_at": "<unchanged>",
@@ -159,12 +179,12 @@
       }
     },
     "app_notice_detail": {
-      "nowon/1001/900201": {
+      "nowon/1001/900441": {
         "source": "nowon",
         "dong_group": null,
         "is_pinned": false,
-        "title": "가을 문화행사 일정 안내",
-        "department": "문화체육과",
+        "title": "보건소 진료 시간 변경",
+        "department": "보건정책과",
         "registered_on": "2026-10-07",
         "content_updated_at": "<unchanged>",
         "is_modified": false,
@@ -177,9 +197,9 @@
         "card_summaries": null,
         "attachment_status": null,
         "has_easy_text": false,
-        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900201",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900441",
         "license_type": "KOGL-4",
-        "body_text": "가을 문화행사 일정을 안내합니다.\n일시: 2026-10-25(토) 14:00",
+        "body_text": "진료 시간이 변경됩니다.",
         "result": null,
         "generated_at": null,
         "file_references": null,
@@ -192,11 +212,11 @@
         "easy_attachment_content_included": null,
         "easy_generated_at": null
       },
-      "nowon/1001/900202": {
+      "nowon/1001/900443": {
         "source": "nowon",
         "dong_group": null,
         "is_pinned": false,
-        "title": "구립도서관 휴관일 변경 안내",
+        "title": "도서관 휴관 안내",
         "department": "문화체육과",
         "registered_on": "2026-10-08",
         "content_updated_at": "<unchanged>",
@@ -210,9 +230,9 @@
         "card_summaries": null,
         "attachment_status": null,
         "has_easy_text": false,
-        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900202",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900443",
         "license_type": "KOGL-4",
-        "body_text": "구립도서관 휴관일 변경을 안내합니다.\n변경 휴관일: 매월 둘째 주 월요일",
+        "body_text": "도서관 휴관을 안내합니다.",
         "result": null,
         "generated_at": null,
         "file_references": null,
@@ -227,10 +247,10 @@
       }
     },
     "get_notice_dictionary": {
-      "nowon/1001/900201": {
+      "nowon/1001/900441": {
         "result": null
       },
-      "nowon/1001/900202": {
+      "nowon/1001/900443": {
         "result": null
       }
     }

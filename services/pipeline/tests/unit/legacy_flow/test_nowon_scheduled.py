@@ -67,7 +67,7 @@ def test_empty_database_attempts_first_fifty_even_in_refresh_mode() -> None:
     with (
         patch("pipeline.collect_nowon.psycopg.connect", return_value=conn),
         patch("pipeline.collect_nowon._fetch_api_page_with_retry", return_value=first) as fetch,
-        patch("pipeline.collect_nowon._save_notices", return_value=(50, ())) as save,
+        patch("pipeline.collect_nowon._save_notices", return_value=(50, (), ())) as save,
     ):
         result = collect_and_save_nowon_scheduled(settings, database, mode="refresh")
     assert (result.initial_baseline, result.selected_count, result.complete) == (
@@ -85,7 +85,7 @@ def test_new_mode_skips_known_top_ten_without_expansion() -> None:
     with (
         patch("pipeline.collect_nowon.psycopg.connect", return_value=conn),
         patch("pipeline.collect_nowon._fetch_api_page_with_retry", return_value=first) as fetch,
-        patch("pipeline.collect_nowon._save_notices", return_value=(8, ())) as save,
+        patch("pipeline.collect_nowon._save_notices", return_value=(8, (), ())) as save,
     ):
         result = collect_and_save_nowon_scheduled(settings, database, mode="new")
     assert result.initial_baseline is False
@@ -105,7 +105,7 @@ def test_ten_new_posts_expand_until_first_known_id() -> None:
     with (
         patch("pipeline.collect_nowon.psycopg.connect", return_value=conn),
         patch("pipeline.collect_nowon._fetch_api_page_with_retry", return_value=first) as fetch,
-        patch("pipeline.collect_nowon._save_notices", return_value=(12, ())) as save,
+        patch("pipeline.collect_nowon._save_notices", return_value=(12, (), ())) as save,
     ):
         result = collect_and_save_nowon_scheduled(settings, database, mode="new")
     assert result.selected_count == 12
@@ -125,7 +125,7 @@ def test_expansion_across_api_pages_rechecks_first_id() -> None:
         patch("pipeline.collect_nowon.psycopg.connect", return_value=conn),
         patch("pipeline.collect_nowon._fetch_api_page_with_retry",
               side_effect=[first, second, confirm]) as fetch,
-        patch("pipeline.collect_nowon._save_notices", return_value=(51, ())) as save,
+        patch("pipeline.collect_nowon._save_notices", return_value=(51, (), ())) as save,
         patch("pipeline.collect_nowon.sleep"),
     ):
         result = collect_and_save_nowon_scheduled(settings, database, mode="new")
@@ -201,8 +201,10 @@ def test_missing_original_page_is_reported_without_saving_that_notice() -> None:
         result = collect_and_save_nowon_scheduled(settings, database, mode="new")
     assert result.selected_count == 10
     assert result.saved_count == 9
-    assert result.complete is False
-    assert [(failure.post_sn, failure.reason_code) for failure in result.failures] == [
+    assert result.complete is True
+    assert result.failures == ()
+    assert result.skipped_count == 1
+    assert [(item.post_sn, item.reason_code) for item in result.skipped] == [
         ("3", "source_page_missing"),
     ]
     assert save.call_count == 9

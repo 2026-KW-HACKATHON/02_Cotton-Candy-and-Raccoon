@@ -4,16 +4,18 @@ Python·uv 기반 공지 수집 파이프라인입니다. 노원구 `NowonNewsNo
 
 ## #18 현재 구현 범위와 새 저장 계약
 
-노원구·월계1동·서울시 수집 모델·변환·저장은 `supabase/migrations`의 스키마를 사용합니다. 비어 있는 DB에는 아래 SQL 8개를 파일명 순서대로 적용하고, 기존 DB에는 아직 적용하지 않은 새 마이그레이션을 추가합니다.
+노원구·월계1동·서울시 수집 모델·변환·저장은 `supabase/migrations`의 스키마를 사용합니다. 비어 있는 DB에는 `supabase/migrations`의 SQL 전체를 파일명 순서대로 적용하고, 기존 DB에는 아직 적용하지 않은 새 마이그레이션을 추가합니다.
 
 1. `20260922053900_notices.sql`: 공지·파일의 컬럼과 제약, 앱 읽기 권한
 2. `20260922053901_holidays.sql`: 공휴일 테이블과 앱 접근 차단
 3. `20260922053902_notice_summaries.sql`: 요약, 요약 실행, 원문 변경 trigger
 4. `20260922053903_notice_easy_texts.sql`: 쉬운말 결과
-5. `20261008150000_standard_dictionary_cache.sql`: 표준국어대사전 공유 캐시와 조회 권한
-6. `20261008170000_notice_dictionary_candidates.sql`: 쉬운말 사전 후보
-7. `20261008190000_notice_dictionary_links.sql`: 공지별 사전 뜻풀이 연결과 조회
-8. `20261008210000_notice_processing_jobs.sql`: 기능별 재처리 상태와 점유 기한
+5. `20261008150000_app_notice_views.sql`: develop의 앱 목록·상세 공개 조회 계약
+6. `20261008160000_standard_dictionary_cache.sql`: 표준국어대사전 공유 캐시와 조회 권한
+7. `20261008170000_notice_dictionary_candidates.sql`: 쉬운말 사전 후보
+8. `20261008190000_notice_dictionary_links.sql`: 공지별 사전 뜻풀이 연결과 조회
+9. `20261008210000_notice_processing_jobs.sql`: 기능별 재처리 상태와 점유 기한
+10. `20261008220000_app_notice_views.sql`: backend 앱 조회 계약 호환 재적용
 
 재구성 전 마이그레이션 14개를 적용한 로컬 DB는 다시 만들어야 합니다(`npx supabase db reset`).
 
@@ -320,7 +322,7 @@ with psycopg.connect(DatabaseSettings.from_env().database_url) as conn:
 
 `files=[]`는 **본문과 원문 페이지를 정상적으로 수집했는데 파일이 없는 경우**에만 전달해야 합니다. 페이지 요청·파싱이 실패하면 저장 함수를 호출하지 않습니다. 파일 저장 오류가 나면 공지 변경까지 롤백합니다. 함수가 독립 트랜잭션으로 실행되면 정상 종료 시 확정되며, 호출자가 이미 트랜잭션을 열었다면 내부 작업은 savepoint로 묶여 바깥 트랜잭션에 남습니다. `collect-one`도 완전 수집에 성공한 뒤에만 저장합니다.
 
-실제 PostgreSQL 통합 테스트는 현재 **SQL 5개**가 적용된 테스트용 DB에 `PIPELINE_TEST_DATABASE_URL`을 설정한 뒤 실행할 수 있습니다. 테스트는 고유한 게시물 번호를 사용합니다. 저장 계층 테스트는 종료 시 트랜잭션을 롤백하고 CLI·다건 통합 테스트는 확정된 해당 테스트 행만 삭제합니다. 이 변수를 설정하지 않으면 DB 통합 테스트가 건너뛰어지므로, 건너뛴 상태를 저장 검증 완료로 해석하면 안 됩니다.
+실제 PostgreSQL 통합 테스트는 `supabase/migrations`의 **SQL 전체**가 적용된 테스트용 DB에 `PIPELINE_TEST_DATABASE_URL`을 설정한 뒤 실행할 수 있습니다. 테스트는 고유한 게시물 번호를 사용합니다. 저장 계층 테스트는 종료 시 트랜잭션을 롤백하고 CLI·다건 통합 테스트는 확정된 해당 테스트 행만 삭제합니다. 이 변수를 설정하지 않으면 DB 통합 테스트가 건너뛰어지므로, 건너뛴 상태를 저장 검증 완료로 해석하면 안 됩니다.
 
 검증 이력을 구분합니다. SQL 통합 전 최종 구조(당시 5개 SQL)에서 전체 pipeline 테스트 `699 passed, 0 skipped`를 확인했습니다. 통합 후에는 별도 DB 테스트 `39 passed, 0 skipped`와 기존 최종 구조 대비 컬럼·제약·인덱스·RLS 동등성을 확인했습니다. 이번 문서 정리에서 전체 pipeline 테스트를 다시 실행한 것은 아닙니다. 과거 노원구 정책 검증의 `370 passed`와 부분 저장 실험 수치는 당시 이력으로 보존하며 현재 최신 검사 결과와 혼동하지 않습니다.
 
@@ -945,11 +947,12 @@ seoul 단위이며 서울시의 선택한 게시판 외 기존 서울 공지도 
 
 ### backend 적용 순서
 
-이 변경은 `backend`를 대상으로 #60·#61·#54와 #58 공개 조회 계약을 통합합니다. backend의
-`20261008150000_standard_dictionary_cache.sql`과 #58의 원래 migration 번호가 겹치므로,
-기존 migration은 바꾸지 않고 `20261008220000_app_notice_views.sql`로 동일한 조회 계약을
-추가합니다. **최신 migration을 먼저 적용하고 pipeline을 배포**하세요. 기존 공지 `body_text`는
-아래 ‘기존 데이터의 body_text 백필’ 절차 또는 재수집으로 채웁니다. 원격 DB에는 자동 적용하지 않습니다.
+이 통합은 #60·#61·#54와 #58 공개 조회 계약을 함께 반영합니다. 서로 다른 브랜치에서
+사용한 `20261008150000` 번호 충돌을 해소하기 위해 앱 view의 기존 번호를 유지하고,
+사전 캐시 SQL은 내용 변경 없이 `20261008160000_standard_dictionary_cache.sql`로 옮겼습니다.
+기존 backend DB에는 이력 조정이 필요할 수 있으므로 [DB 전환 절차](../../supabase/README.md#pr-74-기존-db-전환)를 먼저 확인합니다.
+**필요한 migration을 먼저 적용하고 pipeline을 배포**하세요. 기존 공지 `body_text`는
+아래 백필 절차 또는 재수집으로 채웁니다. 원격 DB에는 자동 적용하지 않습니다.
 
 GitHub Actions는 기존 `PIPELINE_PRODUCTION_ENABLED=true`일 때만 작동합니다.
 활성화된 모든 출처의 원문 수집을 먼저 마친 뒤 `process-stored`를 출처별로 실행합니다.
@@ -1078,7 +1081,7 @@ order by updated_at, notice_id, feature;
 `pipeline.glossary.dictionary_service.lookup_dictionary()`는 검색용 표제형인
 `query_word`를 받는 독립적인 백엔드 함수다. #52의 후보 추출 결과를 입력으로 연결할 수 있다.
 공지별 자동 실행·저장, 모바일 조회 API는 후속 연결 작업이며 현재 CLI에서는 호출하지 않는다.
-먼저 `20261008150000_standard_dictionary_cache.sql`까지 새 마이그레이션을 적용하고,
+먼저 `20261008160000_standard_dictionary_cache.sql`까지 새 마이그레이션을 적용하고,
 서버 환경에 `DATABASE_URL`과 `STDICT_API_KEY`를 설정한다. `.env`는 자동 로드하지 않는다.
 
 ```python
@@ -1327,6 +1330,27 @@ exit code, 외부 요청 순서, Gemini 호출 수, 테이블별 행 수, 저장
 - 300자를 넘는 텍스트는 길이와 sha256 앞 16자로 적습니다. 원문은 보고서의 스냅샷 전체에서 볼 수
   있습니다.
 - `row_counts`에 공개 스키마 모든 테이블의 행 수를 적어, 스냅샷 대상이 아닌 테이블의 변화도 잡습니다.
-- `anon`은 같은 DB에서 `set local role anon`으로 앱 권한과 같은 컬럼만 조회합니다. 마이그레이션이
-  anon의 컬럼 권한을 바꾸면 하네스(`harness/snapshot.py`의 `ANON_COLUMNS`)가 실패하므로, 목록과
-  기대값을 함께 확인합니다.
+- `anon`은 같은 DB에서 `set local role anon`으로 앱 권한과 같은 컬럼만 조회합니다. 앱이 실제로 읽는
+  `app_notice_list`, `app_notice_detail` view의 결과도 같은 공지 키로 기록합니다. 마이그레이션이
+  anon의 컬럼 권한을 바꾸면 하네스(`harness/snapshot.py`의 `ANON_COLUMNS`, `APP_VIEWS`)가 실패하므로,
+  목록과 기대값을 함께 확인합니다.
+
+
+### 원문이 없는 노원구 공지 (#71)
+
+노원구가 명시적으로 게시물 없음 응답을 반환하면 `source_page_missing`을
+`skipped`에 기록합니다. `skipped_count`는 건너뜀 건수이고 `failed_count`는
+공지별 실제 실패 건수입니다. `collect-one`, 전체 수집, `new`/`refresh`에 적용합니다.
+본문이 비어 있거나 첨부만 있다는 이유로 건너뛰지는 않습니다.
+
+예약 수집은 `selected_count = saved_count + skipped_count + failed_count`입니다.
+전체 수집에서는 제한 적용 후 선택한 공지 수가 같은 합계이며, `listed_count`는
+제한 적용 전 목록 수입니다. 기존 `attempted_count`는 목록 충돌과 이전 오류로
+시도하지 못한 항목을 제외하며, 원문 없음 응답을 받은 항목은 포함합니다.
+목록 조회 실패는 `failed_pages`/`failed_ranges`에 별도로 남습니다.
+
+목록 수집이 완료되고 실제 실패나 수동 제한이 없으면, 모두 건너뛴 경우에도
+완료로 보고하며 종료 코드 0을 반환합니다. AI 후처리 실패가 있으면 기존처럼
+종료 코드 1입니다. 원문 없음 건은 저장·후처리하지 않으며 기존 DB 행의 내용과
+공개 상태도 바꾸지 않습니다. 삭제 또는 비공개라고 확정하는 상태는 아닙니다.
+기존 Actions는 CLI 종료 코드를 사용하므로 워크플로 변경 없이 적용됩니다.

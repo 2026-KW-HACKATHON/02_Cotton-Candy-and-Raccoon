@@ -101,7 +101,10 @@
           "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900611"
         }
       ]
-    }
+    },
+    "skipped_count": 0,
+    "skipped": [],
+    "failed_count": 0
   },
   "stderr": [],
   "http_calls": [

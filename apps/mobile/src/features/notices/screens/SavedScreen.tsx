@@ -1,3 +1,4 @@
+import { NoticeQueryFeedback } from "../components/NoticeReadStatus";
 import { useState } from "react";
 import { Pressable, View, useWindowDimensions } from "react-native";
 import { FloatingSettingsButton } from "@/shared/ui/FloatingSettingsButton";
@@ -7,7 +8,7 @@ import { AppText } from "@/shared/ui/AppText";
 import { COLORS } from "@/shared/theme/tokens";
 import { NoticeCard } from "../components/NoticeCard";
 import { NoticeState } from "../components/NoticeState";
-import { useNotices } from "../hooks/useNotices";
+import { useSavedNotices } from "../hooks/useNotices";
 import { useBookmarkStore } from "../store/bookmarkStore";
 import { useDisplayPreferences } from "@/shared/accessibility/displayPreferences";
 import { EasyNoticeListScreen } from "./EasyNoticeListScreen";
@@ -21,7 +22,7 @@ export function SavedScreen() {
   );
 }
 function StandardSavedScreen() {
-  const query = useNotices();
+  const query = useSavedNotices();
   const { width } = useWindowDimensions();
   const fontScale = useDisplayPreferences((state) => state.fontScale);
   // 좁은 화면과 큰 글자에서는 날짜·제공처와 북마크가 겹치지 않도록 한 열을 쓴다.
@@ -69,7 +70,12 @@ function StandardSavedScreen() {
           </AppText>
         </Pressable>
       </View>
-      {query.isPending || query.isError ? (
+      <NoticeQueryFeedback
+        error={query.error}
+        hasData={query.data !== undefined}
+        retry={() => void query.refetch()}
+      />
+      {query.isPending ? (
         <NoticeState
           loading={query.isPending}
           error={query.isError}
@@ -77,7 +83,7 @@ function StandardSavedScreen() {
             void query.refetch();
           }}
         />
-      ) : !saved.length ? (
+      ) : query.isError && query.data === undefined ? null : !saved.length ? (
         <NoticeState message="아직 보관한 공문이 없어요. 공문의 북마크를 눌러 모아보세요." />
       ) : (
         <View
@@ -99,7 +105,7 @@ function StandardSavedScreen() {
         </View>
       )}
       <AppText secondary size={11.08}>
-        예시 데이터의 보관 상태는 앱 실행 중에만 유지됩니다.
+        보관한 공문은 이 기기에 저장됩니다. 비공개된 공문은 표시되지 않습니다.
       </AppText>
     </Screen>
   );

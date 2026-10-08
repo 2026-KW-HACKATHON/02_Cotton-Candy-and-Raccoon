@@ -97,9 +97,10 @@ def test_missing_page_does_not_save_even_when_api_body_has_file() -> None:
     ):
         result = collect_and_save_nowon(settings, database)
     assert result.saved_count == 0
-    assert result.complete is False
-    assert len(result.failures) == 1
-    assert (result.failures[0].stage, result.failures[0].reason_code) == (
+    assert result.complete is True
+    assert result.failures == ()
+    assert result.skipped_count == 1
+    assert (result.skipped[0].stage, result.skipped[0].reason_code) == (
         "page_missing", "source_page_missing",
     )
     full.assert_not_called()
@@ -369,3 +370,67 @@ def test_real_db_keeps_successes_and_repeated_runs_do_not_duplicate(
             conn.execute(
                 "delete from notices where post_sn like %s", (f"00{prefix}%",),
             )
+
+
+@pytest.mark.parametrize("missing_ids,broken_ids", [
+    ({"001"}, set()), ({"001"}, {"002"}), ({"001", "002", "003"}, set()),
+])
+def test_missing_notices_are_separate_from_real_failures(missing_ids, broken_ids):
+    notices = tuple(_notice(sn) for sn in ("001", "002", "003"))
+    settings, database = _settings()
+    after_save = MagicMock()
+
+    def page(notice, settings):
+        if notice.post_sn in missing_ids:
+            raise NowonPageMissing("missing")
+        if notice.post_sn in broken_ids:
+            raise NowonPageError("unavailable")
+        return notice.url, EMPTY_ATTACHMENTS
+
+    with (
+        patch("pipeline.collect_nowon.collect_all", return_value=_listing(notices)),
+        patch("pipeline.collect_nowon.fetch_notice_page", side_effect=page),
+        patch("pipeline.collect_nowon.psycopg.connect", return_value=_mock_connection()),
+        patch("pipeline.collect_nowon.save_notice_with_files", return_value=42) as save,
+    ):
+        result = collect_and_save_nowon(settings, database, after_save=after_save)
+    assert result.complete == (not broken_ids)
+    assert result.saved_count + result.skipped_count + len(result.failures) == 3
+    assert {item.post_sn for item in result.skipped} == missing_ids
+    assert {item.post_sn for item in result.failures} == broken_ids
+    assert save.call_count == after_save.call_count == result.saved_count
+
+
+def test_attachment_only_notice_is_saved():
+    source = replace(_notice("001"), body_html=None)
+    html = ('<table><tr><th>첨부파일</th><td><ul class="file-list"><li>'
+            '<a href="/file?q_fileSn=1&amp;q_fileId=f">form.pdf</a></li></ul></td></tr></table>')
+    settings, database = _settings()
+    with (
+        patch("pipeline.collect_nowon.collect_all", return_value=_listing((source,))),
+        patch("pipeline.collect_nowon.fetch_notice_page", return_value=(source.url, html)),
+        patch("pipeline.collect_nowon.psycopg.connect", return_value=_mock_connection()),
+        patch("pipeline.collect_nowon.save_notice_with_files") as save,
+    ):
+        result = collect_and_save_nowon(settings, database)
+    assert result.complete and result.saved_count == 1 and result.skipped_count == 0
+    assert len(save.call_args.args[2]) == 1
+
+
+def test_collect_one_missing_page_exits_success_without_storage(monkeypatch, capsys):
+    import json
+
+    from pipeline.cli import main
+
+    monkeypatch.setenv("NOWON_NOTICE_API_KEY", "test-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://pipeline@localhost/test")
+    with (
+        patch("pipeline.cli.collect_one", return_value=_notice("001")),
+        patch("pipeline.cli.fetch_notice_page", side_effect=NowonPageMissing("missing")),
+        patch("pipeline.cli.psycopg.connect") as connect,
+    ):
+        assert main(["collect-one", "--source", "nowon"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["skipped_count"] == 1 and report["failed_count"] == 0
+    assert report["skipped"][0]["post_sn"] == "001"
+    connect.assert_not_called()

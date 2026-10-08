@@ -33,6 +33,43 @@ PRIVATE_NAMES = {
     "last_error_code", "notice_revision", "file_name", "file_key", "file_id", "file_sn",
     "content_revision", "is_visible", "post_sn",
 }
+
+
+def test_migration_versions_are_unique():
+    migrations = Path(__file__).resolve().parents[1] / "migrations"
+    versions = [path.name.split("_", 1)[0] for path in migrations.glob("*.sql")]
+    assert len(versions) == len(set(versions)), "Supabase tracks migrations by version"
+
+
+@pytest.mark.parametrize("database", ["20261008150000_app_notice_views.sql"], indirect=True)
+@pytest.mark.parametrize("legacy_branch", ["develop", "backend"])
+def test_branch_upgrade_preserves_notices_and_dictionary_cache(db, legacy_branch):
+    migrations = Path(__file__).resolve().parents[1] / "migrations"
+    app = migrations / "20261008150000_app_notice_views.sql"
+    cache = migrations / "20261008160000_standard_dictionary_cache.sql"
+    # The old branches used the same version for different SQL. Reproduce their
+    # actual schema, then apply only the missing SQL after history reconciliation.
+    existing = app if legacy_branch == "develop" else cache
+    db.execute(existing.read_text(encoding="utf-8"))
+    before = db.execute("select id,title,content_revision from notices order by id").fetchall()
+    if legacy_branch == "backend":
+        db.execute(
+            "insert into standard_dictionary_cache "
+            "(cache_key,query_word,search_conditions,contract_version) "
+            "values (repeat('b',64),'지원','{}','stdict-v1')"
+        )
+    for path in sorted(migrations.glob("*.sql")):
+        if path.name >= app.name and path != existing:
+            db.execute(path.read_text(encoding="utf-8"))
+    assert db.execute(
+        "select id,title,content_revision from notices order by id"
+    ).fetchall() == before
+    if legacy_branch == "backend":
+        assert db.execute(
+            "select query_word from standard_dictionary_cache where cache_key=repeat('b',64)"
+        ).fetchone() == ("지원",)
+    with as_role(db, "anon"):
+        assert db.execute("select id from app_notice_list").fetchall()
 EASY_PUBLIC = (
     "notice_id", "original_text", "easy_text", "changes", "body_text_present",
     "attachment_content_included", "generated_at",

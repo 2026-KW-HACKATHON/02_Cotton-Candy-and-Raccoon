@@ -2,6 +2,7 @@
 
 import importlib.util
 import re
+import subprocess
 from types import ModuleType
 from unittest.mock import MagicMock
 
@@ -20,6 +21,16 @@ def _load_script(name: str) -> ModuleType:
 
 prepare = _load_script("prepare_test_databases")
 report = _load_script("check_test_report")
+
+
+def test_seed_checkout_preserves_hash_literal_line_endings():
+    seed = REPO_ROOT / "supabase" / "seed.sql"
+    assert b"\r" not in seed.read_bytes(), "Seed hash literals must retain LF on Windows"
+    result = subprocess.run(
+        ["git", "check-attr", "eol", "--", "supabase/seed.sql"],
+        cwd=REPO_ROOT, capture_output=True, text=True, check=True,
+    )
+    assert result.stdout.strip() == "supabase/seed.sql: eol: lf"
 
 
 @pytest.mark.parametrize("url", [

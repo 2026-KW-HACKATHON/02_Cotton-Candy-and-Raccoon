@@ -62,10 +62,17 @@ def test_candidate_migration_preserves_existing_result_as_unprocessed(db, candid
     with db.transaction():
         db.execute("set local role anon")
         assert db.execute(
-            "select original_text,easy_text,dictionary_candidates "
+            "select original_text,easy_text "
             "from notice_easy_texts where notice_id=%s",
             (candidate_row,),
-        ).fetchone() == (ORIGINAL, ORIGINAL, None)
+        ).fetchone() == (ORIGINAL, ORIGINAL)
+        # develop's app-view migration already limits reads to public columns.
+        # Adding candidates must not expose them while preserving the easy text.
+        with pytest.raises(psycopg.errors.InsufficientPrivilege), db.transaction():
+            db.execute(
+                "select dictionary_candidates from notice_easy_texts where notice_id=%s",
+                (candidate_row,),
+            )
 
 
 @pytest.mark.parametrize("role", ["anon", "authenticated"])
