@@ -3,6 +3,10 @@ import { DETAIL_COLUMNS, LIST_COLUMNS, parseNotice } from "./noticeContract";
 import { NoticeRequestError } from "../domain/noticeError";
 
 export type NoticeCursor = { date: string; id: string };
+export type NoticeListOptions = {
+  category?: number | null;
+  oldestFirst?: boolean;
+};
 const PAGE_SIZE = 20;
 function connection() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -55,19 +59,34 @@ async function request(
 export async function fetchNoticePage(
   cursor: NoticeCursor | null = null,
   source?: "dong" | "nowon" | "seoul",
+  options: NoticeListOptions = {},
 ) {
   const params = new URLSearchParams({
     select: LIST_COLUMNS,
-    order: "registered_on.desc,id.desc",
+    order: options.oldestFirst
+      ? "registered_on.asc,id.asc"
+      : "registered_on.desc,id.desc",
     limit: String(PAGE_SIZE),
   });
+  if (options.category !== undefined) {
+    if (
+      options.category !== null &&
+      ![21, 22, 23, 24, 25, 26, 27, 30].includes(options.category)
+    )
+      throw new NoticeRequestError("contract");
+    params.set(
+      "category_code",
+      options.category === null ? "is.null" : "eq." + options.category,
+    );
+  }
+  const comparison = options.oldestFirst ? "gt" : "lt";
   if (source) params.set("source", "eq." + source);
   if (cursor) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(cursor.date) || !/^\d+$/.test(cursor.id))
       throw new NoticeRequestError("contract");
     params.set(
       "or",
-      `(registered_on.lt.${cursor.date},and(registered_on.eq.${cursor.date},id.lt.${cursor.id}))`,
+      `(registered_on.${comparison}.${cursor.date},and(registered_on.eq.${cursor.date},id.${comparison}.${cursor.id}))`,
     );
   }
   const notices = (await request("app_notice_list", params)).map(parseNotice);

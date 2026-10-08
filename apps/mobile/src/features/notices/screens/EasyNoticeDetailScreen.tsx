@@ -12,6 +12,7 @@ import { useBookmarkStore } from "../store/bookmarkStore";
 import { EasyNoticeState } from "../components/EasyNoticeState";
 import { NoticeDocumentText } from "../components/NoticeDocumentText";
 import { NoticeTermOverlay } from "../components/NoticeTermOverlay";
+import { NoticeEvidence } from "../components/NoticeEvidence";
 import { NoticeFiles } from "../components/NoticeFiles";
 import { NoticeSummaryStatus } from "../components/NoticeSummaryStatus";
 import { getSummaryRows, isNoticeExpired } from "../domain/noticePresentation";
@@ -184,6 +185,7 @@ export function EasyNoticeDetailScreen() {
               onTermPress={setTerm}
             />
           </View>
+          <NoticeEvidence notice={notice} comfortable />
           <NoticeFiles
             comfortable
             files={notice.files}

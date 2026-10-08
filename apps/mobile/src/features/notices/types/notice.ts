@@ -41,6 +41,8 @@ export type Notice = {
   terms?: GlossaryTerm[];
   sourceUrl?: string;
   files?: NoticeFile[];
+  evidence?: { quote: string; label: string; url?: string }[];
+  omissions?: { message: string; url?: string }[];
   hasEasyText?: boolean;
   easyAttachmentContentIncluded?: boolean;
   summaryStatus?: "none" | "pending" | "failed" | "summarized" | "needs_review";

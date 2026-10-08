@@ -156,16 +156,161 @@ test("쉬운말 표현은 코드포인트 위치에만 연결한다", () => {
   );
 });
 
-test('제목도 바뀐 쉬운말에서 본문만 추출하고 표현 위치를 유지한다', () => {
-  const notice = parseNotice(row(1, {
-    body_text: '통지', has_easy_text: true, easy_body_text_present: true,
-    easy_original_text: '공문\n통지', easy_text: '알림\n안내',
-    easy_changes: [
-      {start: 0, end: 2, original: '공문', replacement: '알림'},
-      {start: 3, end: 5, original: '통지', replacement: '안내'},
-    ],
-  }));
-  assert.equal(notice.easy, '안내');
-  assert.equal(notice.documentParts.easy.map(p=>p.text).join(''), '안내');
-  assert.equal(notice.documentParts.original.map(p=>p.text).join(''), '통지');
+test("제목도 바뀐 쉬운말에서 본문만 추출하고 표현 위치를 유지한다", () => {
+  const notice = parseNotice(
+    row(1, {
+      body_text: "통지",
+      has_easy_text: true,
+      easy_body_text_present: true,
+      easy_original_text: "공문\n통지",
+      easy_text: "알림\n안내",
+      easy_changes: [
+        { start: 0, end: 2, original: "공문", replacement: "알림" },
+        { start: 3, end: 5, original: "통지", replacement: "안내" },
+      ],
+    }),
+  );
+  assert.equal(notice.easy, "안내");
+  assert.equal(notice.documentParts.easy.map((p) => p.text).join(""), "안내");
+  assert.equal(
+    notice.documentParts.original.map((p) => p.text).join(""),
+    "통지",
+  );
+});
+
+test("카테고리와 오래된순은 서버 전체 범위에 적용하고 다음 커서도 같은 방향이다", async () => {
+  const urls = [];
+  global.fetch = async (url) => {
+    urls.push(new URL(url));
+    return new Response(
+      JSON.stringify(Array.from({ length: 20 }, (_, i) => row(i + 1))),
+    );
+  };
+  const options = { category: 26, oldestFirst: true };
+  const page = await api.fetchNoticePage(null, "seoul", options);
+  await api.fetchNoticePage(page.nextCursor, "seoul", options);
+  for (const url of urls) {
+    assert.equal(url.searchParams.get("category_code"), "eq.26");
+    assert.equal(url.searchParams.get("source"), "eq.seoul");
+    assert.equal(url.searchParams.get("order"), "registered_on.asc,id.asc");
+  }
+  assert.equal(
+    urls[1].searchParams.get("or"),
+    "(registered_on.gt.2026-10-09,and(registered_on.eq.2026-10-09,id.gt.20))",
+  );
+  await api.fetchNoticePage(null, "dong", { category: null });
+  assert.equal(urls[2].searchParams.get("category_code"), "is.null");
+});
+
+test("상세는 근거와 누락을 조회하고 순서와 무관하게 파일 근거를 연결한다", async () => {
+  let url;
+  global.fetch = async (value) => {
+    url = new URL(value);
+    return new Response("[]");
+  };
+  await api.fetchNotice("1");
+  for (const field of ["result", "file_references", "preparation_omissions"])
+    assert.ok(url.searchParams.get("select").split(",").includes(field));
+  const notice = parseNotice(
+    row(1, {
+      display_status: "needs_review",
+      url: "https://example.test/notice",
+      result: {
+        evidence: [
+          {
+            excerpt: "신청은 10월까지",
+            source_id: "media_2",
+            source_type: "document",
+            page: 2,
+          },
+        ],
+      },
+      file_references: [
+        {
+          source_id: "media_1",
+          source_type: "document",
+          files: [{ url: "https://example.test/wrong" }],
+        },
+        {
+          source_id: "media_2",
+          source_type: "document",
+          files: [
+            { url: "javascript:alert(1)" },
+            { url: "https://example.test/right" },
+          ],
+        },
+      ],
+      preparation_omissions: [
+        {
+          reason_code: "unsupported_type",
+          url: "https://example.test/file.xlsx",
+        },
+      ],
+    }),
+  );
+  assert.deepEqual(notice.evidence, [
+    {
+      quote: "신청은 10월까지",
+      label: "첨부 근거 · 2쪽",
+      url: "https://example.test/right",
+    },
+  ]);
+  assert.match(notice.omissions[0].message, /지원하지 않는 파일/);
+  assert.equal(notice.omissions[0].url, "https://example.test/file.xlsx");
+});
+
+test("불완전한 근거 메타데이터는 안전한 원문으로 안내하고 요약 없는 공지는 근거를 숨긴다", () => {
+  const data = {
+    url: "https://example.test/notice",
+    result: {
+      evidence: [
+        null,
+        { excerpt: "근거", source_id: "media_1", source_type: "image" },
+      ],
+    },
+    file_references: [null],
+    preparation_omissions: [null, { url: "javascript:bad" }],
+  };
+  assert.equal(
+    parseNotice(row(1, { ...data, display_status: "summarized" })).evidence[0]
+      .url,
+    data.url,
+  );
+  assert.deepEqual(parseNotice(row(1, data)).evidence, []);
+  assert.equal(parseNotice(row(1, data)).omissions[0].url, data.url);
+});
+
+test("전체·기타·카테고리·정렬은 서로 다른 Query 캐시를 사용한다", () => {
+  const path = require("node:path");
+  const { loadTs } = require("./support/loadTs.cjs");
+  const configs = [];
+  const requests = [];
+  const { useNotices } = loadTs(
+    path.join(__dirname, "../src/features/notices/hooks/useNotices.ts"),
+    {
+      "@tanstack/react-query": {
+        useInfiniteQuery: (config) => {
+          configs.push(config);
+          return config;
+        },
+      },
+      "../api/noticeApi": { fetchNoticePage: (...args) => requests.push(args) },
+      "../store/noticeScopeStore": {
+        useNoticeScopeStore: (select) => select({ scope: "서울시" }),
+      },
+    },
+  );
+  useNotices();
+  useNotices(true, { category: null });
+  useNotices(true, { category: 26 });
+  const sorted = useNotices(true, { category: 26, oldestFirst: true });
+  assert.equal(new Set(configs.map((c) => JSON.stringify(c.queryKey))).size, 4);
+  assert.ok(configs.every((c) => c.initialPageParam === null));
+  assert.equal(configs[0].select, sorted.select);
+  sorted.queryFn({ pageParam: { date: "2026-10-01", id: "10" } });
+  assert.deepEqual(requests[0], [
+    { date: "2026-10-01", id: "10" },
+    "seoul",
+    { category: 26, oldestFirst: true },
+  ]);
 });

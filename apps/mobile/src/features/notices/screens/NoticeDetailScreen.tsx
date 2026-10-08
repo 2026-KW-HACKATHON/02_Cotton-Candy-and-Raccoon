@@ -17,6 +17,7 @@ import { EasyNoticeDetailScreen } from "./EasyNoticeDetailScreen";
 import { DetailCharacter } from "@/shared/ui/character/AnimatedCharacter";
 import { NoticeDocumentText } from "../components/NoticeDocumentText";
 import { NoticeTermOverlay } from "../components/NoticeTermOverlay";
+import { NoticeEvidence } from "../components/NoticeEvidence";
 import { NoticeFiles } from "../components/NoticeFiles";
 import { NoticeSummaryStatus } from "../components/NoticeSummaryStatus";
 import { type GlossaryTerm } from "../types/notice";
@@ -37,6 +38,24 @@ export function NoticeDetailScreen() {
   );
 }
 function StandardNoticeDetailScreen() {
+  const params = useLocalSearchParams<{ id: string }>();
+  const id = typeof params.id === "string" ? params.id : "";
+  const query = useNotice(id);
+  return (
+    <StandardNoticeContent
+      key={`${id}:${query.data?.hasEasyText === true}`}
+      id={id}
+      query={query}
+    />
+  );
+}
+function StandardNoticeContent({
+  id,
+  query,
+}: {
+  id: string;
+  query: ReturnType<typeof useNotice>;
+}) {
   const [animationActive, setAnimationActive] = useState(false);
   useFocusEffect(
     useCallback(() => {
@@ -44,15 +63,13 @@ function StandardNoticeDetailScreen() {
       return () => setAnimationActive(false);
     }, []),
   );
-  const params = useLocalSearchParams<{ id: string }>();
-  const id = typeof params.id === "string" ? params.id : "";
-  const query = useNotice(id);
   const saved = useBookmarkStore((state) => state.savedIds.includes(id));
   const toggleBookmark = useBookmarkStore((state) => state.toggleBookmark);
   // 서버가 제공한 쉬운말만 표시하며 이 화면에서는 변환 요청을 실행하지 않는다.
-  const [easy, setEasy] = useState(false);
+  const [easyRequested, setEasy] = useState(false);
   const [term, setTerm] = useState<GlossaryTerm | null>(null);
   const notice = query.data;
+  const easy = easyRequested && notice?.hasEasyText === true;
   const rows = notice
     ? [
         ["기한", notice.deadline],
@@ -67,7 +84,7 @@ function StandardNoticeDetailScreen() {
       contentStyle={{ paddingHorizontal: 20, gap: 20 }}
       overlay={
         <NoticeTermOverlay
-          term={term}
+          term={notice?.hasEasyText ? term : null}
           easy={easy}
           onClose={() => setTerm(null)}
         />
@@ -238,6 +255,7 @@ function StandardNoticeDetailScreen() {
               onTermPress={setTerm}
             />
           </View>
+          <NoticeEvidence notice={notice} />
           <NoticeFiles files={notice.files} sourceUrl={notice.sourceUrl} />
           <View style={{ gap: 4, paddingTop: 12 }}>
             <AppText secondary size={12} lineHeight={18}>

@@ -49,8 +49,8 @@ function StandardNoticeListScreen() {
             <View style={styles.search}>
               <Search color={COLORS.secondary} size={20} strokeWidth={1.5} />
               <TextInput
-                accessibilityLabel="공문 제목이나 내용 검색"
-                placeholder="공문 제목이나 내용을 검색해요"
+                accessibilityLabel="불러온 공문 제목과 요약 검색"
+                placeholder="불러온 제목·요약에서 검색"
                 placeholderTextColor={COLORS.secondary}
                 value={vm.search}
                 onChangeText={vm.setSearch}
