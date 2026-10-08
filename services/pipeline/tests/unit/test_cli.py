@@ -102,6 +102,35 @@ def test_collect_many_rejects_bad_limit_before_network(
     assert "--limit" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("arguments", [
+    ["--limit", "0"], ["--limit", "10001"], ["--notice-id", "-1"],
+    ["--max-attempts", "0"], ["--job-timeout-seconds", "nan"],
+    ["--job-timeout-seconds", "inf"], ["--job-timeout-seconds", "-1"],
+    ["--lease-seconds", "120"], ["--retry-stopped"],
+    ["--retry-stopped", "--notice-id", "1", "--feature", "summary"],
+])
+def test_pending_rejects_invalid_options_without_connections(
+    collect_env: None, arguments: list[str], capsys: pytest.CaptureFixture[str],
+) -> None:
+    with patch("pipeline.processing_runner.psycopg.connect") as connect:
+        assert main(["process-pending", "--dry-run", *arguments]) == 2
+    connect.assert_not_called()
+    assert capsys.readouterr().out == ""
+
+
+def test_pending_storage_error_never_exposes_connection_or_provider_secrets(
+    collect_env: None, capsys: pytest.CaptureFixture[str],
+) -> None:
+    with patch("pipeline.cli.run_processing", side_effect=psycopg.OperationalError(
+        "private-password private-api-key",
+    )):
+        assert main(["process-pending", "--dry-run"]) == 1
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert "processing_storage_failed" in output.err
+    assert "private-password" not in output.err and "private-api-key" not in output.err
+
+
 @pytest.mark.parametrize("failed_step,error", [
     ("fetch_notice_page", NowonPageError("page unavailable")),
     ("transform_nowon_notice", TransformError("bad date")),

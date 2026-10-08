@@ -162,3 +162,18 @@ def test_every_pipeline_test_file_is_inside_a_folder_that_ci_runs():
         if not any(path.resolve().is_relative_to(target) for target in targets)
     )
     assert not_run == [], f"test files outside CI pytest targets: {not_run}"
+
+
+@pytest.mark.parametrize("key", ["GEMINI_API_KEY", "STDICT_API_KEY"])
+def test_collection_workflow_passes_conditional_credentials_to_every_processing_step(key):
+    workflow = (REPO_ROOT / ".github" / "workflows" / "collect.yml").read_text("utf-8")
+    steps = re.split(r"(?m)^      - ", workflow)
+    validation, = [step for step in steps if step.startswith("name: Validate required secrets")]
+    processing = [step for step in steps if "${{ steps.mode.outputs.easy_text_flag }}" in step]
+    assert len(processing) == 2
+    expected = (
+        key + ": ${{ vars.PIPELINE_EASY_TEXT_ENABLED == 'true' && secrets." + key + " || '' }}"
+    )
+    for step in [validation, *processing]:
+        assert expected in step
+    assert f'if [ "$EASY_TEXT_ENABLED" = "true" ] && [ -z "${key}" ]; then' in validation

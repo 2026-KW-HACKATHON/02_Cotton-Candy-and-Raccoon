@@ -46,16 +46,191 @@
         "dictionary_candidates": null
       }
     },
-    "notice_summary_executions": {}
+    "notice_dictionary_links": {
+      "nowon/1001/900551": {
+        "easy_text_token": "<unchanged>",
+        "candidates": [
+          {
+            "cache_key": "182e2d9c92c67507c720e227d5d715f3adacc3c9528c046df5ae1c0d89340151",
+            "context": "익일에는 구비서류를 지참하시어 방문하세요.",
+            "easy_end": 25,
+            "easy_expression": "구비서류를",
+            "easy_start": 20,
+            "end": 23,
+            "error_code": null,
+            "lookup_status": "pending",
+            "mapping_status": "unchanged",
+            "original": "구비서류를",
+            "query_word": "구비서류",
+            "retryable": true,
+            "start": 18
+          },
+          {
+            "cache_key": "d65ffdbbfc0244770dc35bdbd221a6a6f283ab383f93ee9c15387ff42dd76810",
+            "context": "익일에는 구비서류를 지참하시어 방문하세요.",
+            "easy_end": 31,
+            "easy_expression": "지참하시어",
+            "easy_start": 26,
+            "end": 29,
+            "error_code": null,
+            "lookup_status": "pending",
+            "mapping_status": "unchanged",
+            "original": "지참하시어",
+            "query_word": "지참하다",
+            "retryable": true,
+            "start": 24
+          },
+          {
+            "cache_key": "c9790facf0e746a22ddd66f3a0b3bea760b84d61707401f958a93d7a2bde8564",
+            "context": "직권처리는 담당자가 진행합니다.",
+            "easy_end": 44,
+            "easy_expression": "직권처리는",
+            "easy_start": 39,
+            "end": 42,
+            "error_code": null,
+            "lookup_status": "pending",
+            "mapping_status": "unchanged",
+            "original": "직권처리는",
+            "query_word": "직권처리",
+            "retryable": true,
+            "start": 37
+          },
+          {
+            "cache_key": "182e2d9c92c67507c720e227d5d715f3adacc3c9528c046df5ae1c0d89340151",
+            "context": "재방문할 때에도 구비서류를 지참하시어 방문하세요.",
+            "easy_end": 71,
+            "easy_expression": "구비서류를",
+            "easy_start": 66,
+            "end": 69,
+            "error_code": null,
+            "lookup_status": "pending",
+            "mapping_status": "unchanged",
+            "original": "구비서류를",
+            "query_word": "구비서류",
+            "retryable": true,
+            "start": 64
+          }
+        ],
+        "generated_at": "<unchanged>"
+      }
+    },
+    "standard_dictionary_cache": {
+      "182e2d9c92c67507c720e227d5d715f3adacc3c9528c046df5ae1c0d89340151": {
+        "query_word": "구비서류",
+        "search_conditions": {
+          "method": "exact",
+          "pos": 0,
+          "provider": "stdict",
+          "target": 1
+        },
+        "contract_version": "stdict-v1",
+        "result": {
+          "contract_version": "stdict-v1",
+          "entries": [
+            {
+              "headword": "구비^서류",
+              "homonym_number": null,
+              "senses": [
+                {
+                  "definition": "일을 처리하는 데 필요한 서류.",
+                  "part_of_speech": "명사",
+                  "pos_code": "1",
+                  "sense_code": "101"
+                },
+                {
+                  "definition": "일정한 조건에 맞추어 갖추어 놓은 서류.",
+                  "part_of_speech": "명사",
+                  "pos_code": "1",
+                  "sense_code": "102"
+                }
+              ],
+              "source_url": "https://stdict.korean.go.kr/search/searchView.do?word_no=100",
+              "target_code": "100"
+            }
+          ],
+          "query_word": "구비서류",
+          "status": "found"
+        },
+        "result_updated_at": "<unchanged>",
+        "lease_token": null,
+        "lease_expires_at": null,
+        "retry_after_at": null,
+        "last_error_code": null,
+        "updated_at": "<unchanged>"
+      },
+      "c9790facf0e746a22ddd66f3a0b3bea760b84d61707401f958a93d7a2bde8564": {
+        "query_word": "직권처리",
+        "search_conditions": {
+          "method": "exact",
+          "pos": 0,
+          "provider": "stdict",
+          "target": 1
+        },
+        "contract_version": "stdict-v1",
+        "result": {
+          "contract_version": "stdict-v1",
+          "entries": [],
+          "query_word": "직권처리",
+          "status": "not_found"
+        },
+        "result_updated_at": "<unchanged>",
+        "lease_token": null,
+        "lease_expires_at": null,
+        "retry_after_at": null,
+        "last_error_code": null,
+        "updated_at": "<unchanged>"
+      },
+      "d65ffdbbfc0244770dc35bdbd221a6a6f283ab383f93ee9c15387ff42dd76810": {
+        "query_word": "지참하다",
+        "search_conditions": {
+          "method": "exact",
+          "pos": 0,
+          "provider": "stdict",
+          "target": 1
+        },
+        "contract_version": "stdict-v1",
+        "result": {
+          "contract_version": "stdict-v1",
+          "entries": [
+            {
+              "headword": "지참-하다",
+              "homonym_number": null,
+              "senses": [
+                {
+                  "definition": "물건을 가지고 가거나 오다.",
+                  "part_of_speech": "동사",
+                  "pos_code": "1",
+                  "sense_code": "201"
+                }
+              ],
+              "source_url": "https://stdict.korean.go.kr/search/searchView.do?word_no=200",
+              "target_code": "200"
+            }
+          ],
+          "query_word": "지참하다",
+          "status": "found"
+        },
+        "result_updated_at": "<unchanged>",
+        "lease_token": null,
+        "lease_expires_at": null,
+        "retry_after_at": null,
+        "last_error_code": null,
+        "updated_at": "<unchanged>"
+      }
+    },
+    "notice_summary_executions": {},
+    "notice_processing_jobs": {}
   },
   "row_counts": {
     "holidays": 0,
+    "notice_dictionary_links": 1,
     "notice_easy_texts": 1,
     "notice_files": 0,
     "notice_summaries": 0,
     "notice_summary_executions": 0,
     "notices": 1,
-    "standard_dictionary_cache": 0
+    "standard_dictionary_cache": 3,
+    "notice_processing_jobs": 0
   },
   "anon": {
     "notices": {
@@ -100,6 +275,32 @@
         "body_text_present": true,
         "attachment_content_included": false,
         "dictionary_candidates": null
+      }
+    },
+    "get_notice_dictionary": {
+      "nowon/1001/900551": {
+        "result": {
+          "attachment_content_included": false,
+          "body_text_present": true,
+          "changes": [
+            {
+              "context": "익일에는 구비서류를 지참하시어 방문하세요.",
+              "end": 17,
+              "original": "익일에는",
+              "replacement": "다음 날에는",
+              "start": 13
+            }
+          ],
+          "dictionary_candidates": null,
+          "dictionary_status": "unprocessed",
+          "easy_text": "구비서류 제출 안내\n📢 다음 날에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.",
+          "generated_at": "<unchanged>",
+          "model": "gemini-3.5-flash-lite",
+          "notice_id": 1,
+          "notice_revision": "a848d30a1de9490a85bad59064739fd8f6820e2d27c864f8d0a6c4e689f32b5f",
+          "original_text": "구비서류 제출 안내\n📢 익일에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.",
+          "prompt_version": "easy-language-v8"
+        }
       }
     }
   }

@@ -57,16 +57,21 @@
     "notice_files": {},
     "notice_summaries": {},
     "notice_easy_texts": {},
-    "notice_summary_executions": {}
+    "notice_dictionary_links": {},
+    "standard_dictionary_cache": {},
+    "notice_summary_executions": {},
+    "notice_processing_jobs": {}
   },
   "row_counts": {
     "holidays": 0,
+    "notice_dictionary_links": 0,
     "notice_easy_texts": 0,
     "notice_files": 0,
     "notice_summaries": 0,
     "notice_summary_executions": 0,
     "notices": 2,
-    "standard_dictionary_cache": 0
+    "standard_dictionary_cache": 0,
+    "notice_processing_jobs": 0
   },
   "anon": {
     "notices": {
@@ -105,6 +110,14 @@
     },
     "notice_files": {},
     "notice_summaries": {},
-    "notice_easy_texts": {}
+    "notice_easy_texts": {},
+    "get_notice_dictionary": {
+      "nowon/1001/900471": {
+        "result": null
+      },
+      "nowon/1001/900472": {
+        "result": null
+      }
+    }
   }
 }

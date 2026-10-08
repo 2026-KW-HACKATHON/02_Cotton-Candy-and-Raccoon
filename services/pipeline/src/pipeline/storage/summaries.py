@@ -8,6 +8,7 @@ from psycopg import Connection, Cursor, Error
 from psycopg.rows import tuple_row
 from psycopg.types.json import Jsonb
 
+from pipeline.storage.processing_context import guard_processing_write, has_processing_claim
 from pipeline.storage.summary_record import (
     FAILURE_CODES,
     SummaryMetadata,
@@ -256,14 +257,17 @@ def begin_summary_execution(
     ):
         raise SummaryRecordError("invalid_source_revision")
     try:
-        with conn.cursor(row_factory=tuple_row) as cursor:
-            if expected_source_revision is None:
-                cursor.execute(REGISTER_SUMMARY_EXECUTION, (notice_id,))
-            else:
-                cursor.execute(
-                    REGISTER_SUMMARY_EXECUTION_AT_REVISION, (notice_id, expected_source_revision)
-                )
-            row = cursor.fetchone()
+        with conn.transaction() if has_processing_claim() else nullcontext():
+            guard_processing_write(conn, notice_id, "summary")
+            with conn.cursor(row_factory=tuple_row) as cursor:
+                if expected_source_revision is None:
+                    cursor.execute(REGISTER_SUMMARY_EXECUTION, (notice_id,))
+                else:
+                    cursor.execute(
+                        REGISTER_SUMMARY_EXECUTION_AT_REVISION,
+                        (notice_id, expected_source_revision),
+                    )
+                row = cursor.fetchone()
     except Error:
         raise SummaryStorageError("summary_execution_registration_failed") from None
     if row is None and expected_source_revision is not None:
@@ -388,8 +392,9 @@ def _write_notice_summary(
         Jsonb(checked.file_manifest.model_dump(mode="json")) if checked.file_manifest else None,
     )
     try:
-        atomic = checked.file_manifest is not None and conn.autocommit
+        atomic = has_processing_claim() or (checked.file_manifest is not None and conn.autocommit)
         with conn.transaction() if atomic else nullcontext():
+            guard_processing_write(conn, checked.notice_id, "summary")
             with conn.cursor(row_factory=tuple_row) as cursor:
                 if checked.file_manifest is not None:
                     _validate_manifest_source(cursor, checked)
@@ -541,8 +546,9 @@ def _save_summary_correction_fallback(
         sql = GUARDED_UPSERT_SUMMARY_CORRECTION_FALLBACK
         values = (checked.notice_id, checked.execution_token, *values)
     try:
-        atomic = checked.file_manifest is not None and conn.autocommit
+        atomic = has_processing_claim() or (checked.file_manifest is not None and conn.autocommit)
         with conn.transaction() if atomic else nullcontext():
+            guard_processing_write(conn, checked.notice_id, "summary")
             with conn.cursor(row_factory=tuple_row) as cursor:
                 if checked.file_manifest is not None:
                     _validate_manifest_source(cursor, checked)

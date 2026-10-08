@@ -31,6 +31,11 @@ from pipeline.config import (
     WolgyeSettings,
 )
 from pipeline.gemini_execution import GeminiExecutionError
+from pipeline.processing_runner import (
+    DEFAULT_JOB_TIMEOUT_SECONDS,
+    DEFAULT_LEASE_SECONDS,
+    run_processing,
+)
 from pipeline.sources.nowon_api import NowonSourceError, collect_one
 from pipeline.sources.nowon_page import NowonPageError, fetch_notice_page
 from pipeline.sources.seoul_api import SeoulSourceError
@@ -106,6 +111,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="summarize one stored notice with Gemini and save the result to DB",
     )
     summarize.add_argument("--notice-id", type=int, required=True, help="notices.id")
+    pending = subparsers.add_parser(
+        "process-pending", help="process missing or due stored notices independently of collection",
+    )
+    pending.add_argument("--feature", choices=["all", "summary", "easy_text"], default="all")
+    pending.add_argument("--notice-id", type=int, help="restrict processing to one notices.id")
+    pending.add_argument("--limit", type=int, default=100, help="maximum feature jobs (1..10000)")
+    pending.add_argument(
+        "--dry-run", action="store_true", help="read candidates without DB/API writes",
+    )
+    pending.add_argument(
+        "--retry-stopped", action="store_true",
+        help="release a blocked/exhausted job; requires --notice-id and one --feature",
+    )
+    pending.add_argument("--max-attempts", type=int, default=3)
+    pending.add_argument("--job-timeout-seconds", type=float, default=DEFAULT_JOB_TIMEOUT_SECONDS)
+    pending.add_argument("--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS)
     return parser
 
 
@@ -132,6 +153,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "summarize-one":
         return _summarize_one(args)
+
+    if args.command == "process-pending":
+        return _process_pending(args)
 
     if args.command == "check-config":
         try:
@@ -604,5 +628,35 @@ def _summarize_one(args: argparse.Namespace) -> int:
     except GeminiExecutionError as error:
         print(json.dumps({"execution_failure": error.to_dict()}), file=sys.stderr)
         return 2 if error.reason_code == "configuration_error" else 1
+    print(json.dumps(result.report(), ensure_ascii=True))
+    return result.exit_code
+
+
+def _process_pending(args: argparse.Namespace) -> int:
+    """Keep durable queue metadata private and never print provider/DB exceptions."""
+    try:
+        database = DatabaseSettings.from_env()
+        api_key = None if args.dry_run else load_gemini_api_key()
+        result = run_processing(
+            database,
+            api_key=api_key,
+            features=("summary", "easy_text") if args.feature == "all" else (args.feature,),
+            notice_id=args.notice_id,
+            limit=args.limit,
+            dry_run=args.dry_run,
+            retry_stopped=args.retry_stopped,
+            max_attempts=args.max_attempts,
+            job_timeout_seconds=args.job_timeout_seconds,
+            lease_seconds=args.lease_seconds,
+        )
+    except (ConfigError, GeminiConfigurationError) as error:
+        print(f"설정 오류: {error}", file=sys.stderr)
+        return 2
+    except ValueError:
+        print("설정 오류: 재처리 범위·시도 상한·제한 시간·재개 옵션을 확인하세요.", file=sys.stderr)
+        return 2
+    except psycopg.Error:
+        print("재처리 실패: processing_storage_failed", file=sys.stderr)
+        return 1
     print(json.dumps(result.report(), ensure_ascii=True))
     return result.exit_code

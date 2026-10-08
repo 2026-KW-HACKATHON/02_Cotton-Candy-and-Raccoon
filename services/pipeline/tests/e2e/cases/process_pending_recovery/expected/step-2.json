@@ -1,0 +1,99 @@
+{
+  "exit_code": 0,
+  "report": {
+    "dry_run": true,
+    "complete": true,
+    "selected_count": 2,
+    "enqueued_count": 0,
+    "attempted_count": 0,
+    "succeeded_count": 0,
+    "skipped_count": 0,
+    "blocked_count": 0,
+    "retry_wait_count": 0,
+    "exhausted_count": 0,
+    "superseded_count": 0,
+    "retry_released": false,
+    "error_code": null,
+    "records": [
+      {
+        "notice_id": 1,
+        "feature": "easy_text",
+        "state": "candidate"
+      },
+      {
+        "notice_id": 1,
+        "feature": "summary",
+        "state": "candidate"
+      }
+    ]
+  },
+  "stderr": [],
+  "http_calls": [],
+  "gemini_calls": {},
+  "db": {
+    "notices": {
+      "nowon/1001/900611": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "지원 사업 신청",
+        "department": "복지정책과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900611",
+        "body_html": "<p>지원 사업 신청</p><p>대상: 월계1동 주민</p><p>신청 기간: 2026-10-03~2026-10-20</p><p>월계1동 주민센터 방문 신청</p><p>신분증 지참</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {},
+    "notice_summary_executions": {},
+    "notice_processing_jobs": {},
+    "notice_dictionary_links": {},
+    "standard_dictionary_cache": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_easy_texts": 0,
+    "notice_files": 0,
+    "notice_processing_jobs": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 1,
+    "standard_dictionary_cache": 0,
+    "notice_dictionary_links": 0
+  },
+  "anon": {
+    "notices": {
+      "nowon/1001/900611": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "지원 사업 신청",
+        "department": "복지정책과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900611",
+        "body_html": "<p>지원 사업 신청</p><p>대상: 월계1동 주민</p><p>신청 기간: 2026-10-03~2026-10-20</p><p>월계1동 주민센터 방문 신청</p><p>신분증 지참</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {},
+    "get_notice_dictionary": {
+      "nowon/1001/900611": {
+        "result": null
+      }
+    }
+  }
+}
