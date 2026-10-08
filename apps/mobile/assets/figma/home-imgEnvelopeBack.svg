@@ -1,7 +1,0 @@
-<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="300.462" height="266.769" viewBox="0 0 300.462 266.769" fill="none" xmlns="http://www.w3.org/2000/svg">
-<g id="Envelope_Back">
-<path id="Open_flap" d="M1.61549 104.538L134.539 7.61538C145 -0.384615 155.462 -0.384615 165.923 7.61538L298.846 104.538H1.61549Z" fill="#73899B" stroke="#485563" stroke-width="3.23077" stroke-linecap="round" stroke-linejoin="round"/>
-<path id="Full_back_body" d="M1.61549 104.538H298.846V251.308C298.846 260.538 294.846 265.154 286.846 265.154H13.6155C5.61549 265.154 1.61549 260.538 1.61549 251.308V104.538Z" fill="#73899B" stroke="#485563" stroke-width="3.23077" stroke-linecap="round" stroke-linejoin="round"/>
-<path id="Fold" d="M7.15405 104.538H293.308" stroke="#73899B" stroke-width="3.69231" stroke-linecap="round" stroke-linejoin="round"/>
-</g>
-</svg>
