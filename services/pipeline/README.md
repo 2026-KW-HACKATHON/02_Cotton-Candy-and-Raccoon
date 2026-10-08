@@ -284,6 +284,25 @@ DB에 노원구 공지가 하나도 없으면 **어느 모드든** API 최신 50
 
 `storage/notices.py`의 `save_notice(conn, record)`는 변환된 `NoticeRecord`를 `notices`에 `(category, source_board, post_sn)` 기준으로 한 SQL 문에서 저장·갱신하고 DB `id`를 반환합니다. 새 공지는 공개 상태로 저장하고 다시 확인된 공지를 `is_visible=True`로 복원합니다. 기존 공지는 제목·본문 HTML·등록일·원문 URL·공공누리 유형 중 하나라도 이전 값과 다르면 `is_modified=True`가 되고, 이후 원래 값으로 돌아와도 `True`를 유지합니다. 부서만 변경되면 수정됨으로 표시하지 않습니다. `updated_at`은 갱신하며 `created_at`은 유지합니다. 동일값 비교에는 SQL의 `IS DISTINCT FROM`을 사용해 `NULL` 변경도 감지합니다.
 
+저장할 때마다 `body_text`에 `notice_body_text(body_html)`(= `html_to_notice_text`, 요약 입력과 같은 평문)를 함께 씁니다. 평문이 비면 NULL입니다. 앱은 HTML 대신 이 평문을 표시합니다. 파생 값이라 수정됨 판단과 원문 변경 trigger의 비교 대상이 아닙니다.
+
+`body_text` 컬럼이 생기기 전에 저장한 행은 다시 수집하면 채워집니다(내용이 같아도 upsert가 `body_text`를 씁니다). 목록에서 사라져 다시 수집되지 않는 행은 아래처럼 채웁니다. `body_text`만 바꾸므로 `content_revision`과 기존 요약은 그대로입니다.
+
+```python
+import psycopg
+from pipeline.config import DatabaseSettings
+from pipeline.storage.notices import notice_body_text
+
+with psycopg.connect(DatabaseSettings.from_env().database_url) as conn:
+    rows = conn.execute(
+        "select id, body_html from notices where body_text is null and body_html is not null"
+    ).fetchall()
+    for notice_id, body_html in rows:
+        conn.execute(
+            "update notices set body_text = %s where id = %s", (notice_body_text(body_html), notice_id)
+        )
+```
+
 함수는 `commit`, `rollback`, 연결 종료를 하지 않습니다. `DatabaseSettings.from_env()`는 DB 연결에 필요한 `DATABASE_URL`만 읽어 검증하므로 API 키 없이도 사용할 수 있습니다. `psycopg.connect(settings.database_url)`로 연결한 뒤 변환된 레코드를 함수에 전달합니다. `collect-one`은 아래의 공지·파일 묶음 저장 함수를 사용합니다.
 
 ## 공지와 파일 함께 저장
@@ -292,7 +311,7 @@ DB에 노원구 공지가 하나도 없으면 **어느 모드든** API 최신 50
 
 `files=[]`는 **본문과 원문 페이지를 정상적으로 수집했는데 파일이 없는 경우**에만 전달해야 합니다. 페이지 요청·파싱이 실패하면 저장 함수를 호출하지 않습니다. 파일 저장 오류가 나면 공지 변경까지 롤백합니다. 함수가 독립 트랜잭션으로 실행되면 정상 종료 시 확정되며, 호출자가 이미 트랜잭션을 열었다면 내부 작업은 savepoint로 묶여 바깥 트랜잭션에 남습니다. `collect-one`도 완전 수집에 성공한 뒤에만 저장합니다.
 
-실제 PostgreSQL 통합 테스트는 현재 **SQL 4개**가 적용된 테스트용 DB에 `PIPELINE_TEST_DATABASE_URL`을 설정한 뒤 실행할 수 있습니다. 테스트는 고유한 게시물 번호를 사용합니다. 저장 계층 테스트는 종료 시 트랜잭션을 롤백하고 CLI·다건 통합 테스트는 확정된 해당 테스트 행만 삭제합니다. 이 변수를 설정하지 않으면 DB 통합 테스트가 건너뛰어지므로, 건너뛴 상태를 저장 검증 완료로 해석하면 안 됩니다.
+실제 PostgreSQL 통합 테스트는 `supabase/migrations`의 **SQL 전체**가 적용된 테스트용 DB에 `PIPELINE_TEST_DATABASE_URL`을 설정한 뒤 실행할 수 있습니다. 테스트는 고유한 게시물 번호를 사용합니다. 저장 계층 테스트는 종료 시 트랜잭션을 롤백하고 CLI·다건 통합 테스트는 확정된 해당 테스트 행만 삭제합니다. 이 변수를 설정하지 않으면 DB 통합 테스트가 건너뛰어지므로, 건너뛴 상태를 저장 검증 완료로 해석하면 안 됩니다.
 
 검증 이력을 구분합니다. SQL 통합 전 최종 구조(당시 5개 SQL)에서 전체 pipeline 테스트 `699 passed, 0 skipped`를 확인했습니다. 통합 후에는 별도 DB 테스트 `39 passed, 0 skipped`와 기존 최종 구조 대비 컬럼·제약·인덱스·RLS 동등성을 확인했습니다. 이번 문서 정리에서 전체 pipeline 테스트를 다시 실행한 것은 아닙니다. 과거 노원구 정책 검증의 `370 passed`와 부분 저장 실험 수치는 당시 이력으로 보존하며 현재 최신 검사 결과와 혼동하지 않습니다.
 
@@ -936,6 +955,7 @@ exit code, 외부 요청 순서, Gemini 호출 수, 테이블별 행 수, 저장
 - 300자를 넘는 텍스트는 길이와 sha256 앞 16자로 적습니다. 원문은 보고서의 스냅샷 전체에서 볼 수
   있습니다.
 - `row_counts`에 공개 스키마 모든 테이블의 행 수를 적어, 스냅샷 대상이 아닌 테이블의 변화도 잡습니다.
-- `anon`은 같은 DB에서 `set local role anon`으로 앱 권한과 같은 컬럼만 조회합니다. 마이그레이션이
-  anon의 컬럼 권한을 바꾸면 하네스(`harness/snapshot.py`의 `ANON_COLUMNS`)가 실패하므로, 목록과
-  기대값을 함께 확인합니다.
+- `anon`은 같은 DB에서 `set local role anon`으로 앱 권한과 같은 컬럼만 조회합니다. 앱이 실제로 읽는
+  `app_notice_list`, `app_notice_detail` view의 결과도 같은 공지 키로 기록합니다. 마이그레이션이
+  anon의 컬럼 권한을 바꾸면 하네스(`harness/snapshot.py`의 `ANON_COLUMNS`, `APP_VIEWS`)가 실패하므로,
+  목록과 기대값을 함께 확인합니다.

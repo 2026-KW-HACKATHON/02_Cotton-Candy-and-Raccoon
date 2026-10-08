@@ -23,7 +23,7 @@ def insert_notice(
 
 def test_consolidated_init_and_seed(db: psycopg.Connection) -> None:
     key, board, post = db.execute(
-        "select id,source_board,post_sn from notices where category='nowon'"
+        "select id,source_board,post_sn from notices where post_sn='20260901000000001'"
     ).fetchone()
     assert (board, post) == ("1001", "20260901000000001")
     assert (
@@ -32,8 +32,8 @@ def test_consolidated_init_and_seed(db: psycopg.Connection) -> None:
         ).fetchone()[0]
         == "id:aaaaaaaa-0000-0000-0000-000000000001"
     )
-    assert db.execute("select count(*) from notices").fetchone()[0] == 5
-    assert db.execute("select count(*) from notice_files").fetchone()[0] == 4
+    assert db.execute("select count(*) from notices").fetchone()[0] == 11
+    assert db.execute("select count(*) from notice_files").fetchone()[0] == 6
     columns = dict(
         db.execute(
             "select column_name,is_nullable from information_schema.columns "
@@ -179,8 +179,9 @@ def test_visible_rows_allowed_file_key_forbidden(
         == 0
     )
     assert (
+        # Seed files of visible notices: 1, 2 (two), and 7 (two).
         len(db.execute("select id,notice_id,kind,url from notice_files").fetchall())
-        == 3
+        == 5
     )
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         db.execute("select file_key from notice_files")
@@ -227,7 +228,8 @@ def test_seoul_visible_notice_and_files_allowed_hidden_ones_filtered(
         )
     db.execute("set local role " + role)
     assert db.execute(
-        "select id,source_board,post_sn from notices where category='seoul'"
+        "select id,source_board,post_sn from notices where category='seoul' and id=any(%s)",
+        ([visible, hidden],),
     ).fetchall() == [(visible, "25", "00123")]
     assert db.execute(
         "select notice_id from notice_files where notice_id=any(%s)",
