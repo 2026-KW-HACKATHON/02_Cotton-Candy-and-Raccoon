@@ -1,6 +1,7 @@
-"""Validate summary/review constraints, incremental migrations, and app RLS."""
+"""Validate summary/review constraints and app RLS."""
 
-from datetime import UTC, datetime
+from copy import deepcopy
+from datetime import UTC, date, datetime
 
 import psycopg
 import pytest
@@ -45,7 +46,8 @@ def insert_notice(
 
 def summary_json(db: psycopg.Connection, *, code: int = 27) -> dict:
     result = db.execute(
-        "select result from notice_summaries where status='summarized' limit 1"
+        "select result from notice_summaries where status='summarized' "
+        "order by notice_id limit 1"
     ).fetchone()[0]
     result["category_code"] = code
     return result
@@ -282,11 +284,16 @@ def test_seed_four_states_and_full_valid_summary(db: psycopg.Connection) -> None
         ("failed",),
     }
     assert db.execute(
-        "select attachment_status,result,category,category_code,deadline_on "
-        "from notice_summaries where status='needs_review'"
+        "select s.attachment_status,s.result,s.category,s.category_code,s.deadline_on "
+        "from notice_summaries s join notices n on n.id=s.notice_id "
+        "where n.post_sn='20260901000000002'"
     ).fetchone() == ("partial", None, None, None, None)
     for (result,) in db.execute("select result from notice_summaries where result is not null"):
-        assert NoticeSummary.model_validate(result).category_code == 27
+        NoticeSummary.model_validate(result)
+    assert db.execute(
+        "select s.category_code from notice_summaries s join notices n on n.id=s.notice_id "
+        "where n.post_sn='20260901000000003'"
+    ).fetchone() == (27,)
     assert (
         db.execute(
             "select count(*) from notice_summaries s join notices n on n.id=s.notice_id "
@@ -681,7 +688,8 @@ def test_duplicate_notice_summary_rejected(db: psycopg.Connection) -> None:
 def test_app_reads_exact_public_columns_and_visible_rows(db: psycopg.Connection, role: str) -> None:
     db.execute("set local role " + role)
     rows = db.execute(f"select {','.join(PUBLIC_COLUMNS)} from notice_summaries").fetchall()
-    assert len(rows) == 4
+    # Seed summaries of visible notices: 1, 2, 3, 4, 6, 7, 8, 9 (5 is hidden).
+    assert len(rows) == 8
     assert {row[1] for row in rows} == {"pending", "summarized", "needs_review", "failed"}
     assert (
         db.execute("select content_updated_at from notices order by id limit 1").fetchone()[0]
@@ -748,7 +756,7 @@ def test_service_role_reads_hidden_metadata_and_writes(db: psycopg.Connection) -
     key = insert_notice(db, visible=False)
     result = summary_json(db)
     db.execute("set local role service_role")
-    assert db.execute("select count(*) from notice_summaries").fetchone()[0] == 5
+    assert db.execute("select count(*) from notice_summaries").fetchone()[0] == 9
     insert_summary(db, key, result=result)
     db.execute(
         "update notice_summaries set last_error_code='api_timeout' where notice_id=%s", (key,)
@@ -757,3 +765,196 @@ def test_service_role_reads_hidden_metadata_and_writes(db: psycopg.Connection) -
         "select source_hash,last_error_code from notice_summaries where notice_id=%s", (key,)
     ).fetchone() == ("c" * 64, "api_timeout")
     db.execute("delete from notice_summaries where notice_id=%s", (key,))
+
+
+def _coverage_summary() -> dict:
+    return {
+        "summary": "지원 사업 신청", "audience": "월계1동 주민",
+        "action": "방문 신청", "location": "주민센터", "publisher": "노원구청",
+        "applicable_area": "월계1동", "category": "application", "category_code": 27,
+        "audience_scope": "specific", "action_requirement": "optional",
+        "card_summaries": {
+            "audience": "주민이 대상이에요.", "deadline": "10월 20일까지예요.",
+            "action": "방문해서 신청해요.", "notes": "신분증을 가져가요.",
+        },
+        "dates": [
+            {
+                "kind": "application", "start_date": "2026-10-03",
+                "end_date": "2026-10-20", "start_time": "09:00", "end_time": "18:00",
+            },
+            {"kind": "event", "start_date": "2026-11-01", "end_date": "2026-11-02"},
+        ],
+        "notes": ["신분증 지참", "방문 접수"],
+        "topics": [{"title": "지원 사업"}, {"title": "접수 안내"}],
+        "evidence": [
+            {"field": "summary", "excerpt": "지원 사업 신청"},
+            {"field": "audience", "excerpt": "월계1동 주민"},
+            {"field": "dates", "excerpt": "10월 20일까지"},
+        ],
+    }
+
+
+def _information_loss(
+    db: psycopg.Connection, previous: dict | None, candidate: dict | None,
+    *, previous_deadline: date | None = None, candidate_deadline: date | None = None,
+) -> bool:
+    return db.execute(
+        "select public.summary_information_loss(%s,%s,%s,%s)",
+        (Jsonb(previous), Jsonb(candidate), previous_deadline, candidate_deadline),
+    ).fetchone()[0]
+
+
+@pytest.mark.parametrize("field", [
+    "summary", "audience", "action", "location", "publisher", "applicable_area",
+    "category", "category_code", "audience_scope", "action_requirement",
+])
+def test_information_loss_detects_removed_or_unknown_scalar(
+    db: psycopg.Connection, field: str,
+) -> None:
+    previous = _coverage_summary()
+    for empty in (None, "", "unknown"):
+        assert _information_loss(db, previous, previous | {field: empty}) is True
+    candidate = deepcopy(previous)
+    del candidate[field]
+    assert _information_loss(db, previous, candidate) is True
+
+
+@pytest.mark.parametrize("slot", CARD_SLOTS)
+def test_information_loss_detects_card_text_loss(
+    db: psycopg.Connection, slot: str,
+) -> None:
+    previous = _coverage_summary()
+    candidate = deepcopy(previous)
+    for empty in (None, "", "   "):
+        candidate["card_summaries"][slot] = empty
+        assert _information_loss(db, previous, candidate) is True
+    del candidate["card_summaries"][slot]
+    assert _information_loss(db, previous, candidate) is True
+
+
+@pytest.mark.parametrize("part", ["start_date", "end_date", "start_time", "end_time"])
+def test_information_loss_preserves_each_date_endpoint_and_time(
+    db: psycopg.Connection, part: str,
+) -> None:
+    previous = _coverage_summary()
+    candidate = deepcopy(previous)
+    candidate["dates"][0][part] = None
+    assert _information_loss(db, previous, candidate) is True
+    # Adding the same kind of value under a different date kind is not recovery.
+    candidate["dates"][1][part] = previous["dates"][0][part]
+    assert _information_loss(db, previous, candidate) is True
+
+
+@pytest.mark.parametrize("change", ["removed_entry", "changed_kind", "duplicate_kind"])
+def test_information_loss_counts_dates_within_each_kind(
+    db: psycopg.Connection, change: str,
+) -> None:
+    previous = _coverage_summary()
+    if change == "duplicate_kind":
+        previous["dates"].append(deepcopy(previous["dates"][0]))
+    candidate = deepcopy(previous)
+    if change == "changed_kind":
+        candidate["dates"][0]["kind"] = "other"
+    else:
+        candidate["dates"].pop()
+    assert _information_loss(db, previous, candidate) is True
+
+
+@pytest.mark.parametrize("field", ["dates", "notes", "topics", "evidence"])
+def test_information_loss_handles_missing_and_json_null_collections(
+    db: psycopg.Connection, field: str,
+) -> None:
+    previous = _coverage_summary()
+    for empty in (None, []):
+        assert _information_loss(db, previous, previous | {field: empty}) is True
+    candidate = deepcopy(previous)
+    del candidate[field]
+    assert _information_loss(db, previous, candidate) is True
+    assert _information_loss(db, {field: None}, {}) is False
+    assert _information_loss(db, {}, {field: None}) is False
+
+
+@pytest.mark.parametrize("field", ["notes", "topics"])
+def test_information_loss_detects_partial_list_removal(
+    db: psycopg.Connection, field: str,
+) -> None:
+    previous = _coverage_summary()
+    candidate = deepcopy(previous)
+    candidate[field].pop()
+    assert _information_loss(db, previous, candidate) is True
+
+
+def test_information_loss_compares_evidence_fields_instead_of_excerpts_or_count(
+    db: psycopg.Connection,
+) -> None:
+    previous = _coverage_summary()
+    candidate = deepcopy(previous)
+    candidate["evidence"][1] = {"field": "summary", "excerpt": "중복된 요약 근거"}
+    assert len(candidate["evidence"]) == len(previous["evidence"])
+    assert _information_loss(db, previous, candidate) is True
+    candidate = deepcopy(previous)
+    candidate["evidence"][1]["excerpt"] = "변경된 대상 근거"
+    candidate["evidence"].reverse()
+    assert _information_loss(db, previous, candidate) is False
+    previous["uncertainties"] = ["원문 확인 필요"]
+    previous["evidence"].append({"field": "uncertainties", "excerpt": "확인 필요"})
+    candidate["uncertainties"] = []
+    assert _information_loss(db, previous, candidate) is False
+
+
+def test_information_loss_allows_complete_corrections_and_first_partial_result(
+    db: psycopg.Connection,
+) -> None:
+    previous = _coverage_summary()
+    candidate = deepcopy(previous)
+    candidate.update(audience="노원구 주민", audience_scope="general", category_code=30)
+    candidate["dates"][0]["end_date"] = "2026-10-31"
+    candidate["card_summaries"]["deadline"] = "10월 31일까지예요."
+    assert _information_loss(
+        db, previous, candidate, previous_deadline=date(2026, 10, 20),
+        candidate_deadline=date(2026, 10, 31),
+    ) is False
+    assert _information_loss(db, None, {"audience": "노원구 주민"}) is False
+    assert db.execute(
+        "select public.summary_information_loss(null,'{}'::jsonb,null,null)"
+    ).fetchone() == (False,)
+    assert _information_loss(db, previous, None) is True
+
+
+def test_information_loss_detects_only_sorting_deadline_disappearance(
+    db: psycopg.Connection,
+) -> None:
+    previous = _coverage_summary()
+    assert _information_loss(
+        db, previous, previous, previous_deadline=date(2026, 10, 20),
+    ) is True
+    assert _information_loss(
+        db, previous, previous, candidate_deadline=date(2026, 10, 20),
+    ) is False
+
+
+@pytest.mark.parametrize("role", ["anon", "authenticated"])
+def test_information_loss_helper_is_not_callable_by_app_roles(
+    db: psycopg.Connection, role: str,
+) -> None:
+    db.execute("set local role " + role)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        _information_loss(db, {}, {})
+
+
+def test_information_loss_helper_is_immutable_invoker_and_backend_only(
+    db: psycopg.Connection,
+) -> None:
+    oid = "public.summary_information_loss(jsonb,jsonb,date,date)"
+    assert db.execute(
+        "select provolatile,prosecdef,proconfig from pg_proc where oid=%s::regprocedure",
+        (oid,),
+    ).fetchone() == ("i", False, ["search_path=pg_catalog"])
+    assert db.execute(
+        "select count(*) from pg_proc p, lateral "
+        "aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl "
+        "where p.oid=%s::regprocedure and acl.grantee=0 and privilege_type='EXECUTE'",
+        (oid,),
+    ).fetchone() == (0,)
+    db.execute("set local role service_role")
+    assert _information_loss(db, {"audience": "주민"}, {"audience": None}) is True

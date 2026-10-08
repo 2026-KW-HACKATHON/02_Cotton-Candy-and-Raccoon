@@ -29,7 +29,6 @@ from pipeline.transform.nowon import TransformError, transform_nowon_notice
 
 FailureStage = Literal[
     "listing_conflict",
-    "page_missing",
     "page",
     "attachments",
     "transform",
@@ -45,10 +44,18 @@ class NoticeFailure:
 
 
 @dataclass(frozen=True, slots=True)
+class NoticeSkip:
+    post_sn: str
+    stage: Literal["page_missing"] = "page_missing"
+    reason_code: Literal["source_page_missing"] = "source_page_missing"
+
+
+@dataclass(frozen=True, slots=True)
 class PreparedNotice:
     record: NoticeRecord
     files: list[FileRecord]
     failure: NoticeFailure | None
+    skipped: NoticeSkip | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +68,11 @@ class CollectNowonResult:
     limited: bool
     failed_pages: tuple[tuple[int, int], ...]
     failures: tuple[NoticeFailure, ...]
+    skipped: tuple[NoticeSkip, ...] = ()
+
+    @property
+    def skipped_count(self) -> int:
+        return len(self.skipped)
 
     @property
     def complete(self) -> bool:
@@ -68,7 +80,7 @@ class CollectNowonResult:
             self.listing_complete
             and not self.limited
             and not self.failures
-            and self.saved_count == self.listed_count
+            and self.saved_count + self.skipped_count == self.listed_count
         )
 
 
@@ -83,12 +95,19 @@ class ScheduledNowonResult:
     listing_complete: bool
     failed_ranges: tuple[tuple[int, int], ...]
     failures: tuple[NoticeFailure, ...]
+    skipped: tuple[NoticeSkip, ...] = ()
+
+    @property
+    def skipped_count(self) -> int:
+        return len(self.skipped)
 
     @property
     def complete(self) -> bool:
         """Whether this run's selected scope succeeded, not the whole API."""
         return (
-            self.listing_complete and not self.failures and self.saved_count == self.selected_count
+            self.listing_complete
+            and not self.failures
+            and self.saved_count + self.skipped_count == self.selected_count
         )
 
 
@@ -117,7 +136,8 @@ def _prepare_notice(
         return PreparedNotice(
             record,
             [],
-            NoticeFailure(notice.post_sn, "page_missing", "source_page_missing"),
+            None,
+            NoticeSkip(notice.post_sn),
         )
     except NowonPageError as error:
         return PreparedNotice(
@@ -153,8 +173,9 @@ def _save_notices(
     conflicts: set[str] | None = None,
     paced: bool = False,
     after_save: Callable[[int], None] | None = None,
-) -> tuple[int, tuple[NoticeFailure, ...]]:
+) -> tuple[int, tuple[NoticeFailure, ...], tuple[NoticeSkip, ...]]:
     failures: list[NoticeFailure] = []
+    skipped: list[NoticeSkip] = []
     saved_count = 0
     try:
         for index, notice in enumerate(notices):
@@ -173,6 +194,9 @@ def _save_notices(
                 prepared = _prepare_notice(notice, settings)
             except TransformError:
                 failures.append(NoticeFailure(notice.post_sn, "transform", "invalid_notice"))
+                continue
+            if prepared.skipped is not None:
+                skipped.append(prepared.skipped)
                 continue
             if prepared.failure is not None:
                 failures.append(prepared.failure)
@@ -209,7 +233,7 @@ def _save_notices(
                 after_save(notice_id)
     finally:
         conn.close()
-    return saved_count, tuple(failures)
+    return saved_count, tuple(failures), tuple(skipped)
 
 
 def collect_and_save_nowon(
@@ -243,7 +267,7 @@ def collect_and_save_nowon(
 
     # autocommit keeps save_notice_with_files' transaction scoped to one notice.
     conn = psycopg.connect(database.database_url, connect_timeout=5, autocommit=True)
-    saved_count, failures = _save_notices(
+    saved_count, failures, missing = _save_notices(
         conn,
         notices,
         settings,
@@ -265,6 +289,7 @@ def collect_and_save_nowon(
         limited,
         failed_pages,
         failures,
+        missing,
     )
 
 
@@ -392,7 +417,7 @@ def collect_and_save_nowon_scheduled(
     except (psycopg.Error, NowonSourceError):
         conn.close()
         raise
-    saved_count, failures = (
+    saved_count, failures, missing = (
         _save_notices(
             conn,
             chosen,
@@ -403,7 +428,7 @@ def collect_and_save_nowon_scheduled(
             after_save=after_save,
         )
         if chosen
-        else (0, ())
+        else (0, (), ())
     )
     if not chosen:
         conn.close()
@@ -417,4 +442,5 @@ def collect_and_save_nowon_scheduled(
         listing_complete,
         tuple(failed_ranges),
         failures,
+        missing,
     )

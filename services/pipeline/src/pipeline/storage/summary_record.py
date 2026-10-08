@@ -38,6 +38,7 @@ FAILURE_CODES = frozenset(
         "response_validation_failed",
         "configuration_error",
         "summary_processing_failed",
+        "summary_information_loss",
     }
 )
 
@@ -190,6 +191,8 @@ class SummaryRecord:
             if manifest.attachment_status != self.metadata.attachment_status:
                 raise SummaryRecordError("file_manifest_attachment_status_mismatch")
             object.__setattr__(self, "file_manifest", manifest)
+            if manifest.omissions and self.status == "summarized":
+                raise SummaryRecordError("summary_requires_review")
         if self.deadline_on is not None and type(self.deadline_on) is not date:
             raise SummaryRecordError("invalid_deadline_on")
         if self.generated_at is not None and (
@@ -268,7 +271,7 @@ def build_summary_record(
     )
     needs_review = summary_requires_review(
         snapshot, attachment_status=checked.metadata.attachment_status
-    )
+    ) or bool(result.file_manifest and result.file_manifest.omissions)
     return SummaryRecord(
         notice_id=checked.notice_id,
         status="needs_review" if needs_review else "summarized",

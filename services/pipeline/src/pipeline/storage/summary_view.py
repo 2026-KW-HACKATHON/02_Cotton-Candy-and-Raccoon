@@ -21,7 +21,7 @@ from pipeline.transform.summary_cards import (
     build_summary_cards,
     summary_snapshot,
 )
-from pipeline.transform.summary_files import PublicFileReference
+from pipeline.transform.summary_files import PreparationOmission, PublicFileReference
 from pipeline.transform.summary_highlights import (
     SummaryTextHighlights,
     build_summary_text_highlights,
@@ -50,7 +50,65 @@ class NoticeSummaryTextFileView(NoticeSummaryTextView, NoticeSummaryFileView):
 _FILE_REFERENCES = TypeAdapter(tuple[PublicFileReference, ...])
 
 
+class NoticeSummaryCoverageView(NoticeSummaryView):
+    preparation_omissions: tuple[PreparationOmission, ...]
+
+
+class NoticeSummaryTextCoverageView(NoticeSummaryTextView, NoticeSummaryCoverageView):
+    pass
+
+
+class NoticeSummaryFileCoverageView(NoticeSummaryFileView, NoticeSummaryCoverageView):
+    pass
+
+
+class NoticeSummaryTextFileCoverageView(NoticeSummaryTextFileView, NoticeSummaryCoverageView):
+    pass
+
+
 def build_notice_summary_view(
+    *,
+    status: SummaryStatus,
+    result: NoticeSummary | Mapping[str, Any] | None,
+    attachment_status: AttachmentStatus,
+    notice: NoticeInput | None = None,
+    file_references: Sequence[PublicFileReference | Mapping[str, Any]] | None = None,
+    preparation_omissions: Sequence[PreparationOmission | Mapping[str, Any]] | None = None,
+) -> NoticeSummaryView:
+    """Display persisted content and its omissions; never use a retry candidate's metadata."""
+    view = _build_notice_summary_view(
+        status=status, result=result, attachment_status=attachment_status,
+        notice=notice, file_references=file_references,
+    )
+    if preparation_omissions is None:
+        return view
+    omissions = ()
+    if view.content is not None:
+        try:
+            if not isinstance(preparation_omissions, (list, tuple)) or len(
+                preparation_omissions
+            ) > 2048:
+                raise ValueError("invalid_omissions")
+            omissions = TypeAdapter(tuple[PreparationOmission, ...]).validate_json(json.dumps([
+                item.model_dump(mode="json", serialize_as_any=True, warnings="error")
+                if isinstance(item, PreparationOmission) else dict(item)
+                for item in preparation_omissions
+            ], allow_nan=False), strict=True)
+        except (TypeError, ValueError):
+            raise SummaryCardError("invalid_preparation_omissions") from None
+    data = view.model_dump(mode="python")
+    if omissions:
+        data.update(status="needs_review", message="읽지 못한 자료가 있어요. 원문을 확인하세요.")
+    model = (
+        NoticeSummaryTextFileCoverageView if isinstance(view, NoticeSummaryTextFileView)
+        else NoticeSummaryTextCoverageView if isinstance(view, NoticeSummaryTextView)
+        else NoticeSummaryFileCoverageView if isinstance(view, NoticeSummaryFileView)
+        else NoticeSummaryCoverageView
+    )
+    return model(**data, preparation_omissions=omissions)
+
+
+def _build_notice_summary_view(
     *,
     status: SummaryStatus,
     result: NoticeSummary | Mapping[str, Any] | None,

@@ -2,11 +2,13 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import date
 from typing import Literal
 
 from psycopg import Connection
 
+from pipeline import clock
+from pipeline.gemini_execution import ExecutionBudget, GeminiExecutionError, execution_budget
 from pipeline.storage.summaries import (
     StoredPreparedSummary,
     SummaryExecutionSuperseded,
@@ -48,6 +50,7 @@ class StoredSummaryFailure:
     notice_id: int
     reason_code: str
     warnings: tuple[PreparationIssueLike, ...]
+    execution_failure: dict[str, object] | None = field(default=None, repr=False)
     status: Literal["failed"] = field(default="failed", init=False)
     result: None = field(default=None, init=False)
 
@@ -79,6 +82,7 @@ def summarize_and_save_prepared_notice(
     deadline_resolver: DeadlineResolver = compute_deadline_on,
     api_key: str | None = None,
     attempt_increment: int = 1,
+    budget: ExecutionBudget | None = None,
 ) -> StoredPreparedSummary | StoredSummaryFailure | StoredSummarySuperseded:
     """Run one summary execution and write its completed result or failure.
 
@@ -149,13 +153,15 @@ def summarize_and_save_prepared_notice(
         return StoredSummarySuperseded(notice_id=checked.notice_id, warnings=warnings)
     try:
         manifest_args = {} if manifest is None else {"file_manifest": manifest}
-        result = summarize_prepared_notice(
-            prepared, model=checked.metadata.model, api_key=api_key, **manifest_args,
-        )
+        with execution_budget(budget):
+            result = summarize_prepared_notice(
+                prepared, model=checked.metadata.model, api_key=api_key, **manifest_args,
+            )
     except (
         SummaryPreparationError,
         GeminiInputError,
         GeminiRequestError,
+        GeminiExecutionError,
         GeminiConfigurationError,
         SummaryValidationError,
     ) as error:
@@ -178,13 +184,15 @@ def summarize_and_save_prepared_notice(
             notice_id=checked.notice_id,
             reason_code=reason_code,
             warnings=warnings,
+            execution_failure=(error.to_dict() if isinstance(error, GeminiExecutionError)
+                               else getattr(error, "execution_failure", None)),
         )
 
     if result.notice_id != checked.notice_id:
         raise SummaryRecordError("summary_notice_id_mismatch")
     if result.file_manifest != manifest:
         raise SummaryRecordError("summary_file_manifest_mismatch")
-    generated_at = datetime.now(UTC)
+    generated_at = clock.now()
     record = build_summary_record(
         result, checked.metadata, deadline_on=None, generated_at=generated_at
     )

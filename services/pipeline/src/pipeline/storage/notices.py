@@ -3,6 +3,7 @@
 from psycopg import Connection
 
 from pipeline.models import NoticeRecord
+from pipeline.transform.html_text import html_to_notice_text
 
 _CONTENT_CHANGED = """
     notices.title is distinct from excluded.title
@@ -15,8 +16,8 @@ _CONTENT_CHANGED = """
 UPSERT_NOTICE = f"""
 insert into notices (
     category, source_board, dong_group, is_pinned, post_sn, title, department,
-    registered_on, url, body_html, license_type
-) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    registered_on, url, body_html, body_text, license_type
+) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 on conflict (category, source_board, post_sn) do update set
     dong_group = excluded.dong_group,
     is_pinned = excluded.is_pinned,
@@ -25,6 +26,7 @@ on conflict (category, source_board, post_sn) do update set
     registered_on = excluded.registered_on,
     url = excluded.url,
     body_html = excluded.body_html,
+    body_text = excluded.body_text,
     license_type = excluded.license_type,
     is_modified = notices.is_modified or ({_CONTENT_CHANGED}),
     content_updated_at = case when {_CONTENT_CHANGED}
@@ -37,8 +39,8 @@ returning id
 INSERT_NOTICE_IF_ABSENT = """
 insert into notices (
     category, source_board, dong_group, is_pinned, post_sn, title, department,
-    registered_on, url, body_html, license_type
-) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    registered_on, url, body_html, body_text, license_type
+) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 on conflict (category, source_board, post_sn) do nothing
 returning id
 """
@@ -56,8 +58,14 @@ def _values(record: NoticeRecord) -> tuple[object, ...]:
         record.registered_on,
         record.url,
         record.body_html,
+        notice_body_text(record.body_html),
         record.license_type,
     )
+
+
+def notice_body_text(body_html: str | None) -> str | None:
+    """Plain text the app displays; the summary input uses the same conversion."""
+    return html_to_notice_text(body_html) or None
 
 
 def insert_notice_if_absent(conn: Connection, record: NoticeRecord) -> int | None:

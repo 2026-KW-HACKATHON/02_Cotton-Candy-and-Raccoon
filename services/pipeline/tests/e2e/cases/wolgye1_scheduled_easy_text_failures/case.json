@@ -1,0 +1,51 @@
+{
+  "title": "월계1동 예약 수집과 쉬운말: 저장에 실패한 공지는 쉬운말을 건너뛰고, 쉬운말이 실패한 공지는 원문만 저장되며 exit 1이다",
+  "steps": [
+    {
+      "type": "sql",
+      "reason": "DB 저장 실패를 재현하는 코드 경로가 없어 특정 게시물의 저장만 거부하는 트리거를 둔다",
+      "sql": "create function e2e_reject_notice() returns trigger language plpgsql as $$ begin if new.post_sn = '20261008090000603' then raise exception 'e2e storage failure'; end if; return new; end $$; create trigger e2e_reject_notice before insert on public.notices for each row execute function e2e_reject_notice();"
+    },
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "wolgye1",
+        "--mode",
+        "new",
+        "--easy-text"
+      ],
+      "http": [
+        {
+          "route": "wolgye1_list",
+          "page": 1,
+          "body": "input/wolgye1_list_1.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261008090000603",
+          "body": "input/wolgye1_detail_20261008090000603.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261007090000602",
+          "body": "input/wolgye1_detail_20261007090000602.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261006090000601",
+          "body": "input/wolgye1_detail_20261006090000601.html"
+        }
+      ],
+      "gemini": {
+        "easy_text": [
+          "input/easy_602_error.json",
+          "input/easy_602_error.json",
+          "input/easy_601.json"
+        ]
+      },
+      "expect_exit": 1
+    }
+  ],
+  "strict_unused": true
+}

@@ -54,12 +54,17 @@ class PreparedSummaryResult:
     media_sources: tuple[MediaSource, ...] = ()
     correction_failure_code: str | None = None
     file_manifest: PrivateSummaryFileManifest | None = field(default=None, repr=False)
+    # Safe runtime diagnostics only; never persisted into result JSON or public views.
+    execution_failure: dict[str, object] | None = field(default=None, repr=False)
 
 
 class SummaryPreparationError(ValueError):
     """Input preparation failed; no Gemini request should be attempted."""
 
-    def __init__(self, reason_code: str) -> None:
+    def __init__(self, reason_code: str, *, retryable_download: bool = False) -> None:
+        self.execution_failure = ({
+            "reason_code": "attachment_download_failed", "retryable": True, "retry_at": None,
+        } if retryable_download else None)
         self.reason_code = reason_code
         super().__init__(reason_code)
 
@@ -78,6 +83,26 @@ def prepared_file_manifest(prepared: PreparedSummaryLike) -> PrivateSummaryFileM
     return manifest
 
 
+def validate_preparation(prepared: PreparedSummaryLike) -> None:
+    """Preserve transient download classification at every preparation entry point."""
+    if prepared.failures:
+        # Only unavailable input caused by transient downloads is recoverable.
+        # Other input-wide integrity/size errors must remain blocking.
+        retryable = (
+            all(item.reason_code == "no_content" for item in prepared.failures)
+            and any(
+                item.stage in {"file", "body_image"}
+                and item.reason_code in {
+                    "timeout", "time_limit", "request_failed", "rate_limited", "server_error",
+                }
+                for item in prepared.warnings
+            )
+        )
+        raise SummaryPreparationError(
+            "input_preparation_failed", retryable_download=retryable,
+        )
+
+
 def prepare_gemini_request(
     prepared: PreparedSummaryLike,
     *,
@@ -90,8 +115,7 @@ def prepare_gemini_request(
     Explicit file_manifest data binds source files to actual block bytes. Old
     preparers without that data remain readable but provide no file identity.
     """
-    if prepared.failures:
-        raise SummaryPreparationError("input_preparation_failed")
+    validate_preparation(prepared)
     # The public summarizer supplies its already validated request snapshot.
     # Standalone preparation also avoids rereading mutable notice properties
     # after to_gemini_input runs.
@@ -122,6 +146,16 @@ def prepare_gemini_request(
         except (TypeError, ValueError):
             raise SummaryPreparationError("invalid_prepared_input") from None
     media = []
+    if manifest is not None and manifest.omissions:
+        blocks.append({
+            "type": "text",
+            "text": (
+                "[입력 처리 범위] 일부 본문 이미지 또는 첨부파일을 읽지 못했습니다. "
+                "제공된 본문·파일 내용만 요약하세요. 누락 파일의 내용, 대상, 기간, "
+                "신청 조건을 추측하지 말고 공지 전체를 확인했다고 표현하지 마세요. "
+                "확인할 수 없는 정보는 원문 확인이 필요함을 표시하세요."
+            ),
+        })
     descriptions = []
     for block in blocks:
         if block["type"] not in ("document", "image"):

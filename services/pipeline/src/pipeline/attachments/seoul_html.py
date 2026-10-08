@@ -41,6 +41,29 @@ class SeoulAttachmentError(ValueError):
     pass
 
 
+def is_decorative_image_url(url: str) -> bool:
+    """Share the observed furniture filter with summary image preparation."""
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return False  # Let the requesting boundary report malformed URLs.
+    return (parsed.hostname == "news.seoul.go.kr" and "/wp-content/themes/" in parsed.path) or (
+        parsed.hostname == "culture.seoul.go.kr" and parsed.path in CULTURE_DECORATIVE_IMAGE_PATHS
+    )
+
+
+def normalize_seoul_news_url(url: str) -> str:
+    """Share the established official Seoul News HTTPS rule with downloads."""
+    parsed = urlsplit(url)
+    if (
+        parsed.hostname == "news.seoul.go.kr" and parsed.scheme in {"http", "https"}
+        and parsed.port in (None, 80, 443)
+        and parsed.username is None and parsed.password is None
+    ):
+        return urlunsplit(("https", "news.seoul.go.kr", parsed.path, parsed.query, parsed.fragment))
+    return url
+
+
 def normalize_file_url(base: str, reference: str) -> str:
     try:
         parsed = urlsplit(urljoin(base, reference.strip()))
@@ -53,7 +76,9 @@ def normalize_file_url(base: str, reference: str) -> str:
         ):
             raise ValueError
         if parsed.hostname == "news.seoul.go.kr":
-            return urlunsplit(("https", "news.seoul.go.kr", parsed.path, parsed.query, ""))
+            return normalize_seoul_news_url(
+                urlunsplit((parsed.scheme, parsed.netloc, parsed.path, parsed.query, "")),
+            )
         # Do not assume external hosts support HTTPS.
         return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, parsed.query, ""))
     except ValueError:
@@ -80,21 +105,7 @@ def extract_files(notice: NoticeRecord) -> tuple[FileRecord, ...]:
                     raise SeoulAttachmentError("확장자가 없는 다운로드 링크는 확인이 필요합니다.")
                 continue  # Forms, ordinary pages and contact links are not files.
         url = normalize_file_url(notice.url, reference)
-        parsed_url = urlsplit(url)
-        if (
-            is_image
-            and parsed_url.hostname == "news.seoul.go.kr"
-            and (
-                parsed_url.path.startswith("/wp-content/themes/")
-                or "/wp-content/themes/" in parsed_url.path
-            )
-        ):
-            continue  # Observed tag icons/theme furniture are not article images.
-        if (
-            is_image
-            and parsed_url.hostname == "culture.seoul.go.kr"
-            and parsed_url.path in CULTURE_DECORATIVE_IMAGE_PATHS
-        ):
+        if is_image and is_decorative_image_url(url):
             continue  # Known logo/SNS furniture only; preserve unknown banners/posters.
         filename = PurePosixPath(unquote(urlsplit(url).path)).name or None
         item = FileRecord(
