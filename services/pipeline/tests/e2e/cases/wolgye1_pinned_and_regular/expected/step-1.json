@@ -109,7 +109,8 @@
     "notice_files": 1,
     "notice_summaries": 0,
     "notice_summary_executions": 0,
-    "notices": 4
+    "notices": 4,
+    "standard_dictionary_cache": 0
   },
   "anon": {
     "notices": {

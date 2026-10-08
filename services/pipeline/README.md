@@ -4,12 +4,13 @@ Python·uv 기반 공지 수집 파이프라인입니다. 노원구 `NowonNewsNo
 
 ## #18 현재 구현 범위와 새 저장 계약
 
-노원구·월계1동·서울시 수집 모델·변환·저장은 `supabase/migrations`의 최초 생성용 스키마를 사용합니다. 비어 있는 DB에 아래 4개 SQL을 파일명 순서대로 적용해야 합니다.
+노원구·월계1동·서울시 수집 모델·변환·저장은 `supabase/migrations`의 최초 생성용 스키마를 사용합니다. 비어 있는 DB에 초기 스키마 4개와 사전 캐시 추가 마이그레이션 1개, 총 5개 SQL을 파일명 순서대로 적용해야 합니다.
 
 1. `20260922053900_notices.sql`: 공지·파일의 컬럼과 제약, 앱 읽기 권한
 2. `20260922053901_holidays.sql`: 공휴일 테이블과 앱 접근 차단
 3. `20260922053902_notice_summaries.sql`: 요약, 요약 실행, 원문 변경 trigger
 4. `20260922053903_notice_easy_texts.sql`: 쉬운말 결과
+5. `20261008150000_standard_dictionary_cache.sql`: 표준국어대사전 공유 캐시와 조회 권한
 
 재구성 전 마이그레이션 14개를 적용한 로컬 DB는 다시 만들어야 합니다(`npx supabase db reset`).
 
@@ -159,6 +160,7 @@ python -m uv run pipeline check-config
 | `DATABASE_URL` | 예 (저장 명령) | `psycopg`가 사용할 PostgreSQL 연결 문자열 |
 | `SEOUL_API_KEY` | 기존 `check-config`에서만 필수 | 기존 설정값. 현재 노원구 한 건 조회에는 사용하지 않음 |
 | `NOWON_NOTICE_API_KEY` | `--source nowon` 명령에서 필수 | 발급받은 노원구 공지 API 키 |
+| `STDICT_API_KEY` | 사전 캐시 미스·명시적 갱신 때 필수 | 서버 전용 표준국어대사전 API 인증키 |
 | `HTTP_CONNECT_TIMEOUT_SECONDS` | 아니오 | 연결 타임아웃, 기본값 5초 |
 | `HTTP_READ_TIMEOUT_SECONDS` | 아니오 | 응답 읽기 타임아웃, 기본값 20초 |
 
@@ -292,7 +294,7 @@ DB에 노원구 공지가 하나도 없으면 **어느 모드든** API 최신 50
 
 `files=[]`는 **본문과 원문 페이지를 정상적으로 수집했는데 파일이 없는 경우**에만 전달해야 합니다. 페이지 요청·파싱이 실패하면 저장 함수를 호출하지 않습니다. 파일 저장 오류가 나면 공지 변경까지 롤백합니다. 함수가 독립 트랜잭션으로 실행되면 정상 종료 시 확정되며, 호출자가 이미 트랜잭션을 열었다면 내부 작업은 savepoint로 묶여 바깥 트랜잭션에 남습니다. `collect-one`도 완전 수집에 성공한 뒤에만 저장합니다.
 
-실제 PostgreSQL 통합 테스트는 현재 **SQL 4개**가 적용된 테스트용 DB에 `PIPELINE_TEST_DATABASE_URL`을 설정한 뒤 실행할 수 있습니다. 테스트는 고유한 게시물 번호를 사용합니다. 저장 계층 테스트는 종료 시 트랜잭션을 롤백하고 CLI·다건 통합 테스트는 확정된 해당 테스트 행만 삭제합니다. 이 변수를 설정하지 않으면 DB 통합 테스트가 건너뛰어지므로, 건너뛴 상태를 저장 검증 완료로 해석하면 안 됩니다.
+실제 PostgreSQL 통합 테스트는 현재 **SQL 5개**가 적용된 테스트용 DB에 `PIPELINE_TEST_DATABASE_URL`을 설정한 뒤 실행할 수 있습니다. 테스트는 고유한 게시물 번호를 사용합니다. 저장 계층 테스트는 종료 시 트랜잭션을 롤백하고 CLI·다건 통합 테스트는 확정된 해당 테스트 행만 삭제합니다. 이 변수를 설정하지 않으면 DB 통합 테스트가 건너뛰어지므로, 건너뛴 상태를 저장 검증 완료로 해석하면 안 됩니다.
 
 검증 이력을 구분합니다. SQL 통합 전 최종 구조(당시 5개 SQL)에서 전체 pipeline 테스트 `699 passed, 0 skipped`를 확인했습니다. 통합 후에는 별도 DB 테스트 `39 passed, 0 skipped`와 기존 최종 구조 대비 컬럼·제약·인덱스·RLS 동등성을 확인했습니다. 이번 문서 정리에서 전체 pipeline 테스트를 다시 실행한 것은 아닙니다. 과거 노원구 정책 검증의 `370 passed`와 부분 저장 실험 수치는 당시 이력으로 보존하며 현재 최신 검사 결과와 혼동하지 않습니다.
 
@@ -785,6 +787,110 @@ model=DEFAULT_MODEL)`을 호출합니다.
 - DB 오류는 예외 대신 `storage_failed`로 돌려줍니다. 잘못된 `notice_id`는 `ValueError`, 잘못 저장된
   데이터(검증을 통과하지 못하는 원문 URL 등)와 프로그래밍 오류는 예외를 그대로 올립니다.
 - 대상 선택, 예약 실행, 자동 재시도는 이 함수 밖의 별도 작업입니다.
+
+## 표준국어대사전 조회와 공유 캐시 (#53)
+
+`pipeline.glossary.dictionary_service.lookup_dictionary()`는 검색용 표제형인
+`query_word`를 받는 독립적인 백엔드 함수다. #52의 후보 추출 결과를 입력으로 연결할 수 있다.
+공지별 자동 실행·저장, 모바일 조회 API는 후속 연결 작업이며 현재 CLI에서는 호출하지 않는다.
+먼저 `20261008150000_standard_dictionary_cache.sql`까지 새 마이그레이션을 적용하고,
+서버 환경에 `DATABASE_URL`과 `STDICT_API_KEY`를 설정한다. `.env`는 자동 로드하지 않는다.
+
+```python
+from pipeline.config import DatabaseSettings
+from pipeline.glossary.dictionary import DictionaryBusy, DictionaryError
+from pipeline.glossary.dictionary_service import lookup_dictionary
+
+database = DatabaseSettings.from_env()
+try:
+    lookup = lookup_dictionary(database, query_word="신청")
+except DictionaryBusy as error:
+    # 다른 작업의 조회 권한 또는 오류 후 대기 시간이 남아 있다.
+    # error.retry_after_seconds 이후 재시도할 수 있다.
+    raise
+except DictionaryError as error:
+    # 오류는 error.code로 구분한다. 요청 URL이나 API 키를 기록하지 않는다.
+    raise
+else:
+    result = lookup.result.model_dump(mode="json")
+    # lookup.cache_hit: 기존 DB 결과를 사용했는지 여부
+
+# 명시적인 갱신. 기존 결과가 있어도 새 요청을 수행한다.
+# lookup_dictionary(database, query_word="신청", refresh=True)
+```
+
+반환 결과는 다음 구조다. 아래 식별자·뜻풀이는 구조 설명용 예시이며 실제 응답을 인용한 것이 아니다.
+
+```json
+{
+  "query_word": "예시",
+  "contract_version": "stdict-v1",
+  "status": "found",
+  "entries": [{
+    "target_code": "100",
+    "headword": "예시",
+    "homonym_number": "1",
+    "source_url": "https://stdict.korean.go.kr/search/searchView.do?word_no=100",
+    "senses": [{
+      "sense_code": "1001",
+      "pos_code": "1",
+      "part_of_speech": "명사",
+      "definition": "사전에서 제공한 뜻풀이가 들어가는 자리."
+    }]
+  }]
+}
+```
+
+- 검색은 `advanced=y`, `target=1`, `method=exact`, `pos=0`으로 표제어 일치를 요청한다.
+  검색의 모든 표제어에 상세 조회를 수행해 실제 `sense_code`를 확보한다. 여러 표제어·품사·뜻을
+  모두 보존하며 첫 결과를 해당 공지 문맥의 정답으로 선택하지 않는다. `not_found`는 `entries=[]`다.
+- 검색어는 Unicode NFC와 앞뒤 공백만 정규화한다. 내부 공백·어미·대소문자는 바꾸지 않는다.
+  정규화 검색어·검색 조건·계약 버전의 SHA-256이 공유 캐시 키이며 공지 ID는 포함하지 않는다.
+- 검증된 `found`와 `not_found`는 TTL 없이 재사용한다. `refresh=True`로 성공한 경우만 교체한다.
+  갱신 중이거나 갱신에 실패해도 일반 조회는 마지막 정상 캐시를 반환한다. 캐시 적중에는 API 키가 필요 없다.
+- 짧게 커밋한 DB 트랜잭션에서 180초짜리 조회 권한을 얻고 **연결을 닫은 뒤** HTTP를 호출한다.
+  다른 작업은 HTTP를 보내지 않고 `DictionaryBusy`를 받는다. 작업 중단 후에는 권한 만료 시 재처리할 수 있다.
+  저장·실패 기록 모두 토큰과 DB 시각의 만료 여부를 다시 검사하므로 이전 작업은 새 결과·권한을 바꿀 수 없다.
+  이 180초는 작업 권한의 만료 시간이며 결과 캐시의 유효기간이 아니다.
+- HTTP 요청 제한은 10초, 전체 조회 성공 기한은 120초다. 응답당 2 MiB·조회당 16 MiB,
+  최대 1,000개 표제어·표제어당 1,000개 뜻을 허용한다. 일부 페이지·뜻을 못 읽거나 상한을 넘으면
+  불완전한 결과를 캐시하지 않는다. 리다이렉트는 따라가지 않는다.
+  동기 HTTP 클라이언트의 읽기 제한은 수신 간격 기준이다. 서버가 헤더를 계속 조금씩 보내면
+  반환 시점이 120초를 넘을 수 있으며, 성공 기한 검사는 다음 응답 처리 시점에 수행한다.
+  초과한 결과와 만료된 권한의 결과는 저장하지 않는다. 프로세스 자체의 강제 종료 상한은 아니다.
+
+| 오류 코드 | 자동 HTTP 재시도 | 서비스에서 다음 조회까지 대기 |
+| --- | --- | --- |
+| `dictionary_timeout`, `dictionary_connection_error`, `dictionary_upstream_error` | 요청별 최대 1회, 전체 기한 안에서 | 5초 |
+| `dictionary_rate_limited` | 없음 | 60초 |
+| `dictionary_authentication_failed`, `dictionary_missing_api_key`, `dictionary_invalid_request` | 없음; 키·입력 확인 필요 | 60초 |
+| `dictionary_invalid_response`, `dictionary_result_limit`, `dictionary_lookup_failed` | 없음; 응답·상한·구현 확인 필요 | 60초 |
+| `dictionary_storage_error`, `dictionary_lease_lost` | HTTP 자동 재시도 없음 | DB 복구·권한 만료 후 재호출 |
+
+대기 시간은 실패한 새 조회의 연속 호출을 줄이는 장치다. 정상 캐시가 있으면 즉시 재사용한다.
+오류는 `not_found`로 저장하지 않고 고정 코드만 기록한다. API 키는 서버 설정에서 읽고,
+반환 객체·DB에는 넣지 않으며 요청 중 현재 스레드의 HTTP 진단 로그를 차단한다.
+호출자가 주입하는 HTTP 클라이언트의 임의 이벤트 훅·트레이싱에도 키가 기록되지 않도록 설정해야 한다.
+
+[공식 API 안내](https://stdict.korean.go.kr/openapi/openApiInfo.do)와 실제 응답을 함께 확인했다.
+2026-10-08 실제 `신청` 조회에서 표제어 4개·뜻 7개와 항목·뜻 식별자를 확보했다.
+같은 날 실제 API와 임시 PostgreSQL을 연결한 서비스 검증에서 `신청`은 최초 HTTP 5회,
+미등록 단어는 최초 2회가 발생했으며 둘 다 두 번째 조회에서는 추가 요청 없이 DB 캐시를 반환했다.
+상세 API는 `type_search=view` 없이 HTTP 200 빈 본문을 반환하여 해당 값을 명시한다.
+미등록 단어는 JSON이 `{}`여서, 같은 조건의 XML 응답에 `total=0`이 명시된 경우에만
+`not_found`로 확정한다. 빈 본문·손상 응답을 검색 결과 없음으로 취급하지 않는다.
+
+검증 위치: 클라이언트의 입력·응답 경계는 `tests/unit/easy_text/test_dictionary*.py`,
+독립 DB 연결을 사용하는 경합·복구·서비스 연결은 `tests/unit/storage/test_dictionary*.py`,
+테이블 제약·앱 접근 차단은 `supabase/tests/test_dictionary_cache_schema.py`다.
+서비스의 DB 검증은 `PIPELINE_TEST_DATABASE_URL`로 지정한 로컬 테스트 서버에서 고유 DB를 생성해 수행한다.
+자동 테스트는 외부 API와 운영 DB를 사용하지 않는다. 기존 CI가 새 파일을 포함해 실행한다.
+
+2026-10-08 최신 `backend` (`d469c71`) 통합 후, 빈 DB에 초기 스키마 4개와 사전 캐시 1개를
+적용해 검증했다. 단위·저장소 3,658개, E2E 41개, 스키마·권한 603개로 **총 4,302개 통과,
+0 skipped**. 각 JUnit 결과를 기존 `check_test_report.py`로 확인했고 Ruff도 통과했다.
+기존 E2E의 48개 단계 기대값에는 새 테이블의 행 수 `standard_dictionary_cache: 0`만 추가했다.
+사전 조회가 연결되기 전 기존 CLI 흐름에서 캐시를 쓰지 않는 상태를 계속 검사한다.
 
 ## 실행과 검증
 

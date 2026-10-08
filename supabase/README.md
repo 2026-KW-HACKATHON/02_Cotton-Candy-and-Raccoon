@@ -12,7 +12,7 @@
 
 ## SQL 파일별 역할과 적용 순서
 
-마이그레이션 4개를 파일명 순서대로 적용한다. 요약과 쉬운말 파일은 notices 파일에만 의존하고 서로 의존하지 않는다.
+최초 생성 스키마 4개와 사전 캐시 추가 마이그레이션 1개, 총 5개를 파일명 순서대로 적용한다. 요약과 쉬운말 파일은 notices 파일에만 의존하고 서로 의존하지 않는다. 사전 캐시는 공지 테이블과 독립적이다.
 
 | 파일 | 역할 |
 | --- | --- |
@@ -20,6 +20,7 @@
 | [20260922053901_holidays.sql](migrations/20260922053901_holidays.sql) | holidays 테이블과 앱 접근 차단. 현재 pipeline은 읽지 않는다 |
 | [20260922053902_notice_summaries.sql](migrations/20260922053902_notice_summaries.sql) | notice_summaries와 생성 컬럼 함수, 정보 손실 비교 함수, notice_summary_executions, 원문 변경 trigger(`content_revision`, 요약 무효화), 앱 조회 컬럼과 backend 권한 |
 | [20260922053903_notice_easy_texts.sql](migrations/20260922053903_notice_easy_texts.sql) | 쉬운말 결과, 버전·제목 보존 검사 함수, 범위 무효화 trigger, 앱 조회 정책 |
+| [20261008150000_standard_dictionary_cache.sql](migrations/20261008150000_standard_dictionary_cache.sql) | 서버 전용 표준국어대사전 공유 결과 캐시·만료되는 조회 권한·실패 대기 |
 | [seed.sql](seed.sql) | 테스트용 공지·파일, 요약 상태 4종·부분 읽기·숨김 공지 데이터. 스키마 변경 SQL이 아님 |
 
 공지 고유 키는 `(category, source_board, post_sn)`, 파일 고유 키는 `(notice_id, file_key, kind)`다.
@@ -117,7 +118,30 @@ job 연동에서는 원문·파일과 같은 DB snapshot에서 읽은 `content_r
 
 4번 Gemini 가공 연동은 별도 #13 작업이다. notice_id로 파일을 조회하는 관계는 유지된다. #18은 1~3번 저장 계약 연동과 서울시 한 건·분야별 최초 25건·평소 10건 CLI를 구현했다. 현재 서울시는 원문 크롤링 없이 API POST_CONTENT와 그 안의 파일 URL만 저장하며, 본문 밖 별도 첨부는 수집하지 않는다. API에 공지별 공공누리가 없어 license_type은 NULL이다. 예전 발급 키 검증의 공지195·파일430행 및 원문 리다이렉트5건은 정책 변경 전 이력이며 현재 API 전용 검증이 아니다. Actions 예약 연결·실제 Gemini 전송·실제 Supabase 앱 키 조회는 별도 작업이다. 통합 init의 최종 DB 저장 계약은 변경하지 않았으며 공식 DB에는 쓰지 않았다.
 
+## 표준국어대사전 캐시 (#53)
+
+`standard_dictionary_cache`는 공지 ID와 무관하게 정규화 검색어·검색 조건·계약 버전별로
+결과 한 건을 저장한다. `result`의 `found`·`not_found`는 명시적인 갱신 전까지 재사용하며
+`result_updated_at`은 생성 시각 기록이다. 자동 만료를 의미하지 않는다.
+
+`lease_token`과 `lease_expires_at`은 결과와 별개인 임시 조회 권한이다. 백엔드는 짧은
+트랜잭션에서 권한을 얻은 뒤 연결을 닫고 API를 호출한다. 완료·실패 기록 시 토큰과
+DB 시각 기준 만료 여부를 재검사한다. 늦게 끝난 이전 실행은 새 결과나 새 실행 권한을
+변경하지 못한다. 실패는 기존 `result`를 유지하며 고정 `last_error_code`와
+`retry_after_at`만 기록하고 자기 권한을 해제한다.
+
+RLS를 활성화하고 `PUBLIC`, `anon`, `authenticated`의 접근을 회수한다.
+`service_role`에만 조회·쓰기 권한과 정책을 부여하며 API 키는 어느 컬럼에도 저장하지 않는다.
+새 사전 서비스 사용 전에 `20261008150000_standard_dictionary_cache.sql`을 적용한다.
+마이그레이션을 실행하는 테스트는 로컬 임시 PostgreSQL을 사용하며 운영 DB에는 자동 적용하지 않는다.
+앱에 공개할 공지별 뜻풀이는 후속 연결 작업에서 별도의 조회 계약으로 구성한다.
+
 ## DB 검증
+
+2026-10-08 #53을 최신 `backend` (`d469c71`)와 통합한 뒤, 빈 임시 PostgreSQL에 초기 스키마
+4개와 사전 캐시 1개를 적용했다. 스키마·권한 테스트 **603 passed, 0 skipped**로 사전 캐시의
+앱 접근 차단과 기존 함수·sequence 권한 회수를 함께 확인했다. 파이프라인 단위·저장소 3,658개와
+E2E 41개도 통과했다. 검증은 로컬 임시 DB에서 수행했으며 운영 DB에는 적용하지 않았다.
 
 2026-10-08 마이그레이션 4개와 seed를 Supabase식 기본 권한(테이블, sequence, 함수)을 재현한 임시 PostgreSQL에 적용하는 스키마 테스트가 통과했다. `test_function_and_sequence_privileges.py`가 앱 역할의 함수 실행과 sequence 권한 회수를 검증하며, 재구성 전 마이그레이션에서는 이 검사가 실패한다. 재구성 전 업그레이드 경로(기존 행 backfill) 검사는 업그레이드 경로가 없어져 삭제했다.
 
@@ -125,7 +149,7 @@ job 연동에서는 원문·파일과 같은 DB snapshot에서 읽은 `content_r
 
 2026-10-04 임시 PostgreSQL17.11에서 **39 passed, 0 skipped**, Ruff와 diff 검사 통과. 기존5개 SQL과 통합3개 SQL의 컬럼28개·제약15개·인덱스·RLS정책2개·RLS활성 상태를 비교해 동일함을 확인했다(컬럼의 물리적 순서는 비교하지 않음). 앱의 테이블 쓰기 권한은 명시적으로 회수했다. Holidays·seed는 diff가 없다. 검증용 임시 서버·DB·로그는 종료/삭제했으며 실제 Supabase 프로젝트 키 조회는 수행하지 않았다.
 
-`supabase/tests/`의 `test_source_identity.py`, `test_notice_summary_schema.py`, `test_notice_summary_execution_schema.py`, `test_notice_summary_source_revision_schema.py`, `test_summary_omissions_schema.py`, `test_function_and_sequence_privileges.py`가 수집·요약·실행·원문 버전·권한 계약을 검증한다. 마이그레이션 4개와 seed를 빈 임시 DB에 파일명 순서대로 적용하며 검증 후 롤백한다. 파일 연결·실패 보존·실제 앱 권한·저장 경합은 파이프라인의 `test_summary_file_manifest_storage.py`에서 검사한다.
+`supabase/tests/`의 `test_source_identity.py`, `test_notice_summary_schema.py`, `test_notice_summary_execution_schema.py`, `test_notice_summary_source_revision_schema.py`, `test_summary_omissions_schema.py`, `test_function_and_sequence_privileges.py`가 수집·요약·실행·원문 버전·권한 계약을 검증한다. 사전 캐시 검사는 `test_dictionary_cache_schema.py`에서 수행한다. 마이그레이션 5개와 seed를 빈 임시 DB에 파일명 순서대로 적용하며 검증 후 롤백한다. 파일 연결·실패 보존·실제 앱 권한·저장 경합은 파이프라인의 `test_summary_file_manifest_storage.py`에서 검사한다.
 
 services/pipeline 폴더에서 PowerShell로 실행한다.
 

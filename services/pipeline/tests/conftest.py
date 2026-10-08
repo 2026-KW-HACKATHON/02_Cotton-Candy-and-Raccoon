@@ -9,6 +9,7 @@ def isolate_pipeline_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in (
         "DATABASE_URL", "SEOUL_API_KEY", "NOWON_NOTICE_API_KEY", "SEOUL_NEWS_API_KEY",
         "HTTP_CONNECT_TIMEOUT_SECONDS", "HTTP_READ_TIMEOUT_SECONDS",
+        "STDICT_API_KEY",
     ):
         monkeypatch.delenv(name, raising=False)
 
