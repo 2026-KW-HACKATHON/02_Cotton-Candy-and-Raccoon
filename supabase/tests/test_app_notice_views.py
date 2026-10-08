@@ -1,5 +1,6 @@
 """App read contract (#58): two security_invoker views, body text, easy-text columns."""
 
+import ast
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -265,3 +266,48 @@ def test_filling_body_text_keeps_revision_and_summary(db: psycopg.Connection) ->
     db.execute("update notices set body_text = null where id = %s", (notice_id,))
     db.execute("update notices set body_text = 'refilled' where id = %s", (notice_id,))
     assert db.execute(query, (notice_id,)).fetchone() == before
+
+
+@pytest.mark.parametrize("intervening_change", ["none", "html", "text", "both"])
+def test_documented_backfill_preserves_updates_after_read(
+    db: psycopg.Connection, intervening_change: str, pipeline_readme: str,
+) -> None:
+    # Run the documented SQL itself so the operational recipe cannot regress
+    # independently of a copied test query.
+    snippet = next(
+        block.split("```", 1)[0]
+        for block in pipeline_readme.split("```python\n")[1:]
+        if "select id, body_html from notices where body_text is null" in block
+    )
+    update = next(
+        node.value for node in ast.walk(ast.parse(snippet))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        and node.value.startswith("update notices set body_text")
+    )
+    notice_id = db.execute(
+        "select id from notices where post_sn = '20260901000000006'"
+    ).fetchone()[0]
+    db.execute("update notices set body_text = null where id = %s", (notice_id,))
+    old_html = db.execute(
+        "select body_html from notices where id = %s", (notice_id,),
+    ).fetchone()[0]
+    if intervening_change in {"html", "both"}:
+        db.execute(
+            "update notices set body_html = '<p>마감: 2026-10-31</p>' where id = %s",
+            (notice_id,),
+        )
+    if intervening_change in {"text", "both"}:
+        db.execute("update notices set body_text = '최신 평문' where id = %s", (notice_id,))
+    query = (
+        "select n.body_html, n.body_text, n.content_revision, s.status, s.result "
+        "from notices n join notice_summaries s on s.notice_id = n.id where n.id = %s"
+    )
+    before = db.execute(query, (notice_id,)).fetchone()
+    cursor = db.execute(update, (notice_body_text(old_html), notice_id, old_html))
+    after = db.execute(query, (notice_id,)).fetchone()
+    if intervening_change == "none":
+        assert cursor.rowcount == 1
+        assert after == (before[0], notice_body_text(old_html), *before[2:])
+    else:
+        assert cursor.rowcount == 0
+        assert after == before

@@ -299,9 +299,13 @@ with psycopg.connect(DatabaseSettings.from_env().database_url) as conn:
     ).fetchall()
     for notice_id, body_html in rows:
         conn.execute(
-            "update notices set body_text = %s where id = %s", (notice_body_text(body_html), notice_id)
+            "update notices set body_text = %s where id = %s "
+            "and body_html is not distinct from %s and body_text is null",
+            (notice_body_text(body_html), notice_id, body_html),
         )
 ```
+
+조회 후 본문 HTML이 바뀌었거나 다른 작업이 평문을 채운 행은 갱신하지 않습니다. 건너뛴 행은 다음 실행에서 최신 원문을 다시 읽어 처리합니다.
 
 함수는 `commit`, `rollback`, 연결 종료를 하지 않습니다. `DatabaseSettings.from_env()`는 DB 연결에 필요한 `DATABASE_URL`만 읽어 검증하므로 API 키 없이도 사용할 수 있습니다. `psycopg.connect(settings.database_url)`로 연결한 뒤 변환된 레코드를 함수에 전달합니다. `collect-one`은 아래의 공지·파일 묶음 저장 함수를 사용합니다.
 
