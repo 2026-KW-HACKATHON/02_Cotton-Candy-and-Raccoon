@@ -1,6 +1,6 @@
 import "react-native-url-polyfill/auto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "../../features/notices/api/noticeContract";
+import type { Database } from "./database.types";
 
 let client: SupabaseClient<Database> | undefined;
 export function getSupabase(): SupabaseClient<Database> {

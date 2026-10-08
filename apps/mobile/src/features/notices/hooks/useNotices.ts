@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import {
   fetchNotice,
@@ -23,13 +24,12 @@ export function useNotices(options: ListOptions = {}, enabled = true) {
     retry: false,
     enabled,
   });
-  const rows = query.data?.pages.flatMap((page) => page.notices);
-  return {
-    ...query,
-    data: rows
-      ? [...new Map(rows.map((row) => [row.id, row])).values()]
-      : undefined,
-  };
+  const data = useMemo(() => {
+    if (!query.data) return undefined;
+    const rows = query.data.pages.flatMap((page) => page.notices);
+    return [...new Map(rows.map((row) => [row.id, row])).values()];
+  }, [query.data]);
+  return { ...query, data };
 }
 export function useSavedNotices(enabled = true) {
   const ids = useBookmarkStore((state) => state.savedIds);
