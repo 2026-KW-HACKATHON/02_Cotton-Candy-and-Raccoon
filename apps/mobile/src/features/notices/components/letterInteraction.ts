@@ -1,18 +1,18 @@
 export type LetterState = "reading" | "lifted" | "inserting" | "closed";
 
-// Flow 1의 전환 시간은 그대로 두고, 들어 올림·완전 삽입·읽기 정렬은 추가 구간이다.
+// 개폐 순서는 유지하되 연속 탐색을 위해 제품 전환 시간을 단축한다. Figma 원본 시간과 구분한다.
 export const LETTER_STEPS = [
-  { state: "lifted", duration: 200 },
-  { state: "inserting", duration: 280 },
-  { state: "inserting", duration: 180 },
-  { state: "closed", duration: 180 },
-  { state: "closed", duration: 140 },
-  { state: "closed", duration: 420 },
-  { state: "closed", duration: 160 },
-  { state: "closed", duration: 180 },
-  { state: "inserting", duration: 180 },
-  { state: "lifted", duration: 300 },
-  { state: "reading", duration: 200 },
+  { state: "lifted", duration: 70 },
+  { state: "inserting", duration: 110 },
+  { state: "inserting", duration: 70 },
+  { state: "closed", duration: 70 },
+  { state: "closed", duration: 60 },
+  { state: "closed", duration: 240 },
+  { state: "closed", duration: 60 },
+  { state: "closed", duration: 70 },
+  { state: "inserting", duration: 90 },
+  { state: "lifted", duration: 160 },
+  { state: "reading", duration: 100 },
 ] as const;
 
 // Figma의 -128/340 비율은 기존 홈의 상단 공간을 넘으므로 정지 배치를 유지하는 범위로 제한한다.
