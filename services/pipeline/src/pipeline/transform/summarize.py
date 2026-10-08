@@ -762,6 +762,12 @@ def _retry_feedback(
         "반환하세요. 수정한 기존 필드에 맞춰 관련 카드 문구도 함께 수정하고, 기존 필드와 "
         "evidence는 원문 근거 보기용으로 유지하세요. 정보가 없는 개별 카드만 null로 "
         "두고 card_summaries 객체 자체를 생략하거나 null로 반환하지 마세요. "
+        "action이 null이어도 location이 있으면 card_summaries.action에 확인된 장소를 "
+        "별도 요체 문장으로 안내하세요. 예: location='노원수학문화관'이면 "
+        "'안내 장소는 노원수학문화관이에요.'처럼 적되 원문에 없는 방문·신청을 만들지 마세요. "
+        "action_requirement='none'만으로 장소 카드를 null로 만들지 마세요. "
+        "action·location이 모두 없고 원문에 명시된 행동 없음의 근거도 없으면 "
+        "action 카드는 null로 유지하세요. "
         "카드 문구는 공백만 있는 문자열을 금지하며, 줄바꿈(LF/CR)이 없는 한 줄이어야 합니다. "
         "여러 일정은 세미콜론이나 공백으로 구분하고 실제 줄바꿈과 JSON의 \\n·\\r도 넣지 마세요. "
         "네 카드의 모든 문장은 자연스러운 해요체로 작성하고 '요'로 끝내세요. "
@@ -1131,6 +1137,21 @@ def _summarize_input(
             if attempt == 1:
                 if first_usable_summary is not None:
                     return _preserve_after_correction_failure(first_usable_summary)
+                # A shape error can hide the first response's missing-card error.
+                # The correction may fix that shape while leaving only nullable
+                # prose missing. Preserve its grounded fields under the same
+                # reviewed fallback contract already used for the first response.
+                usable_retry = _usable_card_omission_candidate(
+                    raw, notice, media_sources=media_sources,
+                )
+                if usable_retry is not None:
+                    merged = _merge_text_retry(
+                        first_raw, first_summary, raw, usable_retry, notice,
+                        correct_notes=bool(first_missing), media_sources=media_sources,
+                    )
+                    return _finish_candidate(
+                        _preserve_after_correction_failure(merged), notice,
+                    )
                 repaired = _drop_invalid_fields(raw)
                 if repaired is None:
                     # Neither response met the fresh contract. Do not disguise

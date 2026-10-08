@@ -502,3 +502,50 @@ def test_automatic_collection_without_body_keeps_public_original_and_skips_ai(
     again.finish()
     assert not again.complete
     assert all(r["attempted_count"] == 0 for r in again.report().values())
+
+
+def test_short_notice_blocked_job_recovers_only_on_explicit_retry(conn, database, monkeypatch):
+    import html
+    import json
+
+    from support.paths import FIXTURES_DIR
+
+    from pipeline.processing_runner import ProcessingOutcome
+
+    fixture = json.loads((FIXTURES_DIR / "short_notice_action_card.json").read_text("utf-8"))
+    notice_id = _notice(conn)
+    original = fixture["notice"]
+    conn.execute("update notices set title=%s,body_html=%s where id=%s", (
+        original["title"], "<p>" + html.escape(original["body_text"]) + "</p>", notice_id,
+    ))
+    settings = DatabaseSettings(database_uri(database))
+    first = run_processing(
+        settings, api_key="test", notice_id=notice_id, features=("summary",),
+        executor=lambda *args: ProcessingOutcome("failed", "response_validation_failed"),
+    )
+    assert first.records[0]["state"] == "blocked"
+    corrected = fixture["responses"][1]
+    corrected["card_summaries"]["action"] = "안내 장소는 노원수학문화관이에요."
+    calls = []
+
+    def generate(**kwargs):
+        calls.append(kwargs)
+        return json.dumps(corrected, ensure_ascii=False)
+
+    monkeypatch.setattr("pipeline.transform.summarize.generate_summary_json", generate)
+
+    def execute(database, claim, api_key, timeout):
+        return process_claim(database, claim, api_key=api_key)
+
+    assert run_processing(settings, api_key="test", notice_id=notice_id, features=("summary",),
+                          executor=execute).report()["attempted_count"] == 0
+    assert not calls
+    retried = run_processing(settings, api_key="test", notice_id=notice_id, features=("summary",),
+                             retry_stopped=True, executor=execute)
+    assert retried.records[0]["state"] == "succeeded"
+    assert calls
+    with psycopg.connect(**database) as reader:
+        reader.execute("set local role anon")
+        row = reader.execute("select headline,display_status from app_notice_detail where id=%s",
+                             (notice_id,)).fetchone()
+    assert row[0] and row[1] == "needs_review"

@@ -316,3 +316,62 @@ def test_no_schema_valid_response_never_fabricates_known_cards_or_a_success(monk
     with pytest.raises(SummaryValidationError):
         summarize_module.summarize_notice(_notice(), api_key="offline-contract-test")
     assert len(calls) == 2
+
+
+def test_short_notice_retry_retains_verified_location_without_inventing_action(monkeypatch):
+    from support.paths import FIXTURES_DIR
+
+    fixture = json.loads((FIXTURES_DIR / "short_notice_action_card.json").read_text("utf-8"))
+    notice = NoticeInput.model_validate(fixture["notice"])
+    calls = _provider(monkeypatch, *fixture["responses"])
+    summary = summarize_module.summarize_notice(notice, api_key="test")
+    assert len(calls) == 2
+    assert summary.location == "노원수학문화관"
+    assert summary.action is None
+    assert summary.card_summaries.action is None
+    assert summary.notes
+    assert summary_requires_review(summary, attachment_status="none")
+    assert summary._correction_failure_code == "response_validation_failed"
+    assert "location" in calls[1]["notice_text"]
+    view = build_notice_summary_view(
+        status="needs_review", result=summary, attachment_status="none",
+    )
+    assert view.content is not None
+    assert view.content.cards.action.items
+
+
+
+
+@pytest.mark.parametrize("damage", ["missing_object", "bad_style", "missing_field"])
+def test_short_notice_fallback_does_not_accept_other_broken_contracts(monkeypatch, damage):
+    from support.paths import FIXTURES_DIR
+
+    fixture = json.loads((FIXTURES_DIR / "short_notice_action_card.json").read_text("utf-8"))
+    first, retry = fixture["responses"]
+    if damage == "missing_object":
+        retry["card_summaries"] = None
+    elif damage == "bad_style":
+        retry["card_summaries"]["action"] = "장소 안내입니다."
+    else:
+        del retry["action_requirement"]
+    _provider(monkeypatch, first, retry)
+    with pytest.raises(SummaryValidationError):
+        summarize_module.summarize_notice(
+            NoticeInput.model_validate(fixture["notice"]), api_key="test",
+        )
+
+
+def test_short_notice_corrected_location_card_is_kept_without_new_action(monkeypatch):
+    from support.paths import FIXTURES_DIR
+
+    fixture = json.loads((FIXTURES_DIR / "short_notice_action_card.json").read_text("utf-8"))
+    first, retry = fixture["responses"]
+    retry["card_summaries"]["action"] = "안내 장소는 노원수학문화관이에요."
+    calls = _provider(monkeypatch, first, retry)
+    result = summarize_module.summarize_notice(
+        NoticeInput.model_validate(fixture["notice"]), api_key="test",
+    )
+    assert len(calls) == 2
+    assert result.action is None
+    assert result.location == "노원수학문화관"
+    assert result.card_summaries.action == "안내 장소는 노원수학문화관이에요."
