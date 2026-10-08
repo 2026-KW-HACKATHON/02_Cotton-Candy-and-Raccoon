@@ -1,1 +1,0 @@
-"""Persist normalized pipeline records."""
