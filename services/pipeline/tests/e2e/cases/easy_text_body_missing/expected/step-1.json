@@ -1,0 +1,173 @@
+{
+  "exit_code": 0,
+  "report": {
+    "mode": "new",
+    "total_count": 1,
+    "selected_count": 1,
+    "saved_count": 1,
+    "skipped_count": 0,
+    "skipped": [],
+    "failed_count": 0,
+    "pages_read": 1,
+    "initial_baseline": true,
+    "listing_complete": true,
+    "failed_ranges": [],
+    "complete": true,
+    "failures": [],
+    "easy_text": {
+      "status": "complete",
+      "complete": true,
+      "attempted_count": 1,
+      "successful_count": 0,
+      "gemini_requests": 0,
+      "gemini_http_attempts": 0,
+      "skipped_count": 1,
+      "failed_count": 0,
+      "skipped": [
+        {
+          "notice_id": 1,
+          "reason_code": "no_body_text"
+        }
+      ],
+      "failures": [],
+      "dictionary": {
+        "attempted_count": 0,
+        "complete_count": 0,
+        "partial_count": 0,
+        "pending_count": 0,
+        "failures": []
+      }
+    }
+  },
+  "stderr": [],
+  "http_calls": [
+    "nowon_api 1-50",
+    "nowon_page 900501"
+  ],
+  "gemini_calls": {},
+  "db": {
+    "notices": {
+      "nowon/1001/900501": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "첨부 확인 공지",
+        "department": "총무과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900501",
+        "body_html": null,
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1,
+        "body_text": null
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {},
+    "notice_dictionary_links": {},
+    "standard_dictionary_cache": {},
+    "notice_summary_executions": {},
+    "notice_processing_jobs": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_dictionary_links": 0,
+    "notice_easy_texts": 0,
+    "notice_files": 0,
+    "notice_processing_jobs": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 1,
+    "standard_dictionary_cache": 0
+  },
+  "anon": {
+    "notices": {
+      "nowon/1001/900501": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "첨부 확인 공지",
+        "department": "총무과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900501",
+        "body_html": null,
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1,
+        "body_text": null
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {},
+    "app_notice_list": {
+      "nowon/1001/900501": {
+        "source": "nowon",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "첨부 확인 공지",
+        "department": "총무과",
+        "registered_on": "2026-10-08",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false
+      }
+    },
+    "app_notice_detail": {
+      "nowon/1001/900501": {
+        "source": "nowon",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "첨부 확인 공지",
+        "department": "총무과",
+        "registered_on": "2026-10-08",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false,
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900501",
+        "license_type": "KOGL-4",
+        "body_text": null,
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [],
+        "easy_original_text": null,
+        "easy_text": null,
+        "easy_changes": null,
+        "easy_body_text_present": null,
+        "easy_attachment_content_included": null,
+        "easy_generated_at": null,
+        "easy_result": null
+      }
+    },
+    "get_notice_dictionary": {
+      "nowon/1001/900501": {
+        "result": null
+      }
+    }
+  }
+}

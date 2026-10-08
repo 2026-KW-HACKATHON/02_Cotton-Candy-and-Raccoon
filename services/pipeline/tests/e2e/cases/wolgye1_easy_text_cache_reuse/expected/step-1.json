@@ -1,0 +1,474 @@
+{
+  "exit_code": 0,
+  "report": {
+    "mode": "new",
+    "total_count": 2,
+    "selected_count": 2,
+    "saved_count": 2,
+    "pages_read": 1,
+    "initial_baseline": true,
+    "listing_complete": true,
+    "failed_pages": [],
+    "complete": true,
+    "failures": [],
+    "easy_text": {
+      "status": "complete",
+      "complete": true,
+      "attempted_count": 2,
+      "successful_count": 2,
+      "gemini_requests": 2,
+      "gemini_http_attempts": 2,
+      "skipped_count": 0,
+      "failed_count": 0,
+      "skipped": [],
+      "failures": [],
+      "dictionary": {
+        "attempted_count": 2,
+        "complete_count": 2,
+        "partial_count": 0,
+        "pending_count": 0,
+        "failures": []
+      }
+    }
+  },
+  "stderr": [],
+  "http_calls": [
+    "wolgye1_list 1",
+    "wolgye1_detail 20261007090000402",
+    "wolgye1_detail 20261006090000401"
+  ],
+  "gemini_calls": {
+    "easy_text": [
+      {
+        "model": "gemini-3.5-flash-lite",
+        "input": [
+          {
+            "type": "text",
+            "sha256": "73df11e7af693288",
+            "length": 22
+          }
+        ]
+      },
+      {
+        "model": "gemini-3.5-flash-lite",
+        "input": [
+          {
+            "type": "text",
+            "sha256": "dc5eca148937371e",
+            "length": 22
+          }
+        ]
+      }
+    ]
+  },
+  "db": {
+    "notices": {
+      "dong/1042/20261006090000401": {
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 그림 교실 참가자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-06",
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261006090000401&q_deptCode=1047",
+        "body_html": "<p>월계1동 그림 교실 참가자를 모집합니다.</p>",
+        "license_type": "KOGL-1",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1,
+        "body_text": "월계1동 그림 교실 참가자를 모집합니다."
+      },
+      "dong/1042/20261007090000402": {
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 탁구 교실 참가자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-07",
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261007090000402&q_deptCode=1047",
+        "body_html": "<p>월계1동 탁구 교실 참가자를 모집합니다.</p>",
+        "license_type": "KOGL-1",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1,
+        "body_text": "월계1동 탁구 교실 참가자를 모집합니다."
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {
+      "dong/1042/20261006090000401": {
+        "notice_revision": "4ca394672194530761352e07c984001cdfddd0f7b47fd7e5290e619617892e2a",
+        "source_hash": "08a89b194a7f8907257c42ce8515ea3b433eb80fcabeee1066704eac11f9a511",
+        "original_text": "월계1동 그림 교실 참가자 모집\n월계1동 그림 교실 참가자를 모집합니다.",
+        "easy_text": "월계1동 그림 교실 참가자 모집\n참여할 사람을 모집해요.\n\n누구를 모집하나요?\n참여할 사람을 모집해요.",
+        "changes": [],
+        "model": "gemini-3.5-flash-lite",
+        "prompt_version": "easy-rewrite-v1",
+        "attempt_count": 1,
+        "generated_at": "<set>",
+        "body_text_present": true,
+        "attachment_content_included": false,
+        "dictionary_candidates": [],
+        "easy_result": {
+          "attachment_hint": null,
+          "headline": "참여할 사람을 모집해요.",
+          "intro": [],
+          "sections": [
+            {
+              "heading": "누구를 모집하나요?",
+              "sentences": [
+                {
+                  "evidence": [
+                    "참가자를 모집합니다"
+                  ],
+                  "text": "참여할 사람을 모집해요."
+                }
+              ],
+              "style": "paragraph"
+            }
+          ]
+        }
+      },
+      "dong/1042/20261007090000402": {
+        "notice_revision": "42e9bbac18be993a2868ea49f79f545963eca31fa0b02b6ac28005d587b2729b",
+        "source_hash": "ea9d66e666493d5af5908d772801758b9cee04191eca9b522bfddf15e0877d17",
+        "original_text": "월계1동 탁구 교실 참가자 모집\n월계1동 탁구 교실 참가자를 모집합니다.",
+        "easy_text": "월계1동 탁구 교실 참가자 모집\n참여할 사람을 모집해요.\n\n누구를 모집하나요?\n참여할 사람을 모집해요.",
+        "changes": [],
+        "model": "gemini-3.5-flash-lite",
+        "prompt_version": "easy-rewrite-v1",
+        "attempt_count": 1,
+        "generated_at": "<set>",
+        "body_text_present": true,
+        "attachment_content_included": false,
+        "dictionary_candidates": [],
+        "easy_result": {
+          "attachment_hint": null,
+          "headline": "참여할 사람을 모집해요.",
+          "intro": [],
+          "sections": [
+            {
+              "heading": "누구를 모집하나요?",
+              "sentences": [
+                {
+                  "evidence": [
+                    "참가자를 모집합니다"
+                  ],
+                  "text": "참여할 사람을 모집해요."
+                }
+              ],
+              "style": "paragraph"
+            }
+          ]
+        }
+      }
+    },
+    "notice_dictionary_links": {
+      "dong/1042/20261006090000401": {
+        "easy_text_token": "<set>",
+        "candidates": [],
+        "generated_at": "<set>"
+      },
+      "dong/1042/20261007090000402": {
+        "easy_text_token": "<set>",
+        "candidates": [],
+        "generated_at": "<set>"
+      }
+    },
+    "standard_dictionary_cache": {},
+    "notice_summary_executions": {},
+    "notice_processing_jobs": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_dictionary_links": 2,
+    "notice_easy_texts": 2,
+    "notice_files": 0,
+    "notice_processing_jobs": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 2,
+    "standard_dictionary_cache": 0
+  },
+  "anon": {
+    "notices": {
+      "dong/1042/20261006090000401": {
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 그림 교실 참가자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-06",
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261006090000401&q_deptCode=1047",
+        "body_html": "<p>월계1동 그림 교실 참가자를 모집합니다.</p>",
+        "license_type": "KOGL-1",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1,
+        "body_text": "월계1동 그림 교실 참가자를 모집합니다."
+      },
+      "dong/1042/20261007090000402": {
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 탁구 교실 참가자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-07",
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261007090000402&q_deptCode=1047",
+        "body_html": "<p>월계1동 탁구 교실 참가자를 모집합니다.</p>",
+        "license_type": "KOGL-1",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1,
+        "body_text": "월계1동 탁구 교실 참가자를 모집합니다."
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {
+      "dong/1042/20261006090000401": {
+        "original_text": "월계1동 그림 교실 참가자 모집\n월계1동 그림 교실 참가자를 모집합니다.",
+        "easy_text": "월계1동 그림 교실 참가자 모집\n참여할 사람을 모집해요.\n\n누구를 모집하나요?\n참여할 사람을 모집해요.",
+        "changes": [],
+        "generated_at": "<set>",
+        "body_text_present": true,
+        "attachment_content_included": false,
+        "easy_result": {
+          "attachment_hint": null,
+          "headline": "참여할 사람을 모집해요.",
+          "intro": [],
+          "sections": [
+            {
+              "heading": "누구를 모집하나요?",
+              "sentences": [
+                {
+                  "evidence": [
+                    "참가자를 모집합니다"
+                  ],
+                  "text": "참여할 사람을 모집해요."
+                }
+              ],
+              "style": "paragraph"
+            }
+          ]
+        }
+      },
+      "dong/1042/20261007090000402": {
+        "original_text": "월계1동 탁구 교실 참가자 모집\n월계1동 탁구 교실 참가자를 모집합니다.",
+        "easy_text": "월계1동 탁구 교실 참가자 모집\n참여할 사람을 모집해요.\n\n누구를 모집하나요?\n참여할 사람을 모집해요.",
+        "changes": [],
+        "generated_at": "<set>",
+        "body_text_present": true,
+        "attachment_content_included": false,
+        "easy_result": {
+          "attachment_hint": null,
+          "headline": "참여할 사람을 모집해요.",
+          "intro": [],
+          "sections": [
+            {
+              "heading": "누구를 모집하나요?",
+              "sentences": [
+                {
+                  "evidence": [
+                    "참가자를 모집합니다"
+                  ],
+                  "text": "참여할 사람을 모집해요."
+                }
+              ],
+              "style": "paragraph"
+            }
+          ]
+        }
+      }
+    },
+    "app_notice_list": {
+      "dong/1042/20261006090000401": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 그림 교실 참가자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-06",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true
+      },
+      "dong/1042/20261007090000402": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 탁구 교실 참가자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true
+      }
+    },
+    "app_notice_detail": {
+      "dong/1042/20261006090000401": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 그림 교실 참가자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-06",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true,
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261006090000401&q_deptCode=1047",
+        "license_type": "KOGL-1",
+        "body_text": "월계1동 그림 교실 참가자를 모집합니다.",
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [],
+        "easy_original_text": "월계1동 그림 교실 참가자 모집\n월계1동 그림 교실 참가자를 모집합니다.",
+        "easy_text": "월계1동 그림 교실 참가자 모집\n참여할 사람을 모집해요.\n\n누구를 모집하나요?\n참여할 사람을 모집해요.",
+        "easy_changes": [],
+        "easy_body_text_present": true,
+        "easy_attachment_content_included": false,
+        "easy_generated_at": "<set>",
+        "easy_result": {
+          "attachment_hint": null,
+          "headline": "참여할 사람을 모집해요.",
+          "intro": [],
+          "sections": [
+            {
+              "heading": "누구를 모집하나요?",
+              "sentences": [
+                {
+                  "evidence": [
+                    "참가자를 모집합니다"
+                  ],
+                  "text": "참여할 사람을 모집해요."
+                }
+              ],
+              "style": "paragraph"
+            }
+          ]
+        }
+      },
+      "dong/1042/20261007090000402": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 탁구 교실 참가자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true,
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261007090000402&q_deptCode=1047",
+        "license_type": "KOGL-1",
+        "body_text": "월계1동 탁구 교실 참가자를 모집합니다.",
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [],
+        "easy_original_text": "월계1동 탁구 교실 참가자 모집\n월계1동 탁구 교실 참가자를 모집합니다.",
+        "easy_text": "월계1동 탁구 교실 참가자 모집\n참여할 사람을 모집해요.\n\n누구를 모집하나요?\n참여할 사람을 모집해요.",
+        "easy_changes": [],
+        "easy_body_text_present": true,
+        "easy_attachment_content_included": false,
+        "easy_generated_at": "<set>",
+        "easy_result": {
+          "attachment_hint": null,
+          "headline": "참여할 사람을 모집해요.",
+          "intro": [],
+          "sections": [
+            {
+              "heading": "누구를 모집하나요?",
+              "sentences": [
+                {
+                  "evidence": [
+                    "참가자를 모집합니다"
+                  ],
+                  "text": "참여할 사람을 모집해요."
+                }
+              ],
+              "style": "paragraph"
+            }
+          ]
+        }
+      }
+    },
+    "get_notice_dictionary": {
+      "dong/1042/20261006090000401": {
+        "result": {
+          "attachment_content_included": false,
+          "body_text_present": true,
+          "changes": [],
+          "dictionary_candidates": [],
+          "dictionary_status": "complete",
+          "easy_text": "월계1동 그림 교실 참가자 모집\n참여할 사람을 모집해요.\n\n누구를 모집하나요?\n참여할 사람을 모집해요.",
+          "generated_at": "<set>",
+          "model": "gemini-3.5-flash-lite",
+          "notice_id": 2,
+          "notice_revision": "4ca394672194530761352e07c984001cdfddd0f7b47fd7e5290e619617892e2a",
+          "original_text": "월계1동 그림 교실 참가자 모집\n월계1동 그림 교실 참가자를 모집합니다.",
+          "prompt_version": "easy-rewrite-v1"
+        }
+      },
+      "dong/1042/20261007090000402": {
+        "result": {
+          "attachment_content_included": false,
+          "body_text_present": true,
+          "changes": [],
+          "dictionary_candidates": [],
+          "dictionary_status": "complete",
+          "easy_text": "월계1동 탁구 교실 참가자 모집\n참여할 사람을 모집해요.\n\n누구를 모집하나요?\n참여할 사람을 모집해요.",
+          "generated_at": "<set>",
+          "model": "gemini-3.5-flash-lite",
+          "notice_id": 1,
+          "notice_revision": "42e9bbac18be993a2868ea49f79f545963eca31fa0b02b6ac28005d587b2729b",
+          "original_text": "월계1동 탁구 교실 참가자 모집\n월계1동 탁구 교실 참가자를 모집합니다.",
+          "prompt_version": "easy-rewrite-v1"
+        }
+      }
+    }
+  }
+}

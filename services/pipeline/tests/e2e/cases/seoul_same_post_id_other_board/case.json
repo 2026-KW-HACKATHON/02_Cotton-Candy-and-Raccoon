@@ -1,0 +1,48 @@
+{
+  "title": "서울시 분야별 키: 분야가 다른 같은 POST_ID는 서로 다른 공지로 저장된다",
+  "steps": [
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "seoul",
+        "--mode",
+        "new",
+        "--source-board",
+        "25"
+      ],
+      "http": [
+        {
+          "route": "seoul_api",
+          "board": "25",
+          "start": 1,
+          "end": 25,
+          "body": "input/seoul_25.xml"
+        }
+      ],
+      "expect_exit": 0
+    },
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "seoul",
+        "--mode",
+        "new",
+        "--source-board",
+        "21"
+      ],
+      "http": [
+        {
+          "route": "seoul_api",
+          "board": "21",
+          "start": 1,
+          "end": 25,
+          "body": "input/seoul_21.xml"
+        }
+      ],
+      "expect_exit": 0
+    }
+  ],
+  "strict_unused": true
+}

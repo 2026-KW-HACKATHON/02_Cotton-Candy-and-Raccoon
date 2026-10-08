@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "월계 공지",
+    "name": "월계 알리미",
     "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -18,7 +18,7 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "output": "static",
+      "output": "single",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
