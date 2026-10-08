@@ -191,6 +191,8 @@ def test_all_raw_sources_precede_independently_bounded_features():
     processing = [i for i, step in enumerate(steps) if "pipeline process-stored" in step]
     assert len(raw) == 3 and len(processing) == 6
     assert max(raw) < min(processing)
+    seoul_step = next(steps[i] for i in raw if "--source seoul" in steps[i])
+    assert "--source-board" not in seoul_step
     for i in raw:
         assert "--process-ai" not in steps[i] and "--easy-text" not in steps[i]
         assert "timeout-minutes: 10" in steps[i]
@@ -199,7 +201,7 @@ def test_all_raw_sources_precede_independently_bounded_features():
         assert "timeout-minutes: 20" in step
         assert "continue-on-error: true" in step
         assert "!cancelled()" in step
-        assert "--limit 5" in step
+        assert '--limit "$PROCESSING_LIMIT"' in step
         assert '[ -z "$GEMINI_API_KEY" ]' in step
         if "--feature easy_text" in step:
             assert '[ -z "$STDICT_API_KEY" ]' in step
