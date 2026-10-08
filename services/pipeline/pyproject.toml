@@ -25,6 +25,7 @@ notice-glossary = "pipeline.glossary.cli:main"
 [dependency-groups]
 dev = [
     "pytest>=8.4.1,<10",
+    "pytest-cov>=6,<8",
     "ruff>=0.12.0,<1",
 ]
 

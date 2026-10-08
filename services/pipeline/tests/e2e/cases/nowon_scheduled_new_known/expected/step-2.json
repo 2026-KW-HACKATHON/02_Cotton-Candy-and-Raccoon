@@ -1,0 +1,140 @@
+{
+  "exit_code": 0,
+  "report": {
+    "mode": "new",
+    "total_count": 3,
+    "selected_count": 1,
+    "saved_count": 1,
+    "pages_read": 1,
+    "initial_baseline": false,
+    "listing_complete": true,
+    "failed_ranges": [],
+    "complete": true,
+    "failures": []
+  },
+  "stderr": [],
+  "http_calls": [
+    "nowon_api 1-50",
+    "nowon_page 900473"
+  ],
+  "gemini_calls": {},
+  "db": {
+    "notices": {
+      "nowon/1001/900471": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "청소년 상담 프로그램 안내",
+        "department": "아동청소년과",
+        "registered_on": "2026-10-06",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900471",
+        "body_html": "<p>상담 프로그램 안내</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1
+      },
+      "nowon/1001/900472": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "어르신 일자리 사업 안내",
+        "department": "어르신복지과",
+        "registered_on": "2026-10-07",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900472",
+        "body_html": "<p>일자리 사업 안내</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1
+      },
+      "nowon/1001/900473": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "재활용품 배출 요일 변경",
+        "department": "청소행정과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900473",
+        "body_html": "<p>배출 요일 변경</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {},
+    "notice_summary_executions": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_easy_texts": 0,
+    "notice_files": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 3
+  },
+  "anon": {
+    "notices": {
+      "nowon/1001/900471": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "청소년 상담 프로그램 안내",
+        "department": "아동청소년과",
+        "registered_on": "2026-10-06",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900471",
+        "body_html": "<p>상담 프로그램 안내</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1
+      },
+      "nowon/1001/900472": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "어르신 일자리 사업 안내",
+        "department": "어르신복지과",
+        "registered_on": "2026-10-07",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900472",
+        "body_html": "<p>일자리 사업 안내</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1
+      },
+      "nowon/1001/900473": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "재활용품 배출 요일 변경",
+        "department": "청소행정과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900473",
+        "body_html": "<p>배출 요일 변경</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {}
+  }
+}

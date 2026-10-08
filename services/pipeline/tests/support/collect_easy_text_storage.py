@@ -1,4 +1,4 @@
-"""Helpers shared from test_collect_easy_text_storage.py."""
+"""Owned, migrated database fixture shared by the easy-text storage tests."""
 
 from collections.abc import Iterator
 

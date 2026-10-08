@@ -1,0 +1,29 @@
+{
+  "title": "노원구 가려진 파일 주소: API 본문의 가려진 이미지 주소를 원문 페이지에서 복구해 저장한다",
+  "steps": [
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "nowon",
+        "--mode",
+        "new"
+      ],
+      "http": [
+        {
+          "route": "nowon_api",
+          "start": 1,
+          "end": 50,
+          "body": "input/nowon_list.xml"
+        },
+        {
+          "route": "nowon_page",
+          "post_sn": "900431",
+          "body": "input/nowon_page_900431.html"
+        }
+      ],
+      "expect_exit": 0
+    }
+  ],
+  "strict_unused": true
+}
