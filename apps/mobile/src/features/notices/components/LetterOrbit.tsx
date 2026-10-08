@@ -165,7 +165,7 @@ export function LetterOrbit({
   if (!notices.length) return null;
   return (
     <View ref={wheelRef} {...keyboardProps}>
-      <GestureDetector gesture={pan}>
+      <GestureDetector gesture={pan} touchAction="pan-y">
         <View
           testID="letter-orbit"
           style={{
