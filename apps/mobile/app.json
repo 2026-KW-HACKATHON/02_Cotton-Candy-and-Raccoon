@@ -31,7 +31,26 @@
           "imageWidth": 76
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "TodayNotice",
+              "label": "오늘의 공문",
+              "description": "너구리가 편지지에 오늘 등록된 공문 한 건을 전해요.",
+              "previewImage": "./assets/widget/preview.png",
+              "minWidth": "250dp",
+              "minHeight": "370dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 5,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000
+            }
+          ]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

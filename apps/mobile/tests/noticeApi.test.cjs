@@ -52,6 +52,19 @@ function api(responses) {
     }),
   };
 }
+test("위젯은 요약 필터 없이 공개 뷰의 해당 날짜 1건을 고정 정렬로 조회한다", async () => {
+  const a = api([[{ ...fixture(), registered_on: "2026-10-09" }], []]);
+  const notice = await a.fetchTodayNotice("2026-10-09");
+  assert.equal(notice.hasSummary, false);
+  const url = a.calls[0].url;
+  assert.equal(url.pathname, "/rest/v1/app_notice_list");
+  assert.equal(url.searchParams.get("registered_on"), "eq.2026-10-09");
+  assert.equal(url.searchParams.get("limit"), "1");
+  assert.equal(url.searchParams.get("order"), "registered_on.desc,id.desc");
+  assert.equal(url.searchParams.has("display_status"), false);
+  assert.equal(await a.fetchTodayNotice("2026-10-09"), null);
+  await assert.rejects(a.fetchTodayNotice("2026-10-09,or(id.gt.0)"));
+});
 test("실제 pipeline snapshot의 원문·분류·미생성 상태를 변환한다", () => {
   const row = fixture();
   const notice = noticeFromRow(row);

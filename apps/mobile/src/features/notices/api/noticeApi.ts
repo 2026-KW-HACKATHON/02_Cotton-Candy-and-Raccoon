@@ -20,12 +20,13 @@ async function request<T>(
     status: number;
   }>,
   signal?: AbortSignal,
+  timeoutMs = 15_000,
 ): Promise<T> {
   const controller = new AbortController();
   const abort = () => controller.abort();
   signal?.addEventListener("abort", abort, { once: true });
   if (signal?.aborted) abort();
-  const timer = setTimeout(abort, 15_000);
+  const timer = setTimeout(abort, timeoutMs);
   try {
     const response = await execute(controller.signal);
     if (response.error) {
@@ -94,6 +95,25 @@ export async function fetchNotice(
     signal,
   );
   return row === null ? null : noticeFromRow(row);
+}
+/** One public notice for a Korean calendar date, independent of AI readiness. */
+export async function fetchTodayNotice(date: string): Promise<Notice | null> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date))
+    throw new Error("잘못된 공지 날짜입니다.");
+  // Midnight rollover can require two requests within the 30s headless task.
+  const rows = await request((signal) =>
+    getSupabase()
+      .from("app_notice_list")
+      .select(LIST_COLUMNS)
+      .eq("registered_on", date)
+      .order("registered_on", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(1)
+      .abortSignal(signal), undefined, 8_000,
+  );
+  if (!Array.isArray(rows))
+    throw new Error("공지 응답 형식을 확인할 수 없습니다.");
+  return rows.length === 0 ? null : noticeFromRow(rows[0]);
 }
 export async function fetchSavedNotices(
   ids: readonly string[],
