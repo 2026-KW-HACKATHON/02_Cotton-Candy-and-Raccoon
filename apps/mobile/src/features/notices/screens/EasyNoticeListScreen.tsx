@@ -6,6 +6,7 @@ import { EasyButton } from "@/shared/ui/EasyButton";
 import { EASY } from "@/shared/theme/tokens";
 import { useNotices, useSavedNotices } from "../hooks/useNotices";
 import { useBookmarkStore } from "../store/bookmarkStore";
+import { NOTICE_SCOPES, useNoticeScopeStore } from "../store/noticeScopeStore";
 import { EasyNoticeCard } from "../components/EasyNoticeCard";
 import { EasyNoticeState } from "../components/EasyNoticeState";
 
@@ -15,6 +16,8 @@ export function EasyNoticeListScreen({
   kind: "home" | "notices" | "saved";
 }) {
   const ids = useBookmarkStore((state) => state.savedIds);
+  const scope = useNoticeScopeStore((state) => state.scope);
+  const setScope = useNoticeScopeStore((state) => state.setScope);
   const listQuery = useNotices(kind !== "saved");
   const savedQuery = useSavedNotices(ids, kind === "saved");
   const query = kind === "saved" ? savedQuery : listQuery;
@@ -61,6 +64,22 @@ export function EasyNoticeListScreen({
           </AppText>
         )}
       </View>
+      {kind !== "saved" && (
+        <View style={{ gap: 12 }}>
+          <AppText size={EASY.body} variant="bold" accessibilityLiveRegion="polite">
+            현재 출처 · {scope}
+          </AppText>
+          {NOTICE_SCOPES.map((option) => (
+            <EasyButton
+              key={option}
+              label={`${option}${option === scope ? " · 선택됨" : ""}`}
+              selected={option === scope}
+              filled={option === scope}
+              onPress={() => setScope(option)}
+            />
+          ))}
+        </View>
+      )}
       {home && (
         <AppText size={EASY.heading} variant="display">
           최근 공문
