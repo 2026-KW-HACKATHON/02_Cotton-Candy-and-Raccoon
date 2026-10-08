@@ -1,3 +1,4 @@
+import { type ReactNode } from "react";
 import {
   Pressable,
   StyleSheet,
@@ -15,6 +16,7 @@ export function EasyButton({
   disabled = false,
   selected,
   style,
+  icon,
 }: {
   label: string;
   subtitle?: string;
@@ -23,6 +25,7 @@ export function EasyButton({
   disabled?: boolean;
   selected?: boolean;
   style?: StyleProp<ViewStyle>;
+  icon?: ReactNode;
 }) {
   const color = disabled
     ? COLORS.secondary
@@ -43,12 +46,14 @@ export function EasyButton({
         disabled && styles.disabled,
         pressed && { opacity: 0.8 },
         style,
+        Boolean(icon) && styles.withIcon,
       ]}
     >
+      {icon}
       <AppText
         size={EASY.body}
         variant="bold"
-        style={{ color, textAlign: "center" }}
+        style={{ color, textAlign: "center", flexShrink: 1 }}
       >
         {label}
       </AppText>
@@ -78,5 +83,6 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   filled: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  withIcon: { flexDirection: "row", gap: 8, paddingHorizontal: 8 },
   disabled: { backgroundColor: EASY.disabled, borderColor: EASY.disabled },
 });

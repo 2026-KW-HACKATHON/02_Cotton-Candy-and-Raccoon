@@ -144,7 +144,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     stored.add_argument("--source", choices=["nowon", "wolgye1", "seoul"], required=True)
     stored.add_argument("--feature", choices=["all", "summary", "easy_text"], default="all")
-    stored.add_argument("--limit", type=int, default=100)
+    batch = stored.add_mutually_exclusive_group()
+    batch.add_argument("--limit", type=int, default=100)
+    batch.add_argument("--all", action="store_true", help="process all currently eligible jobs")
     return parser
 
 
@@ -177,7 +179,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "process-stored":
         try:
             processor = create_ai_processing(
-                DatabaseSettings.from_env(), source=args.source, limit=args.limit,
+                DatabaseSettings.from_env(), source=args.source,
+                limit=None if args.all else args.limit,
                 features=(("summary", "easy_text") if args.feature == "all"
                           else (args.feature,)),
             )

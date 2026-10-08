@@ -67,7 +67,7 @@ function screen(initial) {
   const render = () => {
     cursor = 0;
     return component.DeadlineReminder({
-      notice: { id: "43", displayStatus: "none", title: "공지" },
+      notice: { id: "43", summaryStatus: "none", title: "공지" },
     });
   };
   const nodes = (node) => {

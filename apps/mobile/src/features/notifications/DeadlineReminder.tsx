@@ -29,7 +29,7 @@ export function DeadlineReminder({ notice }: { notice: Notice }) {
   const inFlight = useRef(false);
   const revision = useRef(0);
   const certainDeadline =
-    notice.displayStatus === "summarized" ? notice.deadlineDate : undefined;
+    notice.summaryStatus === "summarized" ? notice.deadlineDate : undefined;
   useEffect(() => {
     if (Platform.OS !== "android") return;
     let active = true;

@@ -26,21 +26,22 @@ export function isNoticeExpired(
   return deadline < localDate;
 }
 
-/** 서버가 제공한 쉬운말 표현만 연결하며, 겹치는 표현은 가장 긴 일치 구간을 우선한다. */
+/** 데이터가 제공한 표현만 연결하며, 겹치는 표현은 가장 긴 일치 구간을 우선한다. */
 export function splitGlossaryText(
   text: string,
   terms: readonly GlossaryTerm[] = [],
+  mode: "plain" | "original" = "plain",
 ) {
   const parts: { text: string; term?: GlossaryTerm }[] = [];
   const validTerms = [...terms]
     .filter((term) => term.plain.trim() && term.original.trim())
-    .sort((a, b) => b.plain.length - a.plain.length);
+    .sort((a, b) => b[mode].length - a[mode].length);
   let offset = 0;
   while (offset < text.length) {
     let next = -1;
     let match: GlossaryTerm | undefined;
     for (const term of validTerms) {
-      const index = text.indexOf(term.plain, offset);
+      const index = text.indexOf(term[mode], offset);
       if (index >= 0 && (next < 0 || index < next)) {
         next = index;
         match = term;
@@ -51,8 +52,8 @@ export function splitGlossaryText(
       break;
     }
     if (next > offset) parts.push({ text: text.slice(offset, next) });
-    parts.push({ text: match.plain, term: match });
-    offset = next + match.plain.length;
+    parts.push({ text: match[mode], term: match });
+    offset = next + match[mode].length;
   }
   return parts;
 }

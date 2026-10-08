@@ -162,7 +162,7 @@ export function DetailCharacter({ active }: { active: boolean }) {
     <CharacterScene
       scene={DETAIL_CHARACTER_SCENE}
       assets={DETAIL_ASSETS}
-      width={120.923}
+      width={131}
       progress={progress}
     />
   );

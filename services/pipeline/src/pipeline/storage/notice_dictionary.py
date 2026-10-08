@@ -120,7 +120,7 @@ def get_notice_dictionary(conn: psycopg.Connection, notice_id: int) -> dict | No
 
 
 def dictionary_work(
-    conn: psycopg.Connection, *, source: str, limit: int,
+    conn: psycopg.Connection, *, source: str, limit: int | None,
 ) -> tuple[list[int], int]:
     """Find missing/due links independently of Gemini work, and count all gaps.
 
@@ -129,7 +129,9 @@ def dictionary_work(
     Oldest link attempts go first so repeated transient failures cannot starve
     other notices. Shared dictionary leases still arbitrate concurrent requests.
     """
-    if source not in {"nowon", "dong", "seoul"} or type(limit) is not int or limit < 1:
+    if source not in {"nowon", "dong", "seoul"} or (
+        limit is not None and (type(limit) is not int or limit < 1)
+    ):
         raise ValueError("invalid_dictionary_batch")
     row = conn.execute("""
         with snapshots as materialized (

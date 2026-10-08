@@ -1,3 +1,5 @@
+import { NotificationNavigation } from "@/features/notifications/NotificationNavigation";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -8,7 +10,6 @@ import { useDisplayPreferences } from "@/shared/accessibility/displayPreferences
 
 import { useAppStartup } from "@/features/settings/hooks/useAppStartup";
 import { AnimatedSplashScreen } from "@/features/settings/screens/AnimatedSplashScreen";
-import { NotificationNavigation } from "@/features/notifications/NotificationNavigation";
 
 export default function RootLayout() {
   const startup = useAppStartup();
@@ -16,33 +17,35 @@ export default function RootLayout() {
     (state) => state.onboardingComplete,
   );
   return (
-    <SafeAreaProvider>
-      <QueryClientProvider client={queryClient}>
-        <StatusBar style="dark" />
-        {startup.ready && onboardingComplete && <NotificationNavigation />}
-        {!startup.ready ? (
-          startup.assetsReady ? (
-            <AnimatedSplashScreen
-              onVisible={startup.onSplashVisible}
-              fontsReady={startup.fontsReady}
-            />
-          ) : null
-        ) : (
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: COLORS.surface },
-            }}
-          >
-            <Stack.Protected guard={onboardingComplete}>
-              <Stack.Screen name="(tabs)" />
-              <Stack.Screen name="settings" />
-              <Stack.Screen name="notice/[id]" />
-            </Stack.Protected>
-            <Stack.Screen name="onboarding" />
-          </Stack>
-        )}
-      </QueryClientProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <QueryClientProvider client={queryClient}>
+          <StatusBar style="dark" />
+          {startup.ready && onboardingComplete && <NotificationNavigation />}
+          {!startup.ready ? (
+            startup.assetsReady ? (
+              <AnimatedSplashScreen
+                onVisible={startup.onSplashVisible}
+                fontsReady={startup.fontsReady}
+              />
+            ) : null
+          ) : (
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: COLORS.surface },
+              }}
+            >
+              <Stack.Protected guard={onboardingComplete}>
+                <Stack.Screen name="(tabs)" />
+                <Stack.Screen name="settings" />
+                <Stack.Screen name="notice/[id]" />
+              </Stack.Protected>
+              <Stack.Screen name="onboarding" />
+            </Stack>
+          )}
+        </QueryClientProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
