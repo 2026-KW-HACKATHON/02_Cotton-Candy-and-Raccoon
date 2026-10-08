@@ -5,7 +5,7 @@ import { type Notice } from "../types/notice";
 import { useNoticeFileActions } from "../hooks/useNoticeFileActions";
 import { NoticeActionButton } from "./NoticeActionButton";
 
-export function NoticeEvidence({
+export function NoticeOmissions({
   notice,
   comfortable = false,
 }: {
@@ -13,9 +13,8 @@ export function NoticeEvidence({
   comfortable?: boolean;
 }) {
   const actions = useNoticeFileActions();
-  const evidence = notice.evidence ?? [];
   const omissions = notice.omissions ?? [];
-  if (!evidence.length && !omissions.length) return null;
+  if (!omissions.length) return null;
   const size = comfortable ? 20 : 16;
   return (
     <View
@@ -26,29 +25,6 @@ export function NoticeEvidence({
         borderRadius: RADIUS.card,
       }}
     >
-      {evidence.length > 0 && (
-        <AppText variant="bold" size={size}>
-          요약의 원문 근거
-        </AppText>
-      )}
-      {evidence.map((item, index) => (
-        <View key={`evidence-${index}`} style={{ gap: 8 }}>
-          <AppText secondary size={size}>
-            {item.label}
-          </AppText>
-          <AppText size={size}>{item.quote}</AppText>
-          {item.url && (
-            <NoticeActionButton
-              comfortable={comfortable}
-              disabled={actions.busy}
-              label="근거 원문 열기"
-              onPress={() => {
-                void actions.open(item.url!);
-              }}
-            />
-          )}
-        </View>
-      ))}
       {omissions.length > 0 && (
         <AppText variant="bold" size={size}>
           요약에 포함되지 않은 첨부

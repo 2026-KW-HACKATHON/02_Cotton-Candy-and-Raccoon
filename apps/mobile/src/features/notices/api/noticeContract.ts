@@ -11,7 +11,7 @@ export const LIST_COLUMNS =
   "id,source,title,department,registered_on,display_status,category_code,deadline_on,headline,card_summaries,has_easy_text";
 export const DETAIL_COLUMNS =
   LIST_COLUMNS +
-  ",url,body_text,result,file_references,preparation_omissions,files,easy_original_text,easy_text,easy_changes,easy_body_text_present,easy_attachment_content_included";
+  ",url,body_text,preparation_omissions,files,easy_original_text,easy_text,easy_changes,easy_body_text_present,easy_attachment_content_included";
 const CATEGORIES: Record<number, NoticeCategory> = {
   21: "교통",
   22: "안전",
@@ -114,7 +114,6 @@ export function parseNotice(value: unknown): Notice {
     sourceUrl: httpUrl(row.url),
     files,
     summaryStatus: status,
-    evidence: summaryAvailable ? parseEvidence(row) : [],
     omissions: objects(row.preparation_omissions).map((item) => ({
       message:
         item.reason_code === "unsupported_type"
@@ -207,38 +206,4 @@ function objects(value: unknown): Record<string, unknown>[] {
           !!item && typeof item === "object" && !Array.isArray(item),
       )
     : [];
-}
-function parseEvidence(
-  row: Record<string, unknown>,
-): NonNullable<Notice["evidence"]> {
-  const result =
-    row.result && typeof row.result === "object" && !Array.isArray(row.result)
-      ? (row.result as Record<string, unknown>)
-      : {};
-  const references = objects(row.file_references);
-  return objects(result.evidence)
-    .filter((item) => text(item.excerpt))
-    .map((item) => {
-      const reference = references.find(
-        (ref) =>
-          ref.source_id === item.source_id &&
-          ref.source_type === item.source_type,
-      );
-      const fileUrl = objects(reference?.files)
-        .map((file) => httpUrl(file.url))
-        .find(Boolean);
-      return {
-        quote: text(item.excerpt),
-        label:
-          item.source_type === "text"
-            ? "본문 근거"
-            : `첨부 근거${Number.isSafeInteger(item.page) && Number(item.page) > 0 ? ` · ${item.page}쪽` : ""}`,
-        url:
-          item.source_type === "text"
-            ? httpUrl(row.url)
-            : (fileUrl ??
-              httpUrl(reference?.original_notice_url) ??
-              httpUrl(row.url)),
-      };
-    });
 }

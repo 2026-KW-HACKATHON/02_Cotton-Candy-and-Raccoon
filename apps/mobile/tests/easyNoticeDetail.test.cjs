@@ -78,7 +78,7 @@ function loadDetail(initialNotice, standard = false) {
     "NoticeTermOverlay",
     "NoticeFiles",
     "NoticeSummaryStatus",
-    "NoticeEvidence",
+    "NoticeOmissions",
   ]) {
     mocks[`../components/${component}`] = { [component]: component };
   }
@@ -139,7 +139,7 @@ function loadDetail(initialNotice, standard = false) {
     }
     visit(tree);
     return {
-      evidence: nodes.find((node) => node.type === "NoticeEvidence").props,
+      omissions: nodes.find((node) => node.type === "NoticeOmissions").props,
       document: nodes.find((node) => node.type === "NoticeDocumentText").props,
       toggle: standard
         ? (() => {
@@ -261,15 +261,14 @@ for (const standard of [true]) {
   });
 }
 
-test("일반·편한 상세 모두 근거와 누락 첨부 정보를 표시 컴포넌트에 전달한다", () => {
+test("일반·편한 상세 모두 누락 첨부 정보를 표시 컴포넌트에 전달한다", () => {
   const notice = {
     ...NOTICE,
-    evidence: [{ quote: "원문", label: "본문 근거" }],
     omissions: [{ message: "미지원 첨부", url: "https://example.test/file" }],
   };
   for (const standard of [false, true]) {
     const state = loadDetail(notice, standard).render();
-    assert.equal(state.evidence.notice, notice);
-    assert.equal(!!state.evidence.comfortable, !standard);
+    assert.equal(state.omissions.notice, notice);
+    assert.equal(!!state.omissions.comfortable, !standard);
   }
 });
