@@ -89,7 +89,7 @@ jobs:
           DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
           SEOUL_NEWS_API_KEY: ${{ secrets.SEOUL_NEWS_API_KEY }}
         run: >-
-          uv run --no-dev --frozen pipeline collect --source seoul --source-board 25
+          uv run --no-dev --frozen pipeline collect --source seoul
           --mode "${{ steps.mode.outputs.mode }}"
       - name: Process nowon summary
         if: ${{ !cancelled() && vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' }}

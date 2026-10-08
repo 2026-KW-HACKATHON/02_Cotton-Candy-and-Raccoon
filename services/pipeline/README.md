@@ -1389,7 +1389,7 @@ exit code, 외부 요청 순서, Gemini 호출 수, 테이블별 행 수, 저장
    등록 여부를 확인한다. 서울시를 켜려면 `SEOUL_NEWS_API_KEY`도 필요하다.
 3. DB 준비 후 `PIPELINE_AI_PROCESSING_ENABLED=true`로 설정하고 검증할 브랜치를 선택해
    `mode=new`, `processing_limit=1`로 수동 실행한다. 이 플래그 변경은 다른 실행에도 적용된다.
-   현재 서울시 수집 workflow는 25번 분야만 수집하므로 전 분야 수집 완료로 기록하지 않는다.
+   서울시 수집은 지원하는 8개 분야(21~27, 30)를 모두 순회한다. 전체 과거 자료를 한 번에 수집하는 모드는 아니며, 분야별 최초/증분 수집 정책을 따른다.
 4. Actions Summary의 커밋·브랜치·기능 활성 상태와 각 단계 JSON의 공지 ID를 기록한다.
    AI 비활성 상태의 녹색 실행을 요약 생성 성공으로 보지 않는다. 성공한 ID의 목록·상세를
    publishable key로 REST 조회하여 저장 결과와 일치하는지 확인한다. SQL Editor의 관리자 조회만으로
