@@ -10,14 +10,16 @@ export function NoticeDocumentText({
   terms,
   easy,
   onTermPress,
+  comfortable = false,
 }: {
   text: string;
   terms?: readonly GlossaryTerm[];
   easy: boolean;
   onTermPress: (term: GlossaryTerm) => void;
+  comfortable?: boolean;
 }) {
   return (
-    <View style={styles.paragraphs}>
+    <View style={[styles.paragraphs, comfortable && { gap: 16 }]}>
       {text.split("\n").map((paragraph, index) => (
         <View key={index} style={styles.paragraph}>
           {splitGlossaryText(
@@ -32,16 +34,20 @@ export function NoticeDocumentText({
                     accessibilityRole="button"
                     accessibilityLabel={`${part.text}, ${easy ? "원문 단어" : "단어 뜻"} 보기`}
                     onPress={() => onTermPress(part.term!)}
-                    hitSlop={{ top: 10, bottom: 10 }}
-                    style={styles.link}
+                    hitSlop={comfortable ? undefined : { top: 10, bottom: 10 }}
+                    style={[styles.link, comfortable && styles.comfortableLink]}
                   >
-                    <AppText size={16} lineHeight={24} style={styles.linkText}>
+                    <AppText
+                      size={comfortable ? 20 : 16}
+                      lineHeight={comfortable ? 30 : 24}
+                      style={styles.linkText}
+                    >
                       {part.text}
                     </AppText>
                     <Image
                       source={require("@/assets/figma/detail-overlay/word-underline.svg")}
                       contentFit="fill"
-                      style={styles.underline}
+                      style={[styles.underline, comfortable && { bottom: 12 }]}
                     />
                   </Pressable>,
                 ]
@@ -51,8 +57,9 @@ export function NoticeDocumentText({
                   .map((word, wordIndex) => (
                     <AppText
                       key={`${partIndex}-${wordIndex}`}
-                      size={16}
-                      lineHeight={24}
+                      size={comfortable ? 20 : 16}
+                      lineHeight={comfortable ? 30 : 24}
+                      style={comfortable && { maxWidth: "100%" }}
                     >
                       {word}
                     </AppText>
@@ -68,6 +75,7 @@ const styles = StyleSheet.create({
   paragraph: { flexDirection: "row", flexWrap: "wrap", alignItems: "center" },
   // 링크의 상하 여백이 본문 줄간격을 늘리지 않도록 터치 여유는 hitSlop으로 제공한다.
   link: { minHeight: 24, maxWidth: "100%" },
+  comfortableLink: { minHeight: 56, paddingVertical: 12 },
   linkText: { color: COLORS.primary },
   underline: {
     position: "absolute",

@@ -21,13 +21,16 @@ export function NoticeTermOverlay({
   term,
   easy,
   onClose,
+  comfortable = false,
 }: {
   term: GlossaryTerm | null;
   easy: boolean;
   onClose: () => void;
+  comfortable?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
+  const bottomPadding = Math.max(comfortable ? 24 : 54, insets.bottom + 16);
   const [offset] = useState(() => new Animated.Value(0));
   const [reduceMotion, setReduceMotion] = useState(true);
   useEffect(() => {
@@ -67,7 +70,7 @@ export function NoticeTermOverlay({
           styles.overlay,
           {
             paddingTop: insets.top + 16,
-            paddingBottom: Math.max(54, insets.bottom + 16),
+            paddingBottom: bottomPadding,
           },
         ]}
       >
@@ -82,19 +85,24 @@ export function NoticeTermOverlay({
           style={[
             styles.sheet,
             {
-              maxHeight:
-                height - insets.top - Math.max(54, insets.bottom + 16) - 16,
+              maxHeight: height - insets.top - bottomPadding - 16,
               transform: [{ translateY: offset }],
             },
           ]}
         >
-          <ScrollView contentContainerStyle={styles.content} bounces={false}>
+          <ScrollView
+            contentContainerStyle={[
+              styles.content,
+              comfortable && { paddingHorizontal: 20 },
+            ]}
+            bounces={false}
+          >
             <View style={styles.handle} />
             <View style={styles.header}>
               <AppText
                 variant="bold"
-                size={16}
-                lineHeight={26}
+                size={comfortable ? 20 : 16}
+                lineHeight={comfortable ? 30 : 26}
                 style={{ flex: 1 }}
               >
                 {easy ? "원문 단어" : "단어 뜻"}
@@ -103,36 +111,54 @@ export function NoticeTermOverlay({
                 accessibilityRole="button"
                 accessibilityLabel="닫기"
                 onPress={onClose}
+                style={comfortable && styles.comfortableClose}
               >
-                <Image
-                  source={require("@/assets/figma/detail-overlay/close.svg")}
-                  style={{ width: 44, height: 44 }}
-                />
+                {comfortable ? (
+                  <AppText
+                    variant="bold"
+                    size={20}
+                    lineHeight={30}
+                    style={{ color: COLORS.primary }}
+                  >
+                    닫기
+                  </AppText>
+                ) : (
+                  <Image
+                    source={require("@/assets/figma/detail-overlay/close.svg")}
+                    style={{ width: 44, height: 44 }}
+                  />
+                )}
               </Pressable>
             </View>
             <AppText
               variant="display"
               size={24}
-              lineHeight={34}
+              lineHeight={comfortable ? 36 : 34}
               style={{ color: COLORS.primary }}
             >
               {term?.original}
             </AppText>
             {!easy && (
-              <AppText size={16} lineHeight={26}>
+              <AppText
+                size={comfortable ? 20 : 16}
+                lineHeight={comfortable ? 30 : 26}
+              >
                 {term?.meaning ?? term?.plain}
               </AppText>
             )}
             <View style={styles.example}>
               <AppText
                 variant="medium"
-                size={14}
-                lineHeight={22}
+                size={comfortable ? 20 : 14}
+                lineHeight={comfortable ? 30 : 22}
                 style={{ color: COLORS.primary }}
               >
                 {easy ? "쉬운말 표현" : term?.example ? "예시" : "쉬운말 표현"}
               </AppText>
-              <AppText size={16} lineHeight={26}>
+              <AppText
+                size={comfortable ? 20 : 16}
+                lineHeight={comfortable ? 30 : 26}
+              >
                 {easy ? term?.plain : (term?.example ?? term?.plain)}
               </AppText>
             </View>
@@ -168,6 +194,15 @@ const styles = StyleSheet.create({
     alignSelf: "center",
   },
   header: { flexDirection: "row", gap: 12, alignItems: "center" },
+  comfortableClose: {
+    minWidth: 80,
+    minHeight: 56,
+    padding: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.soft,
+    borderRadius: 12,
+  },
   example: {
     backgroundColor: COLORS.soft,
     padding: 16,
