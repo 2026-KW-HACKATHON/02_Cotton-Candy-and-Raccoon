@@ -1,7 +1,7 @@
 """Processing scope stays truthful across DB saves, legacy caches and source edits."""
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from unittest.mock import MagicMock
 
@@ -50,7 +50,7 @@ def _insert_notice(conn, body_html: str | None, *, title: str = "익일 안내")
 
 
 def _request(**_kwargs: object) -> str:
-    return json.dumps({"changes": []}, ensure_ascii=False)
+    return json.dumps({"changes": [], "dictionary_candidates": []}, ensure_ascii=False)
 
 
 def _result(source: NoticeGlossaryInput) -> EasyLanguageResult:
@@ -130,7 +130,12 @@ def test_title_replacement_is_rejected_without_storing_success(service_db) -> No
 
     def title_change(**_kwargs: object) -> str:
         return json.dumps(
-            {"changes": [{"original": "익일", "replacement": "다음 날", "context": "익일 안내"}]},
+            {
+                "changes": [
+                    {"original": "익일", "replacement": "다음 날", "context": "익일 안내"}
+                ],
+                "dictionary_candidates": [],
+            },
             ensure_ascii=False,
         )
 
@@ -269,7 +274,7 @@ def test_scope_fill_requires_unchanged_cache_token(easy_db) -> None:
     assert _raw_scope(easy_db, source.notice_id) == (None, None)
 
 
-def test_old_worker_source_change_clears_scope_then_cache_fills_without_api(service_db) -> None:
+def test_old_worker_source_change_clears_scope_and_reextracts_candidates(service_db) -> None:
     source = _insert_notice(service_db, "<p>이전 본문</p>")
     save_notice_easy_text(service_db, _result(source))
     assert _raw_scope(service_db, source.notice_id) == (True, False)
@@ -296,12 +301,19 @@ def test_old_worker_source_change_clears_scope_then_cache_fills_without_api(serv
     assert _raw_scope(service_db, source.notice_id) == (None, None)
 
     current = load_notice_glossary_input(service_db, source.notice_id)
-    request = MagicMock(side_effect=AssertionError("old cache must not call Gemini"))
+    request = MagicMock(side_effect=_request)
     service_db.commit()
-    cached = simplify_and_store_notice(service_db, current, request=request)
+    cached = simplify_and_store_notice(
+        service_db,
+        current,
+        api_key="fake",
+        request=request,
+        clock=lambda: _NOW + timedelta(seconds=2),
+    )
     assert (cached.body_text_present, cached.attachment_content_included) == (True, False)
+    assert cached.dictionary_candidates == ()
     assert _raw_scope(service_db, source.notice_id) == (True, False)
-    request.assert_not_called()
+    request.assert_called_once()
 
 
 @pytest.mark.parametrize("role", ["anon", "authenticated"])

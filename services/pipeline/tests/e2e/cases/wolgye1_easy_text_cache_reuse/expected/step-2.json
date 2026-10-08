@@ -82,11 +82,12 @@
           }
         ],
         "model": "gemini-3.5-flash-lite",
-        "prompt_version": "easy-language-v7",
+        "prompt_version": "easy-language-v8",
         "attempt_count": 1,
         "generated_at": "<unchanged>",
         "body_text_present": true,
-        "attachment_content_included": false
+        "attachment_content_included": false,
+        "dictionary_candidates": []
       },
       "dong/1042/20261007090000402": {
         "notice_revision": "42e9bbac18be993a2868ea49f79f545963eca31fa0b02b6ac28005d587b2729b",
@@ -103,11 +104,12 @@
           }
         ],
         "model": "gemini-3.5-flash-lite",
-        "prompt_version": "easy-language-v7",
+        "prompt_version": "easy-language-v8",
         "attempt_count": 1,
         "generated_at": "<unchanged>",
         "body_text_present": true,
-        "attachment_content_included": false
+        "attachment_content_included": false,
+        "dictionary_candidates": []
       }
     },
     "notice_summary_executions": {}
@@ -173,11 +175,12 @@
           }
         ],
         "model": "gemini-3.5-flash-lite",
-        "prompt_version": "easy-language-v7",
+        "prompt_version": "easy-language-v8",
         "attempt_count": 1,
         "generated_at": "<unchanged>",
         "body_text_present": true,
-        "attachment_content_included": false
+        "attachment_content_included": false,
+        "dictionary_candidates": []
       },
       "dong/1042/20261007090000402": {
         "notice_revision": "42e9bbac18be993a2868ea49f79f545963eca31fa0b02b6ac28005d587b2729b",
@@ -194,11 +197,12 @@
           }
         ],
         "model": "gemini-3.5-flash-lite",
-        "prompt_version": "easy-language-v7",
+        "prompt_version": "easy-language-v8",
         "attempt_count": 1,
         "generated_at": "<unchanged>",
         "body_text_present": true,
-        "attachment_content_included": false
+        "attachment_content_included": false,
+        "dictionary_candidates": []
       }
     }
   }

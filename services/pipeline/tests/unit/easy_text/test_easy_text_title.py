@@ -70,7 +70,8 @@ def test_gemini_receives_body_only_and_exact_title_is_retained(service_db):
             {
                 "changes": [
                     {"original": "익일", "replacement": "다음 날", "context": "익일 방문하세요."}
-                ]
+                ],
+                "dictionary_candidates": [],
             },
             ensure_ascii=False,
         )

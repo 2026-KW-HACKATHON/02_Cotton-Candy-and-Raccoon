@@ -33,6 +33,7 @@ def offline(monkeypatch, tmp_path):
                         "context": source.text,
                     }
                 ],
+                "dictionary_candidates": [],
             },
             ensure_ascii=False,
         )

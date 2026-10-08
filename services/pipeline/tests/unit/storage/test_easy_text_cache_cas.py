@@ -7,7 +7,7 @@ import pytest
 from psycopg.types.json import Jsonb
 from support.collect_easy_text_storage import committed_easy_db as committed_easy_db
 from support.easy_text_cache_cas import _alternative_result
-from support.easy_text_storage import _NOW, _notice, _result
+from support.easy_text_storage import _NOW, _candidate_result, _notice, _result
 from support.easy_text_storage import easy_db as easy_db
 from support.easy_text_storage import service_db as service_db
 
@@ -147,6 +147,10 @@ def test_changed_conversion_invalidates_token_with_generation_and_clock_unchange
             source.notice_id,
         ),
     )
+    # A worker that omits candidates cannot attach the old list to its conversion.
+    edited = EasyLanguageResult.model_validate(
+        {**edited.model_dump(), "dictionary_candidates": None}
+    )
     assert get_notice_easy_text(easy_db, source.notice_id) == edited
     assert get_notice_easy_text_cache_token(easy_db, source.notice_id) != token
 
@@ -249,3 +253,47 @@ def test_invalid_cache_token_is_rejected_before_database_access(token):
     conn.cursor.assert_not_called()
     conn.execute.assert_not_called()
     conn.transaction.assert_not_called()
+
+
+@pytest.mark.parametrize("loses_cas", [False, True], ids=["equal-clock", "stale-token"])
+def test_skipped_save_never_restores_candidates_into_another_snapshot(easy_db, loses_cas):
+    source = _notice(easy_db)
+    current = EasyLanguageResult.model_validate(
+        {**_result(source).model_dump(), "dictionary_candidates": None}
+    )
+    save_notice_easy_text(easy_db, current)
+    token = get_notice_easy_text_cache_token(easy_db, source.notice_id)
+    if loses_cas:
+        current = _result(source, _NOW + timedelta(seconds=1))
+        save_notice_easy_text(easy_db, current)
+        assert get_notice_easy_text_cache_token(easy_db, source.notice_id) != token
+
+    save_notice_easy_text(
+        easy_db,
+        _candidate_result(source, _NOW + timedelta(seconds=2) if loses_cas else _NOW),
+        expected_cache_token=token,
+    )
+
+    assert get_notice_easy_text(easy_db, source.notice_id) == current
+
+
+def test_candidate_only_change_invalidates_raw_cache_token(easy_db):
+    source = _notice(easy_db)
+    current = _result(source)
+    save_notice_easy_text(easy_db, current)
+    token = get_notice_easy_text_cache_token(easy_db, source.notice_id)
+    winner = _candidate_result(source)
+    easy_db.execute(
+        "update public.notice_easy_texts set dictionary_candidates = %s where notice_id = %s",
+        (
+            Jsonb([item.model_dump(mode="json") for item in winner.dictionary_candidates]),
+            source.notice_id,
+        ),
+    )
+    assert get_notice_easy_text_cache_token(easy_db, source.notice_id) != token
+
+    save_notice_easy_text(
+        easy_db, _result(source, _NOW + timedelta(seconds=1)), expected_cache_token=token
+    )
+
+    assert get_notice_easy_text(easy_db, source.notice_id) == winner

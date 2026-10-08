@@ -9,6 +9,7 @@ import pytest
 from psycopg.conninfo import conninfo_to_dict
 
 from pipeline.glossary.easy_language import (
+    EasyLanguageResult,
     simplify_notice,
 )
 from pipeline.glossary.notice_service import load_notice_glossary_input
@@ -17,6 +18,7 @@ from support.paths import REPO_ROOT
 
 __all__ = [
     "_NOW",
+    "_candidate_result",
     "_easy_db_connection",
     "_notice",
     "_request",
@@ -101,6 +103,7 @@ def _request(**kwargs):
                     "context": "구비서류를 지참하세요.",
                 }
             ],
+            "dictionary_candidates": [],
         },
         ensure_ascii=False,
     )
@@ -108,3 +111,22 @@ def _request(**kwargs):
 
 def _result(source, now=_NOW):
     return simplify_notice(source, api_key="fake", request=_request, clock=lambda: now)
+
+
+def _candidate_result(source, now=_NOW):
+    original = "구비서류를"
+    start = source.text.index(original)
+    return EasyLanguageResult.model_validate(
+        {
+            **_result(source, now).model_dump(),
+            "dictionary_candidates": [
+                {
+                    "original": original,
+                    "query_word": "구비서류",
+                    "context": "구비서류를 지참하세요.",
+                    "start": start,
+                    "end": start + len(original),
+                }
+            ],
+        }
+    )
