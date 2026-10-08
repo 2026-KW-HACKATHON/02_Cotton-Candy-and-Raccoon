@@ -12,6 +12,7 @@ export function NoticeDocumentText({
   onTermPress,
   comfortable = false,
   parts,
+  interactive = true,
 }: {
   text: string;
   terms?: readonly GlossaryTerm[];
@@ -19,6 +20,7 @@ export function NoticeDocumentText({
   onTermPress: (term: GlossaryTerm) => void;
   comfortable?: boolean;
   parts?: DocumentPart[];
+  interactive?: boolean;
 }) {
   const paragraphs: DocumentPart[][] = [[]];
   const sourceParts =
@@ -40,7 +42,11 @@ export function NoticeDocumentText({
                     key={`${partIndex}-term`}
                     accessibilityRole="button"
                     accessibilityLabel={`${part.text}, ${easy ? "원문 단어" : "단어 뜻"} 보기`}
-                    onPress={() => onTermPress(part.term!)}
+                    disabled={!interactive}
+                    accessibilityState={{ disabled: !interactive }}
+                    onPress={
+                      interactive ? () => onTermPress(part.term!) : undefined
+                    }
                     hitSlop={comfortable ? undefined : { top: 10, bottom: 10 }}
                     style={[styles.link, comfortable && styles.comfortableLink]}
                   >
