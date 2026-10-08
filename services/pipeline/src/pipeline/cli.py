@@ -5,7 +5,6 @@ from collections.abc import Sequence
 
 import psycopg
 
-from pipeline.after_collect import AfterCollectEasyText
 from pipeline.attachments.nowon_html import (
     AttachmentError,
     extract_files,
@@ -21,6 +20,11 @@ from pipeline.collect_wolgye1 import (
     collect_and_save_wolgye1,
     collect_and_save_wolgye1_scheduled,
     collect_one_wolgye1,
+)
+from pipeline.collection_processing import (
+    CollectionPostprocessing,
+    create_ai_processing,
+    create_easy_text_processing,
 )
 from pipeline.config import (
     ConfigError,
@@ -41,6 +45,20 @@ from pipeline.transform.dong import DongTransformError
 from pipeline.transform.gemini_prompt import GeminiConfigurationError, load_gemini_api_key
 from pipeline.transform.nowon import TransformError, transform_nowon_notice
 from pipeline.transform.seoul import SeoulTransformError
+
+
+def _add_processing_options(parser: argparse.ArgumentParser) -> None:
+    processing = parser.add_mutually_exclusive_group()
+    processing.add_argument(
+        "--easy-text",
+        action="store_true",
+        help="convert saved bodies after raw collection finishes",
+    )
+    processing.add_argument(
+        "--process-ai",
+        action="store_true",
+        help="run both AI features after collection (requires the common processing runner)",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -70,11 +88,7 @@ def build_parser() -> argparse.ArgumentParser:
     collect.add_argument("--index", type=int, default=1, help="Seoul API row index")
     collect.add_argument("--post-sn", help="select a Wolgye 1-dong post on the chosen list page")
     collect.add_argument("--page", type=int, default=1, help="Wolgye 1-dong list page (default: 1)")
-    collect.add_argument(
-        "--easy-text",
-        action="store_true",
-        help="convert the saved body to easy text after saving",
-    )
+    _add_processing_options(collect)
     collect_many = subparsers.add_parser(
         "collect",
         help="collect and save source notices independently to DB",
@@ -95,11 +109,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["new", "refresh"],
         help="new posts at 09/13 or recent-post refresh at 17",
     )
-    collect_many.add_argument(
-        "--easy-text",
-        action="store_true",
-        help="convert each saved body to easy text after saving",
-    )
+    _add_processing_options(collect_many)
     summarize = subparsers.add_parser(
         "summarize-one",
         help="summarize one stored notice with Gemini and save the result to DB",
@@ -108,26 +118,31 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _print_summary(summary: dict[str, object], processor: AfterCollectEasyText | None) -> None:
+def _collection_processor(
+    args: argparse.Namespace, database: DatabaseSettings,
+) -> CollectionPostprocessing | None:
+    if args.process_ai:
+        return create_ai_processing(database, source=args.source)
+    if args.easy_text:
+        return create_easy_text_processing(database)
+    return None
+
+
+def _print_summary(
+    summary: dict[str, object], processor: CollectionPostprocessing | None,
+) -> None:
     if processor is not None:
-        summary["easy_text"] = processor.report()
+        processor.finish()
+        summary.update(processor.report())
     print(json.dumps(summary, ensure_ascii=True))
 
 
-def _exit_code(complete: bool, processor: AfterCollectEasyText | None) -> int:
+def _exit_code(complete: bool, processor: CollectionPostprocessing | None) -> int:
     return 0 if complete and (processor is None or processor.complete) else 1
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-
-    if args.command in ("collect", "collect-one") and args.source == "seoul" and args.easy_text:
-        print(
-            "설정 오류: 서울시 수집 후 쉬운말 자동 처리는 아직 지원하지 않습니다. "
-            "--easy-text는 nowon·wolgye1 출처에서 사용하세요.",
-            file=sys.stderr,
-        )
-        return 2
 
     if args.command == "summarize-one":
         return _summarize_one(args)
@@ -229,10 +244,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             try:
                 settings = WolgyeSettings.from_env()
                 database = DatabaseSettings.from_env()
+                processor = _collection_processor(args, database)
             except ConfigError as error:
                 print(f"설정 오류: {error}", file=sys.stderr)
                 return 2
-            processor = AfterCollectEasyText(database) if args.easy_text else None
             after_save = {"after_save": processor} if processor is not None else {}
             try:
                 if args.mode:
@@ -303,10 +318,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             settings = NowonSettings.from_env()
             database = DatabaseSettings.from_env()
+            processor = _collection_processor(args, database)
         except ConfigError as error:
             print(f"설정 오류: {error}", file=sys.stderr)
             return 2
-        processor = AfterCollectEasyText(database) if args.easy_text else None
         after_save = {"after_save": processor} if processor is not None else {}
         try:
             if args.mode:
@@ -383,6 +398,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             try:
                 settings = SeoulNewsSettings.from_env()
                 database = DatabaseSettings.from_env()
+                processor = _collection_processor(args, database)
             except ConfigError as error:
                 print(f"설정 오류: {error}", file=sys.stderr)
                 return 2
@@ -401,26 +417,26 @@ def main(argv: Sequence[str] | None = None) -> int:
             ) as error:
                 print(settings.redact(f"수집·저장 실패: {error}"), file=sys.stderr)
                 return 1
-            print(
-                json.dumps(
-                    {
-                        "notice_id": notice_id,
-                        "category": record.category,
-                        "source_board": record.source_board,
-                        "post_sn": record.post_sn,
-                        "title": record.title,
-                        "registered_on": record.registered_on.isoformat(),
-                        "url": record.url,
-                        "license_type": record.license_type,
-                        "body_html_length": len(record.body_html or ""),
-                        "attachment_count": sum(f.kind == "attachment" for f in files),
-                        "inline_image_count": sum(f.kind == "inline_image" for f in files),
-                        "stored": True,
-                    },
-                    ensure_ascii=True,
-                )
+            if processor is not None:
+                processor(notice_id)
+            _print_summary(
+                {
+                    "notice_id": notice_id,
+                    "category": record.category,
+                    "source_board": record.source_board,
+                    "post_sn": record.post_sn,
+                    "title": record.title,
+                    "registered_on": record.registered_on.isoformat(),
+                    "url": record.url,
+                    "license_type": record.license_type,
+                    "body_html_length": len(record.body_html or ""),
+                    "attachment_count": sum(f.kind == "attachment" for f in files),
+                    "inline_image_count": sum(f.kind == "inline_image" for f in files),
+                    "stored": True,
+                },
+                processor,
             )
-            return 0
+            return _exit_code(True, processor)
         if args.source_board is not None or args.index != 1:
             print(
                 "설정 오류: --source-board·--index는 seoul 출처에만 사용할 수 있습니다.",
@@ -437,6 +453,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             try:
                 settings = WolgyeSettings.from_env()
                 database = DatabaseSettings.from_env()
+                processor = _collection_processor(args, database)
             except ConfigError as error:
                 print(f"설정 오류: {error}", file=sys.stderr)
                 return 2
@@ -455,7 +472,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             except (psycopg.Error, ValueError):
                 print("DB 저장 실패: 연결 또는 저장 작업을 확인하세요.", file=sys.stderr)
                 return 1
-            processor = AfterCollectEasyText(database) if args.easy_text else None
             if processor is not None:
                 processor(notice_id)
             _print_summary(
@@ -484,6 +500,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             settings = NowonSettings.from_env()
             database = DatabaseSettings.from_env()
+            processor = _collection_processor(args, database)
         except ConfigError as error:
             print(f"설정 오류: {error}", file=sys.stderr)
             return 2
@@ -512,7 +529,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         except ValueError as error:
             print(settings.redact(f"DB 저장 실패: {error}"), file=sys.stderr)
             return 1
-        processor = AfterCollectEasyText(database) if args.easy_text else None
         if processor is not None:
             processor(notice_id)
         # Print a bounded summary; retain full original HTML in the returned model.
@@ -546,44 +562,44 @@ def _collect_seoul(args: argparse.Namespace) -> int:
     try:
         settings = SeoulNewsSettings.from_env()
         database = DatabaseSettings.from_env()
+        processor = _collection_processor(args, database)
         result = collect_seoul_scheduled(
             settings,
             database,
             mode=args.mode,
             source_board=args.source_board,
+            **({"after_save": processor} if processor is not None else {}),
         )
     except (ConfigError, ValueError) as error:
         print(f"서울시 수집 실패: {error}", file=sys.stderr)
         return 1 if isinstance(error, SeoulStorageError) else 2
-    print(
-        json.dumps(
-            {
-                "mode": result.mode,
-                "selected_count": sum(b.selected_count for b in result.boards),
-                "saved_count": sum(b.saved_count for b in result.boards),
-                "complete": result.complete,
-                "boards": [
-                    {
-                        "source_board": b.source_board,
-                        "total_count": b.total_count,
-                        "selected_count": b.selected_count,
-                        "saved_count": b.saved_count,
-                        "pages_read": b.pages_read,
-                        "initial_baseline": b.initial_baseline,
-                        "listing_complete": b.listing_complete,
-                        "complete": b.complete,
-                        "failures": [
-                            {"post_sn": f.post_sn, "stage": f.stage, "reason_code": f.reason_code}
-                            for f in b.failures
-                        ],
-                    }
-                    for b in result.boards
-                ],
-            },
-            ensure_ascii=True,
-        )
+    _print_summary(
+        {
+            "mode": result.mode,
+            "selected_count": sum(b.selected_count for b in result.boards),
+            "saved_count": sum(b.saved_count for b in result.boards),
+            "complete": result.complete,
+            "boards": [
+                {
+                    "source_board": b.source_board,
+                    "total_count": b.total_count,
+                    "selected_count": b.selected_count,
+                    "saved_count": b.saved_count,
+                    "pages_read": b.pages_read,
+                    "initial_baseline": b.initial_baseline,
+                    "listing_complete": b.listing_complete,
+                    "complete": b.complete,
+                    "failures": [
+                        {"post_sn": f.post_sn, "stage": f.stage, "reason_code": f.reason_code}
+                        for f in b.failures
+                    ],
+                }
+                for b in result.boards
+            ],
+        },
+        processor,
     )
-    return 0 if result.complete else 1
+    return _exit_code(result.complete, processor)
 
 
 def _summarize_one(args: argparse.Namespace) -> int:

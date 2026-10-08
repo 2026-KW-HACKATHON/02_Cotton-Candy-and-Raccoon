@@ -788,6 +788,47 @@ model=DEFAULT_MODEL)`을 호출합니다.
   데이터(검증을 통과하지 못하는 원문 URL 등)와 프로그래밍 오류는 예외를 그대로 올립니다.
 - 대상 선택, 예약 실행, 자동 재시도는 이 함수 밖의 별도 작업입니다.
 
+## 수집 후 처리 연결 (#62, 선행 구현)
+
+기본 `collect` / `collect-one`은 원문만 저장한다. `--easy-text`를 주면 노원구·월계1동·서울시
+모두 원문 저장을 확정한 후, **해당 수집 호출이 종료되고 수집 DB 연결이 닫힌 뒤** 쉬운말을
+처리한다. 한 공지의 AI 대기가 같은 수집 호출의 다음 원문 저장을 막지 않는다.
+
+```bash
+pipeline collect --source nowon --mode new --easy-text
+pipeline collect --source wolgye1 --mode refresh --easy-text
+pipeline collect --source seoul --source-board 25 --mode new --easy-text
+pipeline collect-one --source seoul --source-board 25 --easy-text
+```
+
+본문 텍스트가 없으면 쉬운말은 `no_body_text`로 건너뛰고 원문·파일은 유지한다. 이것은 4카드의
+입력 가능 여부 판정이 아니다. 파일 전용 공지의 요약은 기존 입력 준비 서비스가 따로 판단한다.
+수집 보고서의 `complete`는 원문 수집 상태이며 `easy_text.complete`는 쉬운말 상태다.
+원문 수집 또는 쉬운말 처리가 실패하면 종료 코드는 1이다. 정상 캐시를 재사용한 쉬운말도 기존과
+같이 `successful_count`에 포함한다.
+
+`--process-ai`는 두 AI 기능을 연결할 옵션으로 예약되어 있다. 현재 #60·#61 어댑터가 없어
+**수집·DB 쓰기·API 호출 전에 설정 오류(exit 2)**로 종료한다. `--easy-text`와 함께 사용할 수 없다.
+운영 워크플로에서 이 옵션을 활성화하는 작업은 실제 실행기 통합 후 진행한다.
+
+연결 지점은 `collection_processing.create_ai_processing(database, source=...)`다. #61은
+`CollectionPostprocessing(("summary", "easy_text"), runner)` 어댑터를 반환하면 된다.
+
+- 수집기는 커밋이 성공한 공지 ID만 콜백에 전달한다. 콜백은 중복 ID를 제거해 메모리에 모으며
+  DB 작업이나 AI 호출을 하지 않는다. 영구 작업 큐가 아니므로 재시작 복구는 #61이 담당한다.
+- `runner(tuple_of_notice_ids)`는 수집 종료 후 한 번 호출된다. 빈 튜플도 전달하므로 #61이 해당
+  출처의 과거 미생성·실패 작업을 선택할 수 있다. 이 ID 목록을 전체 재처리 대상의 제한으로 쓰지 않는다.
+- 실행기는 원문 버전·점유·캐시·재시도·중단 회수를 관리하고, #60의 시간 제한을 사용한다.
+  `summarize_one()`과 쉬운말 서비스를 독립 실행해 한 기능의 실패가 다른 기능을 막지 않게 한다.
+- 반환 형식은 `{"summary": {..., "complete": bool}, "easy_text": {..., "complete": bool}}`이다.
+  저장 후 재조회한 결과로 기능별 보고서를 구성한다. 누락된 결과나 실행기 예외는 성공으로 집계하지 않는다.
+- #54의 사전 연결은 쉬운말 저장 성공 뒤 연결한다. #58 공개 view와 #26 결과 보존 계약은 별도 통합한다.
+
+검증은 기존 노원·월계 e2e와 `seoul_easy_text_after_collect` 케이스를 사용한다. 전체 원문이 별도
+DB 연결에서 조회된 후 첫 AI 요청이 발생하는지, 부분 실패·재수집 캐시·커밋 실패 미호출을 확인한다.
+두 AI의 실제 자동 처리, 모든 출처 수집 후 운영 배치 실행, 시간 제한·재시도·앱 공개 view 통합은
+선행 이슈와 연결한 뒤 검증해야 한다.
+
 ## 표준국어대사전 조회와 공유 캐시 (#53)
 
 `pipeline.glossary.dictionary_service.lookup_dictionary()`는 검색용 표제형인

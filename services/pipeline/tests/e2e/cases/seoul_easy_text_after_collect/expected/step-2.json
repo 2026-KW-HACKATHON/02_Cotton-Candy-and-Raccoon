@@ -1,0 +1,118 @@
+{
+  "exit_code": 0,
+  "report": {
+    "notice_id": 1,
+    "category": "seoul",
+    "source_board": "25",
+    "post_sn": "000777",
+    "title": "환경 캠페인 안내",
+    "registered_on": "2026-10-07",
+    "url": "https://news.seoul.go.kr/env/archives/000777",
+    "license_type": null,
+    "body_html_length": 21,
+    "attachment_count": 0,
+    "inline_image_count": 0,
+    "stored": true,
+    "easy_text": {
+      "status": "complete",
+      "complete": true,
+      "attempted_count": 1,
+      "successful_count": 1,
+      "skipped_count": 0,
+      "failed_count": 0,
+      "skipped": [],
+      "failures": []
+    }
+  },
+  "stderr": [],
+  "http_calls": [
+    "seoul_api 25 1-1"
+  ],
+  "gemini_calls": {},
+  "db": {
+    "notices": {
+      "seoul/25/000777": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "환경 캠페인 안내",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "url": "https://news.seoul.go.kr/env/archives/000777",
+        "body_html": "<p>환경 캠페인에 참여하세요.</p>",
+        "license_type": null,
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<changed>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {
+      "seoul/25/000777": {
+        "notice_revision": "d35124e87fb139a0c910b07e7434c1957d264206c27c8d54a0e2783e7d678c52",
+        "source_hash": "07aa80eae137155050a28d65df1e9a60c583273c75d1cc7f1460bc1baec57694",
+        "original_text": "환경 캠페인 안내\n환경 캠페인에 참여하세요.",
+        "easy_text": "환경 캠페인 안내\n환경 캠페인에 참여하세요.",
+        "changes": [],
+        "model": "gemini-3.5-flash-lite",
+        "prompt_version": "easy-language-v8",
+        "attempt_count": 1,
+        "generated_at": "<unchanged>",
+        "body_text_present": true,
+        "attachment_content_included": false,
+        "dictionary_candidates": []
+      }
+    },
+    "notice_summary_executions": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_easy_texts": 1,
+    "notice_files": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 1,
+    "standard_dictionary_cache": 0
+  },
+  "anon": {
+    "notices": {
+      "seoul/25/000777": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "환경 캠페인 안내",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "url": "https://news.seoul.go.kr/env/archives/000777",
+        "body_html": "<p>환경 캠페인에 참여하세요.</p>",
+        "license_type": null,
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<changed>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {
+      "seoul/25/000777": {
+        "notice_revision": "d35124e87fb139a0c910b07e7434c1957d264206c27c8d54a0e2783e7d678c52",
+        "source_hash": "07aa80eae137155050a28d65df1e9a60c583273c75d1cc7f1460bc1baec57694",
+        "original_text": "환경 캠페인 안내\n환경 캠페인에 참여하세요.",
+        "easy_text": "환경 캠페인 안내\n환경 캠페인에 참여하세요.",
+        "changes": [],
+        "model": "gemini-3.5-flash-lite",
+        "prompt_version": "easy-language-v8",
+        "attempt_count": 1,
+        "generated_at": "<unchanged>",
+        "body_text_present": true,
+        "attachment_content_included": false,
+        "dictionary_candidates": []
+      }
+    }
+  }
+}
