@@ -187,7 +187,7 @@ npm run lint
 | 클래스 | `PascalCase`: `NoticeCollector` |
 | 상수 | `UPPER_SNAKE_CASE`: `REQUEST_TIMEOUT` |
 | 타입 | 함수 매개변수와 반환값에 타입 힌트 작성 |
-| 테스트 | `tests/unit/<영역>/test_<대상>.py`, 함수명 `test_<동작>` |
+| 테스트 | `tests/test_<대상>.py`, 함수명 `test_<동작>` |
 | DB 식별자 | 테이블·컬럼은 `snake_case` |
 
 - `sources`는 수집, `attachments`는 첨부 처리, `transform`은 변환, `glossary`는 용어 처리, `storage`는 저장소 접근을 담당합니다.
@@ -199,38 +199,6 @@ npm run lint
 - 설정과 비밀 값은 환경 변수로 주입하고, 새 변수를 추가하면 용도와 예시를 문서화합니다.
 - 프론트엔드에 전달하는 필드명·타입·필수 여부가 바뀌면 관련 문서와 PR에 명시합니다.
 - 핵심 변환 로직과 오류 처리는 pytest로 검증하고, 외부 서비스 호출은 테스트 대역을 활용합니다.
-
-#### 파이프라인 테스트 구조와 유지 기준
-
-`services/pipeline/tests`는 다음과 같이 나눕니다.
-
-| 위치 | 용도 |
-| --- | --- |
-| `tests/unit/<영역>/` | 영역별 단위 테스트. 영역은 `attachments`, `collect`, `easy_text`, `storage`, `summary`, `tooling` |
-| `tests/unit/legacy_flow/` | 수집에서 저장까지의 흐름 테스트. e2e 케이스로 대체한 뒤 삭제 |
-| `tests/e2e/` | API 응답 예시로 CLI를 실행해 DB 저장과 앱 노출을 기대값과 비교하는 케이스(`cases/`)와 하네스(`harness/`) |
-| `tests/support/` | 여러 테스트 파일이 함께 쓰는 helper, fixture, 경로 상수 |
-| `tests/fixtures/` | 테스트용 녹화 공지 등 자료 |
-
-- 테스트 파일끼리 서로 import하지 않습니다. 함께 쓰는 helper와 fixture는 `tests/support/`에 두고 `from support.<모듈> import ...`로 가져옵니다.
-- 파일 경로는 `Path(__file__)`로 계산하지 않고 `support.paths`의 상수를 사용합니다.
-- 새 test 파일은 기존 주제 파일에 넣을 수 없을 때만 만듭니다.
-
-남기는 단위 테스트:
-
-1. 외부 입력 방어: 다운로드 제한, redirect, 형식 서명, HWP 압축 해제 상한, URL 허용 목록, 마스킹 URL 복구
-2. 판정 로직: grounding(원문 대조), 일정 역할 검증, 유의사항 누락 검사, 요약 status 결정, 카드 주장 검증, 재요청 병합
-3. e2e로 재현하기 어려운 DB 동작: 저장 실패 시 롤백, 동시 실행 토큰 순서, 쉬운말 캐시 경쟁
-4. CI 보조 스크립트 검증
-
-지우거나 e2e로 옮기는 테스트:
-
-1. 수집에서 저장까지의 흐름을 확인하는 테스트
-2. 다른 테스트와 같은 경로를 반복 확인하는 테스트
-3. `_`로 시작하는 내부 함수의 세부 동작만 고정하는 테스트
-4. `supabase/tests`와 겹치는 권한 검사
-
-새 기능을 추가할 때는 정상 흐름을 e2e 케이스로, 경계값과 예외를 해당 `unit/` 파일에 추가합니다. 테스트를 삭제할 때는 같은 PR에서 대체 검증 위치를 밝힙니다.
 
 다음은 **파이프라인 프로젝트 설정을 추가한 뒤 사용할** CI 기준 명령입니다. 현재 골격 상태에서는 바로 실행할 수 없습니다.
 

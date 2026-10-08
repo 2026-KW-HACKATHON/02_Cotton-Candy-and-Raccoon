@@ -1,6 +1,0 @@
-# e2e inputs are recorded API responses: keep their bytes identical on every OS.
-services/pipeline/tests/e2e/cases/**/input/** -text
-# Expectations are written by the harness with LF line endings.
-services/pipeline/tests/e2e/cases/**/expected/*.json text eol=lf
-# Seed literals are hashed verbatim by PostgreSQL; CRLF changes those hashes.
-supabase/seed.sql text eol=lf
