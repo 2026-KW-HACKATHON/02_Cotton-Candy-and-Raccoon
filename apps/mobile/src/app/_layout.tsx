@@ -1,3 +1,4 @@
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -15,32 +16,34 @@ export default function RootLayout() {
     (state) => state.onboardingComplete,
   );
   return (
-    <SafeAreaProvider>
-      <QueryClientProvider client={queryClient}>
-        <StatusBar style="dark" />
-        {!startup.ready ? (
-          startup.assetsReady ? (
-            <AnimatedSplashScreen
-              onVisible={startup.onSplashVisible}
-              fontsReady={startup.fontsReady}
-            />
-          ) : null
-        ) : (
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: COLORS.surface },
-            }}
-          >
-            <Stack.Protected guard={onboardingComplete}>
-              <Stack.Screen name="(tabs)" />
-              <Stack.Screen name="settings" />
-              <Stack.Screen name="notice/[id]" />
-            </Stack.Protected>
-            <Stack.Screen name="onboarding" />
-          </Stack>
-        )}
-      </QueryClientProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <QueryClientProvider client={queryClient}>
+          <StatusBar style="dark" />
+          {!startup.ready ? (
+            startup.assetsReady ? (
+              <AnimatedSplashScreen
+                onVisible={startup.onSplashVisible}
+                fontsReady={startup.fontsReady}
+              />
+            ) : null
+          ) : (
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: COLORS.surface },
+              }}
+            >
+              <Stack.Protected guard={onboardingComplete}>
+                <Stack.Screen name="(tabs)" />
+                <Stack.Screen name="settings" />
+                <Stack.Screen name="notice/[id]" />
+              </Stack.Protected>
+              <Stack.Screen name="onboarding" />
+            </Stack>
+          )}
+        </QueryClientProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
