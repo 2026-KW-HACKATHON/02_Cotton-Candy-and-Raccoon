@@ -5,9 +5,6 @@
     "total_count": 1,
     "selected_count": 1,
     "saved_count": 1,
-    "skipped_count": 0,
-    "skipped": [],
-    "failed_count": 0,
     "pages_read": 1,
     "initial_baseline": false,
     "listing_complete": true,
@@ -32,7 +29,10 @@
         "pending_count": 0,
         "failures": []
       }
-    }
+    },
+    "skipped_count": 0,
+    "skipped": [],
+    "failed_count": 0
   },
   "stderr": [],
   "http_calls": [
@@ -67,10 +67,18 @@
         "notice_revision": "a848d30a1de9490a85bad59064739fd8f6820e2d27c864f8d0a6c4e689f32b5f",
         "source_hash": "a146c21250523fd2bc690af991f97da88235ffff58d0c9e53df417669977e317",
         "original_text": "구비서류 제출 안내\n📢 익일에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.",
-        "easy_text": "구비서류 제출 안내\n서류를 챙겨 방문하는 안내예요.\n\n무엇을 챙기나요?\n다음 날에는 필요한 서류를 챙겨서 방문해요.",
-        "changes": [],
+        "easy_text": "구비서류 제출 안내\n📢 다음 날에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.",
+        "changes": [
+          {
+            "context": "익일에는 구비서류를 지참하시어 방문하세요.",
+            "end": 17,
+            "original": "익일에는",
+            "replacement": "다음 날에는",
+            "start": 13
+          }
+        ],
         "model": "gemini-3.5-flash-lite",
-        "prompt_version": "easy-rewrite-v1",
+        "prompt_version": "easy-language-v8",
         "attempt_count": 1,
         "generated_at": "<unchanged>",
         "body_text_present": true,
@@ -104,26 +112,7 @@
             "query_word": "구비서류",
             "start": 64
           }
-        ],
-        "easy_result": {
-          "attachment_hint": null,
-          "headline": "서류를 챙겨 방문하는 안내예요.",
-          "intro": [],
-          "sections": [
-            {
-              "heading": "무엇을 챙기나요?",
-              "sentences": [
-                {
-                  "evidence": [
-                    "익일에는 구비서류를 지참하시어 방문하세요."
-                  ],
-                  "text": "다음 날에는 필요한 서류를 챙겨서 방문해요."
-                }
-              ],
-              "style": "paragraph"
-            }
-          ]
-        }
+        ]
       }
     },
     "notice_dictionary_links": {
@@ -133,13 +122,13 @@
           {
             "cache_key": "182e2d9c92c67507c720e227d5d715f3adacc3c9528c046df5ae1c0d89340151",
             "context": "익일에는 구비서류를 지참하시어 방문하세요.",
-            "easy_end": null,
-            "easy_expression": null,
-            "easy_start": null,
+            "easy_end": 25,
+            "easy_expression": "구비서류를",
+            "easy_start": 20,
             "end": 23,
             "error_code": null,
             "lookup_status": "pending",
-            "mapping_status": "original_only",
+            "mapping_status": "unchanged",
             "original": "구비서류를",
             "query_word": "구비서류",
             "retryable": true,
@@ -148,13 +137,13 @@
           {
             "cache_key": "d65ffdbbfc0244770dc35bdbd221a6a6f283ab383f93ee9c15387ff42dd76810",
             "context": "익일에는 구비서류를 지참하시어 방문하세요.",
-            "easy_end": null,
-            "easy_expression": null,
-            "easy_start": null,
+            "easy_end": 31,
+            "easy_expression": "지참하시어",
+            "easy_start": 26,
             "end": 29,
             "error_code": null,
             "lookup_status": "pending",
-            "mapping_status": "original_only",
+            "mapping_status": "unchanged",
             "original": "지참하시어",
             "query_word": "지참하다",
             "retryable": true,
@@ -163,13 +152,13 @@
           {
             "cache_key": "c9790facf0e746a22ddd66f3a0b3bea760b84d61707401f958a93d7a2bde8564",
             "context": "직권처리는 담당자가 진행합니다.",
-            "easy_end": null,
-            "easy_expression": null,
-            "easy_start": null,
+            "easy_end": 44,
+            "easy_expression": "직권처리는",
+            "easy_start": 39,
             "end": 42,
             "error_code": null,
             "lookup_status": "pending",
-            "mapping_status": "original_only",
+            "mapping_status": "unchanged",
             "original": "직권처리는",
             "query_word": "직권처리",
             "retryable": true,
@@ -178,13 +167,13 @@
           {
             "cache_key": "182e2d9c92c67507c720e227d5d715f3adacc3c9528c046df5ae1c0d89340151",
             "context": "재방문할 때에도 구비서류를 지참하시어 방문하세요.",
-            "easy_end": null,
-            "easy_expression": null,
-            "easy_start": null,
+            "easy_end": 71,
+            "easy_expression": "구비서류를",
+            "easy_start": 66,
             "end": 69,
             "error_code": null,
             "lookup_status": "pending",
-            "mapping_status": "original_only",
+            "mapping_status": "unchanged",
             "original": "구비서류를",
             "query_word": "구비서류",
             "retryable": true,
@@ -337,30 +326,19 @@
     "notice_easy_texts": {
       "nowon/1001/900551": {
         "original_text": "구비서류 제출 안내\n📢 익일에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.",
-        "easy_text": "구비서류 제출 안내\n서류를 챙겨 방문하는 안내예요.\n\n무엇을 챙기나요?\n다음 날에는 필요한 서류를 챙겨서 방문해요.",
-        "changes": [],
+        "easy_text": "구비서류 제출 안내\n📢 다음 날에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.",
+        "changes": [
+          {
+            "context": "익일에는 구비서류를 지참하시어 방문하세요.",
+            "end": 17,
+            "original": "익일에는",
+            "replacement": "다음 날에는",
+            "start": 13
+          }
+        ],
         "generated_at": "<unchanged>",
         "body_text_present": true,
-        "attachment_content_included": false,
-        "easy_result": {
-          "attachment_hint": null,
-          "headline": "서류를 챙겨 방문하는 안내예요.",
-          "intro": [],
-          "sections": [
-            {
-              "heading": "무엇을 챙기나요?",
-              "sentences": [
-                {
-                  "evidence": [
-                    "익일에는 구비서류를 지참하시어 방문하세요."
-                  ],
-                  "text": "다음 날에는 필요한 서류를 챙겨서 방문해요."
-                }
-              ],
-              "style": "paragraph"
-            }
-          ]
-        }
+        "attachment_content_included": false
       }
     },
     "app_notice_list": {
@@ -412,30 +390,19 @@
         "preparation_omissions": null,
         "files": [],
         "easy_original_text": "구비서류 제출 안내\n📢 익일에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.",
-        "easy_text": "구비서류 제출 안내\n서류를 챙겨 방문하는 안내예요.\n\n무엇을 챙기나요?\n다음 날에는 필요한 서류를 챙겨서 방문해요.",
-        "easy_changes": [],
+        "easy_text": "구비서류 제출 안내\n📢 다음 날에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.",
+        "easy_changes": [
+          {
+            "context": "익일에는 구비서류를 지참하시어 방문하세요.",
+            "end": 17,
+            "original": "익일에는",
+            "replacement": "다음 날에는",
+            "start": 13
+          }
+        ],
         "easy_body_text_present": true,
         "easy_attachment_content_included": false,
-        "easy_generated_at": "<unchanged>",
-        "easy_result": {
-          "attachment_hint": null,
-          "headline": "서류를 챙겨 방문하는 안내예요.",
-          "intro": [],
-          "sections": [
-            {
-              "heading": "무엇을 챙기나요?",
-              "sentences": [
-                {
-                  "evidence": [
-                    "익일에는 구비서류를 지참하시어 방문하세요."
-                  ],
-                  "text": "다음 날에는 필요한 서류를 챙겨서 방문해요."
-                }
-              ],
-              "style": "paragraph"
-            }
-          ]
-        }
+        "easy_generated_at": "<unchanged>"
       }
     },
     "get_notice_dictionary": {
@@ -443,7 +410,15 @@
         "result": {
           "attachment_content_included": false,
           "body_text_present": true,
-          "changes": [],
+          "changes": [
+            {
+              "context": "익일에는 구비서류를 지참하시어 방문하세요.",
+              "end": 17,
+              "original": "익일에는",
+              "replacement": "다음 날에는",
+              "start": 13
+            }
+          ],
           "dictionary_candidates": [
             {
               "context": "익일에는 구비서류를 지참하시어 방문하세요.",
@@ -474,13 +449,13 @@
                 "query_word": "구비서류",
                 "status": "found"
               },
-              "easy_end": null,
-              "easy_expression": null,
-              "easy_start": null,
+              "easy_end": 25,
+              "easy_expression": "구비서류를",
+              "easy_start": 20,
               "end": 23,
               "error_code": null,
               "lookup_status": "found",
-              "mapping_status": "original_only",
+              "mapping_status": "unchanged",
               "original": "구비서류를",
               "query_word": "구비서류",
               "retry_after_seconds": 0,
@@ -510,13 +485,13 @@
                 "query_word": "지참하다",
                 "status": "found"
               },
-              "easy_end": null,
-              "easy_expression": null,
-              "easy_start": null,
+              "easy_end": 31,
+              "easy_expression": "지참하시어",
+              "easy_start": 26,
               "end": 29,
               "error_code": null,
               "lookup_status": "found",
-              "mapping_status": "original_only",
+              "mapping_status": "unchanged",
               "original": "지참하시어",
               "query_word": "지참하다",
               "retry_after_seconds": 0,
@@ -531,13 +506,13 @@
                 "query_word": "직권처리",
                 "status": "not_found"
               },
-              "easy_end": null,
-              "easy_expression": null,
-              "easy_start": null,
+              "easy_end": 44,
+              "easy_expression": "직권처리는",
+              "easy_start": 39,
               "end": 42,
               "error_code": null,
               "lookup_status": "not_found",
-              "mapping_status": "original_only",
+              "mapping_status": "unchanged",
               "original": "직권처리는",
               "query_word": "직권처리",
               "retry_after_seconds": 0,
@@ -573,13 +548,13 @@
                 "query_word": "구비서류",
                 "status": "found"
               },
-              "easy_end": null,
-              "easy_expression": null,
-              "easy_start": null,
+              "easy_end": 71,
+              "easy_expression": "구비서류를",
+              "easy_start": 66,
               "end": 69,
               "error_code": null,
               "lookup_status": "found",
-              "mapping_status": "original_only",
+              "mapping_status": "unchanged",
               "original": "구비서류를",
               "query_word": "구비서류",
               "retry_after_seconds": 0,
@@ -588,13 +563,13 @@
             }
           ],
           "dictionary_status": "complete",
-          "easy_text": "구비서류 제출 안내\n서류를 챙겨 방문하는 안내예요.\n\n무엇을 챙기나요?\n다음 날에는 필요한 서류를 챙겨서 방문해요.",
+          "easy_text": "구비서류 제출 안내\n📢 다음 날에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.",
           "generated_at": "<unchanged>",
           "model": "gemini-3.5-flash-lite",
           "notice_id": 1,
           "notice_revision": "a848d30a1de9490a85bad59064739fd8f6820e2d27c864f8d0a6c4e689f32b5f",
           "original_text": "구비서류 제출 안내\n📢 익일에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.",
-          "prompt_version": "easy-rewrite-v1"
+          "prompt_version": "easy-language-v8"
         }
       }
     }

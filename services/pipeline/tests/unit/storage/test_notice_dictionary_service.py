@@ -7,7 +7,6 @@ import httpx
 import psycopg
 import pytest
 from support.db import database_uri, owned_migrated_database
-from support.easy_rewrite import rewrite_response
 from support.easy_text_cache_cas import _alternative_result
 from support.easy_text_storage import _NOW, _candidate_result, _notice
 
@@ -58,13 +57,19 @@ def _saved_notice(conn, *, repeated=False):
             source = load_notice_glossary_input(conn, source.notice_id)
             result = simplify_notice(
                 source, api_key="test-key", clock=lambda: _NOW,
-                request=lambda **kwargs: rewrite_response(kwargs["notice_text"], candidates=[{
-                    "original": "구비서류를", "query_word": "구비서류",
-                    "context": "구비서류를 지참하세요.",
-                }, {
-                    "original": "구비서류", "query_word": "구비서류",
-                    "context": "구비서류 제출 안내.",
-                }]),
+                request=lambda **_: json.dumps({
+                    "changes": [{
+                        "original": "지참하세요", "replacement": "가져오세요",
+                        "context": "구비서류를 지참하세요.",
+                    }],
+                    "dictionary_candidates": [{
+                        "original": "구비서류를", "query_word": "구비서류",
+                        "context": "구비서류를 지참하세요.",
+                    }, {
+                        "original": "구비서류", "query_word": "구비서류",
+                        "context": "구비서류 제출 안내.",
+                    }],
+                }, ensure_ascii=False),
             )
         else:
             result = _candidate_result(source)

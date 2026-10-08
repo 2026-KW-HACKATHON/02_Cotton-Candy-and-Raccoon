@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "월계 알리미",
+    "name": "월계알리미",
     "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,6 +8,9 @@
     "scheme": "mobile",
     "userInterfaceStyle": "automatic",
     "android": {
+      "permissions": [
+        "android.permission.SCHEDULE_EXACT_ALARM"
+      ],
       "package": "com.cottoncandyraccoon.wolgyenotice",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -22,6 +25,7 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "expo-notifications",
       "expo-router",
       [
         "expo-splash-screen",
@@ -31,11 +35,37 @@
           "imageWidth": 76
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "TodayNotice",
+              "label": "오늘의 공문",
+              "description": "너구리가 편지지에 오늘 등록된 공문 한 건을 전해요.",
+              "previewImage": "./assets/widget/preview.png",
+              "minWidth": "250dp",
+              "minHeight": "370dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 5,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000
+            }
+          ]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "aa71300e-7cd6-4ba8-a87d-b29b2358872b"
+      }
+    },
+    "owner": "pjparks-team"
   }
 }

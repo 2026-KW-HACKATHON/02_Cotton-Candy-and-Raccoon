@@ -6,7 +6,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from support.easy_rewrite import rewrite_request
 
 from pipeline.glossary import cli
 from pipeline.glossary import easy_language_cli as module
@@ -24,10 +23,25 @@ def offline(monkeypatch, tmp_path):
     path = tmp_path / "notice.json"
     path.write_text(source.model_dump_json(), encoding="utf-8")
 
+    def request(**kwargs):
+        return json.dumps(
+            {
+                "changes": [
+                    {
+                        "original": "구비서류를",
+                        "replacement": "준비할 서류를",
+                        "context": source.text,
+                    }
+                ],
+                "dictionary_candidates": [],
+            },
+            ensure_ascii=False,
+        )
+
     result = simplify_notice(
         source,
         api_key="fake",
-        request=rewrite_request,
+        request=request,
         clock=lambda: datetime(2026, 10, 7, tzinfo=UTC),
     )
     gemini = MagicMock(return_value=result)
@@ -56,8 +70,7 @@ def test_file_mode_preserves_original_and_never_calls_dictionary(offline, capsys
     assert module.main(["--input", str(offline.path)]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["original_text"] == offline.source.text
-    assert payload["easy_text"] == offline.result.easy_text
-    assert payload["easy_result"] == offline.result.model_dump(mode="json")["easy_result"]
+    assert payload["easy_text"] == "준비할 서류를 지참하세요.\n"
     assert payload["body_text_present"] is None
     assert payload["attachment_content_included"] is None
     assert not {"dictionary_terms", "dictionary_results", "dictionary_failures"} & payload.keys()

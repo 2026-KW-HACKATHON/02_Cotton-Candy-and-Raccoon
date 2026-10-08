@@ -1,6 +1,6 @@
 {
   "name": "mobile",
-  "main": "expo-router/entry",
+  "main": "index.js",
   "version": "1.0.0",
   "dependencies": {
     "@expo-google-fonts/jua": "^0.4.1",
@@ -54,7 +54,7 @@
   },
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
+    "android": "expo run:android",
     "web": "expo start --web",
     "lint": "expo lint"
   },

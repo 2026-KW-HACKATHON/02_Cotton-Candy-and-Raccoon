@@ -1,4 +1,4 @@
-"""Persist validated Gemini easy-text results in a caller-owned transaction."""
+"""Persist validated Gemini replacements in a caller-owned transaction."""
 
 from enum import Enum
 
@@ -15,7 +15,7 @@ from pipeline.transform.html_text import html_to_notice_text
 _SELECT = """
 select notice_id, notice_revision, source_hash, original_text, easy_text, changes,
        model, prompt_version, attempt_count, generated_at,
-       body_text_present, attachment_content_included, dictionary_candidates, easy_result
+       body_text_present, attachment_content_included, dictionary_candidates
 from public.notice_easy_texts where notice_id = %s
 """
 _NAMES = (
@@ -32,7 +32,6 @@ _NAMES = (
     "body_text_present",
     "attachment_content_included",
     "dictionary_candidates",
-    "easy_result",
 )
 # Hash the raw row so old prompt results need not pass today's result validator.
 # Epoch time keeps the token identical across connections with different time zones.
@@ -265,8 +264,6 @@ def save_notice_easy_text(
         values = tuple(
             Jsonb([item.model_dump(mode="json") for item in getattr(result, name)])
             if name in {"changes", "dictionary_candidates"} and getattr(result, name) is not None
-            else Jsonb(result.easy_result.model_dump(mode="json"))
-            if name == "easy_result" and result.easy_result is not None
             else getattr(result, name)
             for name in _NAMES
         )
@@ -274,8 +271,8 @@ def save_notice_easy_text(
             "insert into public.notice_easy_texts "
             "(notice_id, notice_revision, source_hash, original_text, easy_text, changes, "
             "model, prompt_version, attempt_count, generated_at, "
-            "body_text_present, attachment_content_included, dictionary_candidates, easy_result) "
-            "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+            "body_text_present, attachment_content_included, dictionary_candidates) "
+            "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
             "on conflict (notice_id) do update set "
             "notice_revision = excluded.notice_revision, source_hash = excluded.source_hash, "
             "original_text = excluded.original_text, easy_text = excluded.easy_text, "
@@ -284,8 +281,7 @@ def save_notice_easy_text(
             "generated_at = excluded.generated_at, "
             "body_text_present = excluded.body_text_present, "
             "attachment_content_included = excluded.attachment_content_included, "
-            "dictionary_candidates = excluded.dictionary_candidates, "
-            "easy_result = excluded.easy_result "
+            "dictionary_candidates = excluded.dictionary_candidates "
             "where (notice_easy_texts.notice_revision != excluded.notice_revision "
             "or (notice_easy_texts.model = excluded.model "
             "and notice_easy_texts.prompt_version = excluded.prompt_version "
@@ -296,16 +292,7 @@ def save_notice_easy_text(
             f"and (%s::boolean or {_CACHE_TOKEN} = %s::text)",
             (*values, cache_token, not check_cache_token, cache_token),
         )
-        upserted = cursor.rowcount == 1
-        if upserted and result.easy_result is not None:
-            # Same pattern as candidates below: an old worker omitting easy_result
-            # makes the trigger clear it, so restore our validated rewrite here.
-            cursor.execute(
-                "update public.notice_easy_texts set easy_result = %s "
-                "where notice_id = %s and easy_result is null",
-                (Jsonb(result.easy_result.model_dump(mode="json")), notice_id),
-            )
-        if upserted and result.dictionary_candidates is not None:
+        if cursor.rowcount == 1 and result.dictionary_candidates is not None:
             # An older worker omits this column, so SQL clears unchanged candidates
             # when source/conversion/generation metadata changes. Explicit [] and
             # identical nonempty candidates are indistinguishable at the trigger.

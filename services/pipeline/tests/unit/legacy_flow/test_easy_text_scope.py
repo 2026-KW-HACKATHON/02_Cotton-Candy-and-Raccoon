@@ -1,5 +1,6 @@
 """Processing scope stays truthful across DB saves, legacy caches and source edits."""
 
+import json
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from unittest.mock import MagicMock
@@ -9,7 +10,6 @@ import pytest
 from psycopg.types.json import Jsonb
 from pydantic import ValidationError
 from support.collect_easy_text_storage import committed_easy_db as committed_easy_db
-from support.easy_rewrite import rewrite, rewrite_request, rewrite_response, sentence
 from support.easy_text_storage import _easy_db_connection
 from support.easy_text_storage import service_db as service_db
 
@@ -49,8 +49,8 @@ def _insert_notice(conn, body_html: str | None, *, title: str = "익일 안내")
     return load_notice_glossary_input(conn, notice_id)
 
 
-def _request(**kwargs: object) -> str:
-    return rewrite_request(**kwargs)
+def _request(**_kwargs: object) -> str:
+    return json.dumps({"changes": [], "dictionary_candidates": []}, ensure_ascii=False)
 
 
 def _result(source: NoticeGlossaryInput) -> EasyLanguageResult:
@@ -125,15 +125,19 @@ def test_fresh_save_and_cache_publish_known_scope_without_second_api_call(
     request.assert_called_once()
 
 
-def test_title_quote_is_rejected_without_storing_success(service_db) -> None:
+def test_title_replacement_is_rejected_without_storing_success(service_db) -> None:
     source = _insert_notice(service_db, "<p>본문</p>")
 
     def title_change(**_kwargs: object) -> str:
-        # The title stays outside Gemini, so it can never be a rewrite's evidence.
-        return rewrite_response("본문", rewrite_payload=rewrite("본문", sections=[{
-            "heading": "언제 오나요?", "style": "paragraph",
-            "sentences": [sentence("다음 날 와요.", "익일 안내")],
-        }]))
+        return json.dumps(
+            {
+                "changes": [
+                    {"original": "익일", "replacement": "다음 날", "context": "익일 안내"}
+                ],
+                "dictionary_candidates": [],
+            },
+            ensure_ascii=False,
+        )
 
     request = MagicMock(side_effect=title_change)
     service_db.commit()

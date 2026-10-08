@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 
 import psycopg
 import pytest
-from support.easy_rewrite import rewrite_response
 
 from pipeline.after_collect import AfterCollectEasyText
 from pipeline.collection_processing import CollectionPostprocessing, create_easy_text_processing
@@ -286,7 +285,7 @@ def test_counters_are_per_notice_deltas_even_with_a_shared_budget(
 
     def worker(operation, payload, budget):
         gemini_execution.record_http_dispatch()
-        return rewrite_response(payload["notice_text"])
+        return '{"changes": [], "dictionary_candidates": []}'
 
     def process(connection, source, **kwargs):
         return simplify_notice(source, api_key="fake")
@@ -314,7 +313,7 @@ def test_cache_read_time_does_not_exhaust_the_default_ai_budget(processor, conn,
     def worker(operation, payload, budget):
         assert budget.remaining_seconds() == 120
         gemini_execution.record_http_dispatch()
-        return rewrite_response(payload["notice_text"])
+        return '{"changes": [], "dictionary_candidates": []}'
 
     def process(connection, source, **kwargs):
         now[0] += 180.0  # Simulate the service's cache read before it starts conversion.

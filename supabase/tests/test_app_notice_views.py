@@ -27,7 +27,6 @@ DETAIL_COLUMNS = LIST_COLUMNS + (
     "url", "license_type", "body_text", "result", "generated_at", "file_references",
     "preparation_omissions", "files", "easy_original_text", "easy_text", "easy_changes",
     "easy_body_text_present", "easy_attachment_content_included", "easy_generated_at",
-    "easy_result",
 )
 PRIVATE_NAMES = {
     "file_manifest", "source_hash", "model", "prompt_version", "attempt_count",
@@ -252,8 +251,7 @@ def test_detail_lists_files_without_names_and_current_easy_text(db: psycopg.Conn
         ).fetchone()["files"]
         easy = {
             row["id"]: row for row in cursor.execute(
-                "select id, has_easy_text, easy_text, easy_changes, easy_result "
-                "from public.app_notice_detail "
+                "select id, has_easy_text, easy_text, easy_changes from public.app_notice_detail "
                 "where id = any(%s)",
                 ([ids["20260901000000006"], ids["20260901000000010"],
                   ids["20260901000000011"]],),
@@ -262,13 +260,10 @@ def test_detail_lists_files_without_names_and_current_easy_text(db: psycopg.Conn
     assert [set(item) for item in files] == [{"id", "kind", "url"}] * 2
     assert [item["kind"] for item in files] == ["attachment", "attachment"]
     assert easy[ids["20260901000000006"]]["has_easy_text"] is True
-    assert easy[ids["20260901000000010"]]["easy_changes"] == []
-    assert easy[ids["20260901000000010"]]["easy_result"]["sections"][0]["heading"] == (
-        "누가 참여하나요?"
-    )
+    assert easy[ids["20260901000000010"]]["easy_changes"][0]["original"] == "어르신"
     # Notice 11's easy text was made for an earlier body, so the app never sees it.
     stale = easy[ids["20260901000000011"]]
-    assert (stale["has_easy_text"], stale["easy_text"], stale["easy_result"]) == (
+    assert (stale["has_easy_text"], stale["easy_text"], stale["easy_changes"]) == (
         False, None, None,
     )
 

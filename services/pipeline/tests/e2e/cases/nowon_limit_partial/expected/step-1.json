@@ -5,14 +5,14 @@
     "listed_count": 2,
     "attempted_count": 1,
     "saved_count": 1,
-    "skipped_count": 0,
-    "skipped": [],
-    "failed_count": 0,
     "listing_complete": true,
     "limited": true,
     "complete": false,
     "failed_pages": [],
-    "failures": []
+    "failures": [],
+    "skipped_count": 0,
+    "failed_count": 0,
+    "skipped": []
   },
   "stderr": [],
   "http_calls": [
@@ -136,8 +136,7 @@
         "easy_changes": null,
         "easy_body_text_present": null,
         "easy_attachment_content_included": null,
-        "easy_generated_at": null,
-        "easy_result": null
+        "easy_generated_at": null
       }
     },
     "get_notice_dictionary": {

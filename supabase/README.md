@@ -26,7 +26,6 @@
 | [20261008190000_notice_dictionary_links.sql](migrations/20261008190000_notice_dictionary_links.sql) | 공지별 사전 연결·공개 조회 |
 | [20261008210000_notice_processing_jobs.sql](migrations/20261008210000_notice_processing_jobs.sql) | 후속 처리 작업·재시도 관리 |
 | [20261008220000_app_notice_views.sql](migrations/20261008220000_app_notice_views.sql) | backend의 호환 앱 조회 계약 재적용 |
-| [20261009100000_notice_easy_rewrite.sql](migrations/20261009100000_notice_easy_rewrite.sql) | 쉬운말 질문형 재작성 `easy_result` 컬럼, 구버전 작업자 무효화 trigger, `has_easy_text`와 상세 view 반영 (#85) |
 | [seed.sql](seed.sql) | 로컬 개발용 공지·파일과 앱 화면 상태별 요약·쉬운말 데이터. 스키마 변경 SQL이 아님 |
 
 공지 고유 키는 `(category, source_board, post_sn)`, 파일 고유 키는 `(notice_id, file_key, kind)`다.
@@ -38,7 +37,7 @@
 | view | 용도 | 컬럼 |
 | --- | --- | --- |
 | `app_notice_list` | 목록, 홈, 보관함 | `id, source, dong_group, is_pinned, title, department, registered_on, content_updated_at, is_modified, summary_status, display_status, notice_type, category_code, deadline_on, headline, card_summaries, attachment_status, has_easy_text` |
-| `app_notice_detail` | 상세 | 목록 컬럼 + `url, license_type, body_text, result, generated_at, file_references, preparation_omissions, files, easy_original_text, easy_text, easy_changes, easy_body_text_present, easy_attachment_content_included, easy_generated_at, easy_result` |
+| `app_notice_detail` | 상세 | 목록 컬럼 + `url, license_type, body_text, result, generated_at, file_references, preparation_omissions, files, easy_original_text, easy_text, easy_changes, easy_body_text_present, easy_attachment_content_included, easy_generated_at` |
 
 - 두 view는 `security_invoker = true`다. 이 옵션이 없으면 view가 소유자 권한으로 실행되어 RLS를 건너뛰고 숨긴 공지가 보인다. 옵션 덕분에 보이는 공지만, 현재 원문 버전의 쉬운말만 나온다.
 - 앱 역할은 두 view를 읽기만 한다. view에 쓰기를 시도하면 PostgreSQL이 "자동 갱신할 수 없는 view"(`55000`)로 거부하며, REST API에서는 HTTP 500으로 보인다.
@@ -47,13 +46,11 @@
 - `category_code`가 null이면 미분류다. 요약이 없는 공지도 포함되므로 `category_code=is.null` 한 조건으로 미분류 필터를 만든다.
 - `body_text`는 pipeline이 저장할 때마다 `html_to_notice_text(body_html)`로 만드는 평문이다. 요약 입력의 본문 평문과 같은 함수이며, 평문이 비면 null이다. 파생 값이라 원문 변경 trigger의 비교 대상이 아니다. 따라서 `body_text`만 다시 채워도 `content_revision`과 기존 요약은 그대로다.
 - `files`는 원본 첨부와 본문 이미지의 `[{id, kind, url}]`이다. 파일 이름은 공개하지 않는다.
-- `has_easy_text`는 현재 원문 버전의 질문형 재작성(`easy_result`)이 있을 때만 true다(#85). 이전 단어 치환 행은 상세에서 `easy_text`는 보이지만 `easy_result`는 null이고 `has_easy_text`는 false다.
-- `easy_result`는 `{headline, intro, sections[{heading, style, sentences[{text, evidence}]}], attachment_hint}`다. 재작성 행의 `easy_changes`는 `[]`다.
 - `easy_changes`의 `start`, `end`는 `easy_original_text` 기준 Python 코드포인트 위치다. JavaScript 문자열 인덱스(UTF-16)와 다르다.
-- `notice_easy_texts` 테이블의 앱 공개 컬럼은 `notice_id, original_text, easy_text, changes, body_text_present, attachment_content_included, generated_at, easy_result`로 좁혔다. `notice_revision, source_hash, model, prompt_version, attempt_count`는 비공개다. 읽기 policy는 `notice_revision`을 참조하지만 policy 식은 컬럼 권한 검사를 받지 않으므로 그대로 동작한다.
+- `notice_easy_texts` 테이블의 앱 공개 컬럼은 `notice_id, original_text, easy_text, changes, body_text_present, attachment_content_included, generated_at`으로 좁혔다. `notice_revision, source_hash, model, prompt_version, attempt_count`는 비공개다. 읽기 policy는 `notice_revision`을 참조하지만 policy 식은 컬럼 권한 검사를 받지 않으므로 그대로 동작한다.
 - 비공개 컬럼이 있는 테이블(`notice_summaries`, `notice_files`, `notice_easy_texts`)에서 `select=*`는 `42501`로 거부된다. view는 모든 컬럼이 공개 계약이라 `select=*`가 되지만, 앱은 컬럼을 명시해 요청한다.
 
-`seed.sql`의 6~11번 공지는 화면 상태별 확인용이다(`summarized`와 카드·마감일, 첨부 일부 누락, 미분류 검토, 실패, 요약 없음, 이전 본문 기준이라 숨는 쉬운말). 요약과 쉬운말 행은 손으로 쓰지 않고, pipeline `summarize-one`과 쉬운말 처리를 Gemini, 파일 다운로드 대역으로 실행해 저장된 행을 옮겼다. 쉬운말 행은 #85 재작성 형식(`easy-rewrite-v1`)으로 다시 만들었다. `file_manifest`의 공지와 파일 id는 `db reset`의 삽입 순서로 정해지므로, seed 앞부분의 삽입 순서를 바꾸면 이 구역을 다시 만들어야 한다.
+`seed.sql`의 6~11번 공지는 화면 상태별 확인용이다(`summarized`와 카드·마감일, 첨부 일부 누락, 미분류 검토, 실패, 요약 없음, 이전 본문 기준이라 숨는 쉬운말). 요약과 쉬운말 행은 손으로 쓰지 않고, pipeline `summarize-one`과 쉬운말 처리를 Gemini, 파일 다운로드 대역으로 실행해 저장된 행을 옮겼다. `file_manifest`의 공지와 파일 id는 `db reset`의 삽입 순서로 정해지므로, seed 앞부분의 삽입 순서를 바꾸면 이 구역을 다시 만들어야 한다.
 
 ## 공지의 식별 기준
 

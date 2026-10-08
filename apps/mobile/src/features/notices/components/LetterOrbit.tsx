@@ -104,19 +104,21 @@ function OrbitSlot({
 export function LetterOrbit({
   notices,
   onOpen,
+  interactive = true,
 }: {
   notices: Notice[];
   onOpen: (notice: Notice) => void;
+  interactive?: boolean;
 }) {
   const width = Math.min(useWindowDimensions().width, 600);
   const scale = Math.min(1, (width - 40) / LETTER_WIDTH);
   const orbit = useLetterOrbit(notices, width);
   const data = orbit.displayNotices;
   const selectedIndex = wrapNoticeIndex(orbit.center, notices.length);
-  const disabled = orbit.busy || notices.length < 2;
+  const disabled = !interactive || orbit.busy || notices.length < 2;
   const wheelRef = useLetterOrbitWheel({
     width,
-    enabled: Platform.OS === "web" && notices.length > 1,
+    enabled: interactive && Platform.OS === "web" && notices.length > 1,
     busy: orbit.busy,
     dragInput: orbit.dragInput,
     beginDrag: orbit.beginDrag,
@@ -126,7 +128,7 @@ export function LetterOrbit({
   const pan = Gesture.Pan()
     .activeOffsetX([-24, 24])
     .failOffsetY([-16, 16])
-    .enabled(notices.length > 1)
+    .enabled(interactive && notices.length > 1)
     .onBegin(() => {
       dragInput.set(0);
       scheduleOnRN(beginTouch);
@@ -147,7 +149,7 @@ export function LetterOrbit({
   const keyboardProps =
     Platform.OS === "web"
       ? {
-          tabIndex: 0 as const,
+          tabIndex: interactive ? (0 as const) : (-1 as const),
           onKeyDown: (event: {
             key: string;
             target: unknown;
@@ -184,7 +186,8 @@ export function LetterOrbit({
               : slot === orbit.center
                 ? "reading"
                 : "closed";
-            const interactive = !orbit.busy && slot === orbit.center;
+            const slotInteractive =
+              interactive && !orbit.busy && slot === orbit.center;
             return (
               <OrbitSlot
                 key={`${slot}:${notice.id}`}
@@ -195,8 +198,10 @@ export function LetterOrbit({
                 position={orbit.position}
                 notice={notice}
                 role={role}
-                interactive={interactive}
-                onOpen={() => onOpen(notice)}
+                interactive={slotInteractive}
+                onOpen={() => {
+                  if (slotInteractive) onOpen(notice);
+                }}
               />
             );
           })}
@@ -208,9 +213,13 @@ export function LetterOrbit({
               importantForAccessibility="no-hide-descendants"
               tabIndex={-1}
               disabled={disabled}
-              onPress={() => {
-                orbit.click(direction);
-              }}
+              onPress={
+                disabled
+                  ? undefined
+                  : () => {
+                      orbit.click(direction);
+                    }
+              }
               style={[
                 styles.envelopeTouch,
                 {
@@ -229,9 +238,13 @@ export function LetterOrbit({
           accessibilityLabel="이전 공문"
           accessibilityState={{ disabled, busy: orbit.busy }}
           disabled={disabled}
-          onPress={() => {
-            void orbit.move(-1);
-          }}
+          onPress={
+            disabled
+              ? undefined
+              : () => {
+                  void orbit.move(-1);
+                }
+          }
           style={styles.arrow}
         >
           <ChevronLeft size={20} color={COLORS.primary} />
@@ -250,9 +263,13 @@ export function LetterOrbit({
           accessibilityLabel="다음 공문"
           accessibilityState={{ disabled, busy: orbit.busy }}
           disabled={disabled}
-          onPress={() => {
-            void orbit.move(1);
-          }}
+          onPress={
+            disabled
+              ? undefined
+              : () => {
+                  void orbit.move(1);
+                }
+          }
           style={styles.arrow}
         >
           <ChevronRight size={20} color={COLORS.primary} />

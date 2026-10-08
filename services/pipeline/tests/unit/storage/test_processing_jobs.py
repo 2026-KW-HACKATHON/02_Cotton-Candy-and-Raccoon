@@ -549,22 +549,3 @@ def test_short_notice_blocked_job_recovers_only_on_explicit_retry(conn, database
         row = reader.execute("select headline,display_status from app_notice_detail where id=%s",
                              (notice_id,)).fetchone()
     assert row[0] and row[1] == "needs_review"
-
-
-def test_easy_text_is_ready_only_with_a_current_rewrite(conn, database) -> None:
-    # #85: a row with the current prompt but no easy_result (for example one an old
-    # worker overwrote) is not a finished conversion and is selected again.
-    with psycopg.connect(**database) as writer:
-        source = easy_notice(writer)
-        writer.commit()
-        save_notice_easy_text(writer, easy_result(source))
-        writer.commit()
-    assert select_candidates(conn, features=("easy_text",), now=NOW) == []
-    conn.execute("update notice_easy_texts set easy_result = null")
-    conn.execute("update notice_easy_texts set dictionary_candidates = '[]'::jsonb")
-    assert conn.execute(
-        "select prompt_version, dictionary_candidates from notice_easy_texts"
-    ).fetchone() == (processing_jobs.EASY_TEXT_PROMPT_VERSION, [])
-    assert [c.notice_id for c in select_candidates(conn, features=("easy_text",), now=NOW)] == [
-        source.notice_id
-    ]

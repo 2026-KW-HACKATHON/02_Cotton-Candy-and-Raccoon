@@ -41,17 +41,11 @@ def digest(value):
 
 
 def migration_files():
-    """Return exactly the #76 baseline and upgrade files.
-
-    Later migrations (for example #85) are applied by their own release step; they
-    must sort after this set and are never part of this bounded upgrade.
-    """
     paths = sorted(MIGRATIONS.glob("*.sql"))
     versions = [p.name.split("_", 1)[0] for p in paths]
-    known = BASE + UPGRADES
-    if tuple(versions[: len(known)]) != known:
+    if tuple(versions) != BASE + UPGRADES:
         raise UpgradeError("unexpected_local_migration_set")
-    return dict(zip(known, paths[: len(known)], strict=True))
+    return dict(zip(versions, paths, strict=True))
 
 
 def inspect(conn):

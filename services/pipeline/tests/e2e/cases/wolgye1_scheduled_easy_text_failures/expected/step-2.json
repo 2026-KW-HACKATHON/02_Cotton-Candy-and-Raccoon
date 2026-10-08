@@ -134,34 +134,23 @@
         "notice_revision": "48fa8d33e865a0d128c897547bd29a518eaab72781ce6fd893b5db2d326007ef",
         "source_hash": "8ce2d4ba44c9f08f583e6b655aa6851cc43efb9799a5db6885c5d1868e9ff0c6",
         "original_text": "월계1동 공예 교실 참가자 모집\n월계1동 공예 교실 참가자를 모집합니다.",
-        "easy_text": "월계1동 공예 교실 참가자 모집\n참여할 사람을 모집해요.\n\n누구를 모집하나요?\n참여할 사람을 모집해요.",
-        "changes": [],
+        "easy_text": "월계1동 공예 교실 참가자 모집\n월계1동 공예 교실 참여할 사람을 모집합니다.",
+        "changes": [
+          {
+            "context": "참가자를 모집합니다",
+            "end": 33,
+            "original": "참가자를",
+            "replacement": "참여할 사람을",
+            "start": 29
+          }
+        ],
         "model": "gemini-3.5-flash-lite",
-        "prompt_version": "easy-rewrite-v1",
+        "prompt_version": "easy-language-v8",
         "attempt_count": 1,
         "generated_at": "<set>",
         "body_text_present": true,
         "attachment_content_included": false,
-        "dictionary_candidates": [],
-        "easy_result": {
-          "attachment_hint": null,
-          "headline": "참여할 사람을 모집해요.",
-          "intro": [],
-          "sections": [
-            {
-              "heading": "누구를 모집하나요?",
-              "sentences": [
-                {
-                  "evidence": [
-                    "참가자를 모집합니다"
-                  ],
-                  "text": "참여할 사람을 모집해요."
-                }
-              ],
-              "style": "paragraph"
-            }
-          ]
-        }
+        "dictionary_candidates": []
       }
     },
     "notice_dictionary_links": {
@@ -228,30 +217,19 @@
     "notice_easy_texts": {
       "dong/1042/20261006090000601": {
         "original_text": "월계1동 공예 교실 참가자 모집\n월계1동 공예 교실 참가자를 모집합니다.",
-        "easy_text": "월계1동 공예 교실 참가자 모집\n참여할 사람을 모집해요.\n\n누구를 모집하나요?\n참여할 사람을 모집해요.",
-        "changes": [],
+        "easy_text": "월계1동 공예 교실 참가자 모집\n월계1동 공예 교실 참여할 사람을 모집합니다.",
+        "changes": [
+          {
+            "context": "참가자를 모집합니다",
+            "end": 33,
+            "original": "참가자를",
+            "replacement": "참여할 사람을",
+            "start": 29
+          }
+        ],
         "generated_at": "<set>",
         "body_text_present": true,
-        "attachment_content_included": false,
-        "easy_result": {
-          "attachment_hint": null,
-          "headline": "참여할 사람을 모집해요.",
-          "intro": [],
-          "sections": [
-            {
-              "heading": "누구를 모집하나요?",
-              "sentences": [
-                {
-                  "evidence": [
-                    "참가자를 모집합니다"
-                  ],
-                  "text": "참여할 사람을 모집해요."
-                }
-              ],
-              "style": "paragraph"
-            }
-          ]
-        }
+        "attachment_content_included": false
       }
     },
     "app_notice_list": {
@@ -322,30 +300,19 @@
         "preparation_omissions": null,
         "files": [],
         "easy_original_text": "월계1동 공예 교실 참가자 모집\n월계1동 공예 교실 참가자를 모집합니다.",
-        "easy_text": "월계1동 공예 교실 참가자 모집\n참여할 사람을 모집해요.\n\n누구를 모집하나요?\n참여할 사람을 모집해요.",
-        "easy_changes": [],
+        "easy_text": "월계1동 공예 교실 참가자 모집\n월계1동 공예 교실 참여할 사람을 모집합니다.",
+        "easy_changes": [
+          {
+            "context": "참가자를 모집합니다",
+            "end": 33,
+            "original": "참가자를",
+            "replacement": "참여할 사람을",
+            "start": 29
+          }
+        ],
         "easy_body_text_present": true,
         "easy_attachment_content_included": false,
-        "easy_generated_at": "<set>",
-        "easy_result": {
-          "attachment_hint": null,
-          "headline": "참여할 사람을 모집해요.",
-          "intro": [],
-          "sections": [
-            {
-              "heading": "누구를 모집하나요?",
-              "sentences": [
-                {
-                  "evidence": [
-                    "참가자를 모집합니다"
-                  ],
-                  "text": "참여할 사람을 모집해요."
-                }
-              ],
-              "style": "paragraph"
-            }
-          ]
-        }
+        "easy_generated_at": "<set>"
       },
       "dong/1042/20261007090000602": {
         "source": "dong",
@@ -378,8 +345,7 @@
         "easy_changes": null,
         "easy_body_text_present": null,
         "easy_attachment_content_included": null,
-        "easy_generated_at": null,
-        "easy_result": null
+        "easy_generated_at": null
       }
     },
     "get_notice_dictionary": {
@@ -387,16 +353,24 @@
         "result": {
           "attachment_content_included": false,
           "body_text_present": true,
-          "changes": [],
+          "changes": [
+            {
+              "context": "참가자를 모집합니다",
+              "end": 33,
+              "original": "참가자를",
+              "replacement": "참여할 사람을",
+              "start": 29
+            }
+          ],
           "dictionary_candidates": [],
           "dictionary_status": "complete",
-          "easy_text": "월계1동 공예 교실 참가자 모집\n참여할 사람을 모집해요.\n\n누구를 모집하나요?\n참여할 사람을 모집해요.",
+          "easy_text": "월계1동 공예 교실 참가자 모집\n월계1동 공예 교실 참여할 사람을 모집합니다.",
           "generated_at": "<set>",
           "model": "gemini-3.5-flash-lite",
           "notice_id": 3,
           "notice_revision": "48fa8d33e865a0d128c897547bd29a518eaab72781ce6fd893b5db2d326007ef",
           "original_text": "월계1동 공예 교실 참가자 모집\n월계1동 공예 교실 참가자를 모집합니다.",
-          "prompt_version": "easy-rewrite-v1"
+          "prompt_version": "easy-language-v8"
         }
       },
       "dong/1042/20261007090000602": {

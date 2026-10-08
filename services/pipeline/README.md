@@ -16,7 +16,6 @@ Python·uv 기반 공지 수집 파이프라인입니다. 노원구 `NowonNewsNo
 8. `20261008190000_notice_dictionary_links.sql`: 공지별 사전 뜻풀이 연결과 조회
 9. `20261008210000_notice_processing_jobs.sql`: 기능별 재처리 상태와 점유 기한
 10. `20261008220000_app_notice_views.sql`: backend 앱 조회 계약 호환 재적용
-11. `20261009100000_notice_easy_rewrite.sql`: 쉬운말 질문형 재작성 결과(`easy_result`)와 앱 조회 반영
 
 재구성 전 마이그레이션 14개를 적용한 로컬 DB는 다시 만들어야 합니다(`npx supabase db reset`).
 
@@ -1102,55 +1101,6 @@ select notice_id, feature, state, attempts, last_error_code, next_attempt_at, le
 from public.notice_processing_jobs
 order by updated_at, notice_id, feature;
 ```
-
-## 쉬운말 질문형 재작성 (#85)
-
-쉬운말은 단어 치환 대신 Gemini가 공지를 질문형 섹션으로 다시 씁니다. 프롬프트는
-`glossary/prompts/gemini_easy_rewrite.md`, 버전은 `easy-rewrite-v1`입니다. 응답은
-`{rewrite, dictionary_candidates}`이며 `dictionary_candidates` 처리는 이전과 같습니다.
-
-| 항목 | 형식 |
-| --- | --- |
-| `rewrite` | `headline`, `intro`(0~3문장), `sections`(1~6개), `attachment_hint`(null 가능) |
-| 섹션 | `heading`(25자 이하, `?`로 끝남), `style`(`paragraph`/`steps`), `sentences`(1~8개) |
-| 문장 | `text`(한 줄, 80자 이하), `evidence`(본문에서 그대로 인용한 120자 이하 구절 1개 이상) |
-
-저장 전 검사입니다. 하나라도 어기면 한 번 다시 요청하고, 두 번 모두 실패하면 아무것도 저장하지
-않습니다. 일부 문장만 받아들이지 않습니다.
-
-- 근거: 요약과 같은 `evidence_reference_valid`로 본문에 있는 구절인지 확인합니다. 구절은 5자 이상이어야 하며, 본문 전체가 5자보다 짧으면 본문 전체를 근거로 쓸 수 있습니다.
-- 숫자: 문장의 모든 숫자는 그 문장의 근거에 같은 값으로 있어야 합니다. 제목, 섹션 제목, 첨부 안내의 숫자는 본문에 있어야 합니다.
-- 기호: `「」`, `·`, `*`, `※`는 쓸 수 없습니다. 작은따옴표로 감싼 구간 안은 검사하지 않습니다.
-- 원문 복사: 본문이 300자 이상일 때만 검사합니다. 전체 `SequenceMatcher` 비율 0.8 미만, 재작성 길이 본문 이하를 요구합니다. 전체 비율은 본문이 길수록 낮아지므로, 문장마다 자기 근거와의 비율 0.9 미만이고 10자 이상 문장은 본문에 그대로 있지 않아야 합니다.
-
-`notice_easy_texts`에는 두 형식이 함께 있습니다.
-
-- 이전 단어 치환 행: `easy_result`가 null이고 `changes`로 `easy_text`를 재현합니다.
-- 재작성 행: `changes`는 `[]`, `easy_result`는 재작성 객체, `easy_text`는 제목 + 줄바꿈 + 평문입니다.
-  평문은 `headline`과 `intro` 다음 빈 줄, 섹션마다 제목과 문장(`steps`는 `1. ` 번호), 마지막에 첨부 안내 순서입니다.
-
-`get_notice_easy_text`와 `map_dictionary_candidates`는 두 형식을 모두 읽습니다. 재작성 행의 사전
-후보는 모두 `original_only`(쉬운말 위치 null)로 연결됩니다. 앱 목록의 `has_easy_text`는 재작성 행에서만
-true입니다.
-
-`easy_result`를 모르는 구버전 작업자가 변환 컬럼만 바꾸면 trigger가 `easy_result`를 비웁니다. 새 저장
-코드는 같은 트랜잭션에서 검증한 결과를 다시 씁니다.
-
-### 마이그레이션 후 재처리
-
-프롬프트 버전이 바뀌었으므로 기존 쉬운말은 모두 재처리 대상입니다. 컬럼 추가로 쉬운말 상태 토큰도
-모든 행에서 바뀌어, 사전 조회 RPC는 다시 연결할 때까지 `dictionary_status=pending`을 반환합니다.
-`process-stored`는 쉬운말 재생성 뒤 사전 링크까지 다시 만듭니다.
-
-```bash
-uv run pipeline process-stored --source nowon --feature easy_text --limit 100
-uv run pipeline process-stored --source wolgye1 --feature easy_text --limit 100
-uv run pipeline process-stored --source seoul --feature easy_text --limit 100
-```
-
-대상이 남으면 같은 명령을 반복합니다. 운영 DB에는 #76 스크립트가 이 migration을 적용하지 않습니다.
-`20261009100000_notice_easy_rewrite.sql`은 새 코드 배포 전에 별도로 적용해야 하며, 적용하지 않은 DB에서
-새 저장 코드는 `easy_result` 컬럼이 없어 실패합니다.
 
 ## 표준국어대사전 조회와 공유 캐시 (#53)
 
