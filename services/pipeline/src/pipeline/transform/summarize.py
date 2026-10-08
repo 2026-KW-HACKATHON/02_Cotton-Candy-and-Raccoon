@@ -981,6 +981,10 @@ def summarize_prepared_notice(
         ),
         notice=notice,
     )
+    if manifest is not None and manifest.omissions:
+        summary = summary.model_copy(update={
+            "uncertainties": list(dict.fromkeys([*summary.uncertainties, "일부 첨부 미확인"])),
+        })
     return PreparedSummaryResult(
         notice_id=notice_id,
         summary=summary,
