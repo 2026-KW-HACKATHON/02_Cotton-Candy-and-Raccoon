@@ -1,0 +1,103 @@
+{
+  "http_calls": [],
+  "gemini_calls": {},
+  "db": {
+    "notices": {
+      "nowon/1001/900521": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "주민 강좌 참가자 모집",
+        "department": "교육지원과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900521",
+        "body_html": "<p>주민 강좌 참가자를 모집합니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {
+      "nowon/1001/900521": {
+        "notice_revision": "7f082014648d9fcb395d4ab90078f2fb5d2a7e730595db53c1f59fa20f4c8f97",
+        "source_hash": "8a9d413bca93bff34853408cf618e42f8a41d5c492b0b1815929aa7a7a1349a3",
+        "original_text": "주민 강좌 참가자 모집\n주민 강좌 참가자를 모집합니다.",
+        "easy_text": "주민 강좌 참가자 모집\n주민 강좌 참여할 사람을 모집합니다.",
+        "changes": [
+          {
+            "context": "참가자를 모집합니다",
+            "end": 23,
+            "original": "참가자를",
+            "replacement": "참여할 사람을",
+            "start": 19
+          }
+        ],
+        "model": "gemini-3.5-flash-lite",
+        "prompt_version": "easy-language-v7",
+        "attempt_count": 1,
+        "generated_at": "<unchanged>",
+        "body_text_present": true,
+        "attachment_content_included": false
+      }
+    },
+    "notice_summary_executions": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_easy_texts": 1,
+    "notice_files": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 1
+  },
+  "anon": {
+    "notices": {
+      "nowon/1001/900521": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "주민 강좌 참가자 모집",
+        "department": "교육지원과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900521",
+        "body_html": "<p>주민 강좌 참가자를 모집합니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {
+      "nowon/1001/900521": {
+        "notice_revision": "7f082014648d9fcb395d4ab90078f2fb5d2a7e730595db53c1f59fa20f4c8f97",
+        "source_hash": "8a9d413bca93bff34853408cf618e42f8a41d5c492b0b1815929aa7a7a1349a3",
+        "original_text": "주민 강좌 참가자 모집\n주민 강좌 참가자를 모집합니다.",
+        "easy_text": "주민 강좌 참가자 모집\n주민 강좌 참여할 사람을 모집합니다.",
+        "changes": [
+          {
+            "context": "참가자를 모집합니다",
+            "end": 23,
+            "original": "참가자를",
+            "replacement": "참여할 사람을",
+            "start": 19
+          }
+        ],
+        "model": "gemini-3.5-flash-lite",
+        "prompt_version": "easy-language-v7",
+        "attempt_count": 1,
+        "generated_at": "<unchanged>",
+        "body_text_present": true,
+        "attachment_content_included": false
+      }
+    }
+  }
+}

@@ -1,0 +1,117 @@
+{
+  "exit_code": 1,
+  "report": {
+    "mode": "new",
+    "total_count": 3,
+    "selected_count": 3,
+    "saved_count": 2,
+    "pages_read": 1,
+    "initial_baseline": true,
+    "listing_complete": true,
+    "failed_ranges": [],
+    "complete": false,
+    "failures": [
+      {
+        "post_sn": "900442",
+        "stage": "page_missing",
+        "reason_code": "source_page_missing"
+      }
+    ]
+  },
+  "stderr": [],
+  "http_calls": [
+    "nowon_api 1-50",
+    "nowon_page 900443",
+    "nowon_page 900443",
+    "nowon_page 900442",
+    "nowon_page 900441"
+  ],
+  "gemini_calls": {},
+  "db": {
+    "notices": {
+      "nowon/1001/900441": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "보건소 진료 시간 변경",
+        "department": "보건정책과",
+        "registered_on": "2026-10-07",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900441",
+        "body_html": "<p>진료 시간이 변경됩니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      },
+      "nowon/1001/900443": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "도서관 휴관 안내",
+        "department": "문화체육과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900443",
+        "body_html": "<p>도서관 휴관을 안내합니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {},
+    "notice_summary_executions": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_easy_texts": 0,
+    "notice_files": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 2
+  },
+  "anon": {
+    "notices": {
+      "nowon/1001/900441": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "보건소 진료 시간 변경",
+        "department": "보건정책과",
+        "registered_on": "2026-10-07",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900441",
+        "body_html": "<p>진료 시간이 변경됩니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      },
+      "nowon/1001/900443": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "도서관 휴관 안내",
+        "department": "문화체육과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900443",
+        "body_html": "<p>도서관 휴관을 안내합니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {}
+  }
+}

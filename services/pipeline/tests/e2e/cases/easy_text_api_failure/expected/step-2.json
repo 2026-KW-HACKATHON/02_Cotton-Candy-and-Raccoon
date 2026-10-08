@@ -1,0 +1,198 @@
+{
+  "exit_code": 1,
+  "report": {
+    "total_count": 3,
+    "listed_count": 3,
+    "attempted_count": 3,
+    "saved_count": 2,
+    "listing_complete": true,
+    "limited": false,
+    "complete": false,
+    "failed_pages": [],
+    "failures": [
+      {
+        "post_sn": "900513",
+        "stage": "storage",
+        "reason_code": "db_save_failed"
+      }
+    ],
+    "easy_text": {
+      "status": "failed",
+      "complete": false,
+      "attempted_count": 2,
+      "successful_count": 1,
+      "skipped_count": 0,
+      "failed_count": 1,
+      "skipped": [],
+      "failures": [
+        {
+          "notice_id": 2,
+          "reason_code": "api_failed"
+        }
+      ]
+    }
+  },
+  "stderr": [],
+  "http_calls": [
+    "nowon_api 1-1000",
+    "nowon_api 1-1",
+    "nowon_page 900513",
+    "nowon_page 900512",
+    "nowon_page 900511"
+  ],
+  "gemini_calls": {
+    "easy_text": [
+      {
+        "model": "gemini-3.5-flash-lite",
+        "input": [
+          {
+            "type": "text",
+            "sha256": "b4dad59c287888d9",
+            "length": 19
+          }
+        ]
+      },
+      {
+        "model": "gemini-3.5-flash-lite",
+        "input": [
+          {
+            "type": "text",
+            "sha256": "8d724765db4b5569",
+            "length": 20
+          }
+        ]
+      }
+    ]
+  },
+  "db": {
+    "notices": {
+      "nowon/1001/900511": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "치매 예방 교실 참가자 모집",
+        "department": "보건정책과",
+        "registered_on": "2026-10-07",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900511",
+        "body_html": "<p>치매 예방 교실 참가자를 모집합니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      },
+      "nowon/1001/900512": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "노인 건강검진 참가자 모집",
+        "department": "보건정책과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900512",
+        "body_html": "<p>노인 건강검진 참가자를 모집합니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {
+      "nowon/1001/900511": {
+        "notice_revision": "cadde528cc09d227f7b6e96e97487a2466c754627346ae2361b866ed89e840d0",
+        "source_hash": "fddedef5463b44c9c2a6158771e2d48afa2eeddfdaeb83d2fe953cd8789b3b13",
+        "original_text": "치매 예방 교실 참가자 모집\n치매 예방 교실 참가자를 모집합니다.",
+        "easy_text": "치매 예방 교실 참가자 모집\n치매 예방 교실 참여할 사람을 모집합니다.",
+        "changes": [
+          {
+            "context": "참가자를 모집합니다",
+            "end": 29,
+            "original": "참가자를",
+            "replacement": "참여할 사람을",
+            "start": 25
+          }
+        ],
+        "model": "gemini-3.5-flash-lite",
+        "prompt_version": "easy-language-v7",
+        "attempt_count": 1,
+        "generated_at": "<set>",
+        "body_text_present": true,
+        "attachment_content_included": false
+      }
+    },
+    "notice_summary_executions": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_easy_texts": 1,
+    "notice_files": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 2
+  },
+  "anon": {
+    "notices": {
+      "nowon/1001/900511": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "치매 예방 교실 참가자 모집",
+        "department": "보건정책과",
+        "registered_on": "2026-10-07",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900511",
+        "body_html": "<p>치매 예방 교실 참가자를 모집합니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      },
+      "nowon/1001/900512": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "노인 건강검진 참가자 모집",
+        "department": "보건정책과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900512",
+        "body_html": "<p>노인 건강검진 참가자를 모집합니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {
+      "nowon/1001/900511": {
+        "notice_revision": "cadde528cc09d227f7b6e96e97487a2466c754627346ae2361b866ed89e840d0",
+        "source_hash": "fddedef5463b44c9c2a6158771e2d48afa2eeddfdaeb83d2fe953cd8789b3b13",
+        "original_text": "치매 예방 교실 참가자 모집\n치매 예방 교실 참가자를 모집합니다.",
+        "easy_text": "치매 예방 교실 참가자 모집\n치매 예방 교실 참여할 사람을 모집합니다.",
+        "changes": [
+          {
+            "context": "참가자를 모집합니다",
+            "end": 29,
+            "original": "참가자를",
+            "replacement": "참여할 사람을",
+            "start": 25
+          }
+        ],
+        "model": "gemini-3.5-flash-lite",
+        "prompt_version": "easy-language-v7",
+        "attempt_count": 1,
+        "generated_at": "<set>",
+        "body_text_present": true,
+        "attachment_content_included": false
+      }
+    }
+  }
+}

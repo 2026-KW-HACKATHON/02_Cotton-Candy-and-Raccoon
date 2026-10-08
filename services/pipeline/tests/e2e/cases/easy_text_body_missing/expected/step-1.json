@@ -1,0 +1,91 @@
+{
+  "exit_code": 0,
+  "report": {
+    "mode": "new",
+    "total_count": 1,
+    "selected_count": 1,
+    "saved_count": 1,
+    "pages_read": 1,
+    "initial_baseline": true,
+    "listing_complete": true,
+    "failed_ranges": [],
+    "complete": true,
+    "failures": [],
+    "easy_text": {
+      "status": "complete",
+      "complete": true,
+      "attempted_count": 1,
+      "successful_count": 0,
+      "skipped_count": 1,
+      "failed_count": 0,
+      "skipped": [
+        {
+          "notice_id": 1,
+          "reason_code": "no_body_text"
+        }
+      ],
+      "failures": []
+    }
+  },
+  "stderr": [],
+  "http_calls": [
+    "nowon_api 1-50",
+    "nowon_page 900501"
+  ],
+  "gemini_calls": {},
+  "db": {
+    "notices": {
+      "nowon/1001/900501": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "첨부 확인 공지",
+        "department": "총무과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900501",
+        "body_html": null,
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {},
+    "notice_summary_executions": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_easy_texts": 0,
+    "notice_files": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 1
+  },
+  "anon": {
+    "notices": {
+      "nowon/1001/900501": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "첨부 확인 공지",
+        "department": "총무과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900501",
+        "body_html": null,
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {}
+  }
+}

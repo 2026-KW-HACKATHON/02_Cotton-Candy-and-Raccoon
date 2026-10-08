@@ -1,0 +1,130 @@
+{
+  "exit_code": 0,
+  "report": {
+    "mode": "refresh",
+    "total_count": 1,
+    "selected_count": 1,
+    "saved_count": 1,
+    "pages_read": 1,
+    "initial_baseline": false,
+    "listing_complete": true,
+    "failed_ranges": [],
+    "complete": true,
+    "failures": [],
+    "easy_text": {
+      "status": "complete",
+      "complete": true,
+      "attempted_count": 1,
+      "successful_count": 1,
+      "skipped_count": 0,
+      "failed_count": 0,
+      "skipped": [],
+      "failures": []
+    }
+  },
+  "stderr": [],
+  "http_calls": [
+    "nowon_api 1-50",
+    "nowon_page 900491"
+  ],
+  "gemini_calls": {},
+  "db": {
+    "notices": {
+      "nowon/1001/900491": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "가을 축제 참가자 모집",
+        "department": "문화체육과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900491",
+        "body_html": "<p>가을 축제 참가자를 모집합니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<changed>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {
+      "nowon/1001/900491": {
+        "notice_revision": "97370647384a84b2da2e66c18831a588a6a60320d7f7c06734286563d9d7b7bf",
+        "source_hash": "0f33f8c29dd0b6165a6179ab07bf42219626ddc5cb91e7944e9f1603b50cc2c5",
+        "original_text": "가을 축제 참가자 모집\n가을 축제 참가자를 모집합니다.",
+        "easy_text": "가을 축제 참가자 모집\n가을 축제 참여할 사람을 모집합니다.",
+        "changes": [
+          {
+            "context": "참가자를 모집합니다",
+            "end": 23,
+            "original": "참가자를",
+            "replacement": "참여할 사람을",
+            "start": 19
+          }
+        ],
+        "model": "gemini-3.5-flash-lite",
+        "prompt_version": "easy-language-v7",
+        "attempt_count": 1,
+        "generated_at": "<unchanged>",
+        "body_text_present": true,
+        "attachment_content_included": false
+      }
+    },
+    "notice_summary_executions": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_easy_texts": 1,
+    "notice_files": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 1
+  },
+  "anon": {
+    "notices": {
+      "nowon/1001/900491": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "가을 축제 참가자 모집",
+        "department": "문화체육과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900491",
+        "body_html": "<p>가을 축제 참가자를 모집합니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<changed>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {
+      "nowon/1001/900491": {
+        "notice_revision": "97370647384a84b2da2e66c18831a588a6a60320d7f7c06734286563d9d7b7bf",
+        "source_hash": "0f33f8c29dd0b6165a6179ab07bf42219626ddc5cb91e7944e9f1603b50cc2c5",
+        "original_text": "가을 축제 참가자 모집\n가을 축제 참가자를 모집합니다.",
+        "easy_text": "가을 축제 참가자 모집\n가을 축제 참여할 사람을 모집합니다.",
+        "changes": [
+          {
+            "context": "참가자를 모집합니다",
+            "end": 23,
+            "original": "참가자를",
+            "replacement": "참여할 사람을",
+            "start": 19
+          }
+        ],
+        "model": "gemini-3.5-flash-lite",
+        "prompt_version": "easy-language-v7",
+        "attempt_count": 1,
+        "generated_at": "<unchanged>",
+        "body_text_present": true,
+        "attachment_content_included": false
+      }
+    }
+  }
+}

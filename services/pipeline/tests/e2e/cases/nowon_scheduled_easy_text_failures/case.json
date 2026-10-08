@@ -1,0 +1,51 @@
+{
+  "title": "노원구 예약 수집과 쉬운말: 저장에 실패한 공지는 쉬운말을 건너뛰고, 쉬운말이 실패한 공지는 원문만 저장되며 exit 1이다",
+  "steps": [
+    {
+      "type": "sql",
+      "reason": "DB 저장 실패를 재현하는 코드 경로가 없어 특정 게시물의 저장만 거부하는 트리거를 둔다",
+      "sql": "create function e2e_reject_notice() returns trigger language plpgsql as $$ begin if new.post_sn = '900533' then raise exception 'e2e storage failure'; end if; return new; end $$; create trigger e2e_reject_notice before insert on public.notices for each row execute function e2e_reject_notice();"
+    },
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "nowon",
+        "--mode",
+        "new",
+        "--easy-text"
+      ],
+      "gemini": {
+        "easy_text": [
+          "input/easy_900532_error.json",
+          "input/easy_900531.json"
+        ]
+      },
+      "http": [
+        {
+          "route": "nowon_api",
+          "start": 1,
+          "end": 50,
+          "body": "input/nowon_list.xml"
+        },
+        {
+          "route": "nowon_page",
+          "post_sn": "900533",
+          "body": "input/nowon_page_900533.html"
+        },
+        {
+          "route": "nowon_page",
+          "post_sn": "900532",
+          "body": "input/nowon_page_900532.html"
+        },
+        {
+          "route": "nowon_page",
+          "post_sn": "900531",
+          "body": "input/nowon_page_900531.html"
+        }
+      ],
+      "expect_exit": 1
+    }
+  ],
+  "strict_unused": true
+}

@@ -1,0 +1,90 @@
+{
+  "exit_code": 0,
+  "report": {
+    "mode": "new",
+    "total_count": 1,
+    "selected_count": 1,
+    "saved_count": 1,
+    "pages_read": 1,
+    "initial_baseline": true,
+    "listing_complete": true,
+    "failed_ranges": [],
+    "complete": true,
+    "failures": []
+  },
+  "stderr": [],
+  "http_calls": [
+    "nowon_api 1-50",
+    "nowon_page 900421"
+  ],
+  "gemini_calls": {},
+  "db": {
+    "notices": {
+      "nowon/1001/900421": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "주민참여예산 위원 모집",
+        "department": "기획예산과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900421",
+        "body_html": "<p>주민참여예산 위원 모집 안내입니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 2
+      }
+    },
+    "notice_files": {
+      "nowon/1001/900421|attachment|id:4c1f0a2e-0000-4000-8000-000000000421": {
+        "kind": "attachment",
+        "file_sn": "421",
+        "file_id": "4c1f0a2e-0000-4000-8000-000000000421",
+        "file_key": "id:4c1f0a2e-0000-4000-8000-000000000421",
+        "file_name": "모집 공고.pdf",
+        "url": "https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=421&q_fileId=4c1f0a2e-0000-4000-8000-000000000421"
+      }
+    },
+    "notice_summaries": {},
+    "notice_easy_texts": {},
+    "notice_summary_executions": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_easy_texts": 0,
+    "notice_files": 1,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 1
+  },
+  "anon": {
+    "notices": {
+      "nowon/1001/900421": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "주민참여예산 위원 모집",
+        "department": "기획예산과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900421",
+        "body_html": "<p>주민참여예산 위원 모집 안내입니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 2
+      }
+    },
+    "notice_files": {
+      "nowon/1001/900421|attachment|https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=421&q_fileId=4c1f0a2e-0000-4000-8000-000000000421": {
+        "kind": "attachment",
+        "url": "https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=421&q_fileId=4c1f0a2e-0000-4000-8000-000000000421"
+      }
+    },
+    "notice_summaries": {},
+    "notice_easy_texts": {}
+  }
+}
