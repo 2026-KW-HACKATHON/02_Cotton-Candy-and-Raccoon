@@ -25,6 +25,52 @@ const { getLetterMotion, PAPER_LIFT, PAPER_INSERT, PAPER_CONCEALED } = load(
 );
 const near = (actual, expected) =>
   assert.ok(Math.abs(actual - expected) < 0.000001, `${actual} != ${expected}`);
+const {
+  getDragPose,
+  getSnapDirection,
+  haveSameNoticeOrder,
+  getEdgeTouchWidth,
+} = load("../src/features/notices/domain/letterOrbitInput.ts");
+
+test("작은 움직임은 중앙에 유지하고 닫힘 완료 후에만 회전한다", () => {
+  for (const translation of [-24, -10, 0, 10, 24]) {
+    assert.equal(getDragPose(translation, 210).stage, 0);
+    assert.equal(Math.abs(getDragPose(translation, 210).offset), 0);
+  }
+  assert.equal(getDragPose(-50, 210).offset, 0);
+  assert.equal(getDragPose(-64, 210).stage, 5);
+  near(getDragPose(-169, 210).offset, 0.5);
+  near(getDragPose(169, 210).offset, -0.5);
+  assert.equal(getDragPose(-1000, 210).offset, 1);
+});
+
+test("중앙 근처에서는 복귀하고 다음 봉투가 가까워지면 양방향 스냅한다", () => {
+  assert.equal(getSnapDirection(0.1, 20), 0);
+  assert.equal(getSnapDirection(0.44, 0), 0);
+  assert.equal(getSnapDirection(0.45, 0), 1);
+  assert.equal(getSnapDirection(-0.45, 0), -1);
+  assert.equal(getSnapDirection(0.2, 3), 1);
+  assert.equal(getSnapDirection(-0.2, -3), -1);
+});
+
+test("참조·내용 변경과 ID 순서·삭제 변경을 구별한다", () => {
+  const before = [{ id: "a", title: "old" }, { id: "b" }];
+  assert.equal(
+    haveSameNoticeOrder(before, [{ id: "a", title: "new" }, { id: "b" }]),
+    true,
+  );
+  assert.equal(haveSameNoticeOrder(before, [{ id: "b" }, { id: "a" }]), false);
+  assert.equal(haveSameNoticeOrder(before, [{ id: "a" }]), false);
+});
+
+test("가장자리 클릭 영역은 중앙 그림과 간격을 남기고 폭 56dp를 넘지 않는다", () => {
+  for (const width of [280, 320, 375, 430, 600]) {
+    const paper = 290 * Math.min(1, (width - 40) / 290);
+    const edge = getEdgeTouchWidth(width, paper);
+    assert.ok(edge >= 0 && edge <= 56);
+    assert.ok(edge + 12 <= (width - paper) / 2);
+  }
+});
 
 test("처음과 마지막을 양방향으로 연결하고 빈 목록에서 modulo를 계산하지 않는다", () => {
   assert.equal(wrapNoticeIndex(0, 0), -1);
