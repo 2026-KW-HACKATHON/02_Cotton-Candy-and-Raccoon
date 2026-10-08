@@ -184,7 +184,8 @@ def summarize_and_save_prepared_notice(
             notice_id=checked.notice_id,
             reason_code=reason_code,
             warnings=warnings,
-            execution_failure=error.to_dict() if isinstance(error, GeminiExecutionError) else None,
+            execution_failure=(error.to_dict() if isinstance(error, GeminiExecutionError)
+                               else getattr(error, "execution_failure", None)),
         )
 
     if result.notice_id != checked.notice_id:

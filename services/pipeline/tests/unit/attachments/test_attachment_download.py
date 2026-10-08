@@ -97,7 +97,7 @@ def test_redirect_is_not_followed_even_when_client_follows_redirects() -> None:
 
 @pytest.mark.parametrize(
     ("status", "reason"),
-    [(404, "http_error"), (429, "rate_limited"), (503, "http_error")],
+    [(404, "http_error"), (429, "rate_limited"), (503, "server_error")],
 )
 def test_http_errors_are_classified(status: int, reason: str) -> None:
     with _client(httpx.Response(status)) as client:

@@ -45,7 +45,7 @@ SAFE_REASONS = FAILURE_CODES | {
     "summary_execution_superseded", "easy_text_storage_failed", "invalid_response",
     "invalid_notice", "job_timeout", "worker_failed", "invalid_worker_response",
     "processing_failed", "configuration_error", "processing_attempts_exhausted",
-    "processing_result_not_current",
+    "processing_result_not_current", "attachment_download_failed",
 }
 TRANSIENT_REASONS = frozenset({"api_timeout", "api_connection_error"})
 
@@ -96,6 +96,7 @@ class ProcessingOutcome:
             raise ValueError("invalid_worker_response")
         if value["retryable"] and value["reason_code"] not in TRANSIENT_REASONS | {
             "api_error", "api_rate_limited", "api_server_error", "rate_limited", "server_error",
+            "attachment_download_failed",
         }:
             raise ValueError("invalid_worker_response")
         retry_at = _retry_time(value["retry_at"])
@@ -127,6 +128,7 @@ def failure_outcome(
     retryable = reason in TRANSIENT_REASONS if explicit is None else explicit is True
     if reason not in TRANSIENT_REASONS | {
         "api_error", "api_rate_limited", "api_server_error", "rate_limited", "server_error",
+        "attachment_download_failed",
     }:
         retryable = False
     retry_at = _retry_time(field("retry_at"))

@@ -268,7 +268,7 @@ def test_partial_roundtrip_recovery_and_source_invalidation(live_db, monkeypatch
     assert stored.status == "needs_review" and row["deadline_on"] is None
     assert row["attachment_status"] == "unread"
     assert row["preparation_omissions"] == [{
-        "notice_file_id": original.files[0].id, "url": URL + "1", "reason_code": "http_error",
+        "notice_file_id": original.files[0].id, "url": URL + "1", "reason_code": "server_error",
     }]
     view = build_notice_summary_view(
         status=row["status"], result=row["result"], attachment_status=row["attachment_status"],
@@ -315,3 +315,62 @@ def test_omission_cannot_claim_another_file_or_link():
     )})
     with pytest.raises(SummaryPreparationError):
         prepare_gemini_request(replace(prepared, file_manifest=forged))
+
+
+@pytest.mark.parametrize("recover", [True, False])
+def test_pdf_only_timeout_waits_then_recovers_or_exhausts(live_db, monkeypatch, recover):
+    from pipeline.config import DatabaseSettings
+    from pipeline.processing_runner import run_processing
+    from pipeline.processing_worker import process_claim
+
+    original = _db_source(live_db, body=None)
+    live_db.execute("update notice_files set file_name='poster.pdf' where notice_id=%s",
+                    (original.notice_id,))
+    failed = [True]
+    downloads = []
+
+    def respond(request):
+        downloads.append(str(request.url))
+        if failed[0]:
+            raise httpx.ReadTimeout("synthetic", request=request)
+        return httpx.Response(200, content=b"%PDF-poster")
+
+    def prepare(source, **kwargs):
+        with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+            return prepare_summary_source(source, client=client, **kwargs)
+
+    provider = Mock(return_value=json.dumps(_response("pdf"), ensure_ascii=False))
+    monkeypatch.setattr("pipeline.summary_run.prepare_summary_source", prepare)
+    monkeypatch.setattr("pipeline.transform.summarize.generate_summary_json", provider)
+    settings = DatabaseSettings(live_db.info.dsn)
+
+    def execute(database, claim, api_key, timeout):
+        return process_claim(database, claim, api_key=api_key)
+
+    def run():
+        return run_processing(settings, api_key="synthetic", features=("summary",),
+                              notice_id=original.notice_id, max_attempts=2, executor=execute)
+
+    first = run()
+    assert first.records[0]["state"] == "retry_wait"
+    row = live_db.execute("select * from notice_processing_jobs where notice_id=%s",
+                          (original.notice_id,)).fetchone()
+    assert row["attempts"] == 1 and row["next_attempt_at"] is not None
+    assert row["last_error_code"] == "attachment_download_failed"
+    provider.assert_not_called()
+    assert run().report()["attempted_count"] == 0
+    assert len(downloads) == 1
+    live_db.execute("update notice_processing_jobs set next_attempt_at=now()-interval '1 second' "
+                    "where notice_id=%s", (original.notice_id,))
+    failed[0] = not recover
+    second = run()
+    assert second.records[0]["state"] == ("succeeded" if recover else "exhausted")
+    assert len(downloads) == 2
+    assert run().report()["attempted_count"] == 0
+    if recover:
+        saved = _row(live_db, original.notice_id)
+        assert saved["result"] is not None and saved["status"] == "needs_review"
+        assert provider.called
+    else:
+        provider.assert_not_called()
+    assert load_summary_source(live_db, original.notice_id).files[0].file_name == "poster.pdf"
