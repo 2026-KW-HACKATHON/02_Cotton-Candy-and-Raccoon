@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Modal, ScrollView, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
 import { useLocalSearchParams } from "expo-router";
 import { Screen } from "@/shared/ui/Screen";
@@ -12,6 +12,8 @@ import { useBookmarkStore } from "../store/bookmarkStore";
 import { EasyNoticeState } from "../components/EasyNoticeState";
 import { NoticeDocumentText } from "../components/NoticeDocumentText";
 import { NoticeTermOverlay } from "../components/NoticeTermOverlay";
+import { NoticeFiles } from "../components/NoticeFiles";
+import { NoticeSummaryStatus } from "../components/NoticeSummaryStatus";
 import { getSummaryRows, isNoticeExpired } from "../domain/noticePresentation";
 import { type GlossaryTerm } from "../types/notice";
 
@@ -24,7 +26,6 @@ export function EasyNoticeDetailScreen() {
   const toggleBookmark = useBookmarkStore((state) => state.toggleBookmark);
   const [easy, setEasy] = useState(false);
   const [term, setTerm] = useState<GlossaryTerm | null>(null);
-  const [documentOpen, setDocumentOpen] = useState(false);
   const notice = query.data;
   const rows = notice ? getSummaryRows(notice) : [];
   return (
@@ -68,10 +69,22 @@ export function EasyNoticeDetailScreen() {
         gap: EASY.gap,
       }}
     >
-      {query.isPending || query.isError ? (
+      {query.isError && query.data && (
+        <EasyNoticeState
+          error
+          errorDetail={query.error}
+          retrying={query.isFetching}
+          retry={() => {
+            void query.refetch();
+          }}
+        />
+      )}
+      {query.isPending || (query.isError && !query.data) ? (
         <EasyNoticeState
           loading={query.isPending}
           error={query.isError}
+          errorDetail={query.error}
+          retrying={query.isFetching}
           retry={() => {
             void query.refetch();
           }}
@@ -89,6 +102,7 @@ export function EasyNoticeDetailScreen() {
               secondary
             >{`공고 ${notice.publishedAt.replaceAll(" ", "")}\n정보제공처 ${notice.provider}`}</AppText>
           </View>
+          <NoticeSummaryStatus comfortable status={notice.summaryStatus} />
           {isNoticeExpired(notice) && (
             <View style={styles.card}>
               <AppText
@@ -129,69 +143,51 @@ export function EasyNoticeDetailScreen() {
             <EasyButton
               label={easy ? "원문으로 읽기" : "쉬운말로 읽기"}
               selected={easy}
+              disabled={!notice.hasEasyText}
               onPress={() => {
                 setTerm(null);
                 setEasy((value) => !value);
               }}
             />
             <AppText size={EASY.body} secondary>
-              {easy
-                ? "점선 표현을 누르면 원문 단어를 볼 수 있어요."
-                : "점선 단어를 누르면 뜻을 볼 수 있어요."}
+              {!notice.hasEasyText
+                ? "쉬운말이 아직 준비되지 않았어요. 원문으로 확인해 주세요."
+                : easy
+                  ? "점선 표현을 누르면 원문 단어를 볼 수 있어요."
+                  : "점선 단어를 누르면 뜻을 볼 수 있어요."}
             </AppText>
+            {easy && !notice.easyAttachmentContentIncluded && (
+              <AppText size={EASY.body} secondary>
+                첨부 파일 내용은 쉬운말에 포함되지 않아요. 파일을 따로 확인해
+                주세요.
+              </AppText>
+            )}
             <NoticeDocumentText
               comfortable
-              text={easy ? notice.easy : notice.original}
+              text={
+                (easy ? notice.easy : notice.original) ||
+                "본문 텍스트가 없어요. 아래 이미지 또는 공식 원문을 확인해 주세요."
+              }
+              parts={
+                easy
+                  ? notice.documentParts?.easy
+                  : notice.documentParts?.original
+              }
               terms={notice.terms}
               easy={easy}
               onTermPress={setTerm}
             />
           </View>
-          <EasyButton
-            label="원문 파일 보기"
-            filled
-            onPress={() => setDocumentOpen(true)}
+          <NoticeFiles
+            comfortable
+            files={notice.files}
+            sourceUrl={notice.sourceUrl}
           />
-          <AppText size={EASY.body} secondary>
-            화면 검토용 예시 공문입니다. 실제 공고가 아닙니다.
-          </AppText>
           <AppText size={EASY.body} secondary>
             {
               "월계알리미는 노원구청의 공식 서비스가 아닙니다.\n공개된 공지 정보를 모아 쉽게 전달해요."
             }
           </AppText>
-          {/* 첨부 파일 연동 전에는 기본 화면과 동일하게 로컬 예시 원문을 제공한다. */}
-          <Modal
-            visible={documentOpen}
-            transparent
-            animationType="slide"
-            onRequestClose={() => setDocumentOpen(false)}
-          >
-            <View style={styles.overlay}>
-              <View
-                accessibilityViewIsModal
-                style={[styles.card, styles.fileModal]}
-              >
-                <AppText variant="bold" size={EASY.heading}>
-                  예시 원문
-                </AppText>
-                <ScrollView contentContainerStyle={{ gap: 16 }}>
-                  <AppText variant="bold" size={EASY.body}>
-                    {notice.documentTitle}
-                  </AppText>
-                  <AppText size={EASY.body}>{notice.original}</AppText>
-                  <AppText size={EASY.body}>
-                    실제 원문 파일은 서버 연동 후 제공됩니다.
-                  </AppText>
-                </ScrollView>
-                <EasyButton
-                  label="닫기"
-                  filled
-                  onPress={() => setDocumentOpen(false)}
-                />
-              </View>
-            </View>
-          </Modal>
         </>
       )}
     </Screen>
@@ -210,18 +206,5 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     borderRadius: EASY.cardRadius,
     backgroundColor: COLORS.surface,
-  },
-  overlay: {
-    flex: 1,
-    justifyContent: "center",
-    padding: 20,
-    backgroundColor: "rgba(36,59,83,0.24)",
-  },
-  fileModal: {
-    gap: EASY.gap,
-    maxWidth: 500,
-    width: "100%",
-    maxHeight: "85%",
-    alignSelf: "center",
   },
 });

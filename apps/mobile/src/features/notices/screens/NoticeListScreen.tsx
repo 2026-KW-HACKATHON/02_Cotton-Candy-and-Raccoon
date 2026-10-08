@@ -13,6 +13,7 @@ import { COLORS, FONTS, RADIUS, SPACE } from "@/shared/theme/tokens";
 import { useDisplayPreferences } from "@/shared/accessibility/displayPreferences";
 import { NoticeCard } from "../components/NoticeCard";
 import { NoticeState } from "../components/NoticeState";
+import { NoticeActionButton } from "../components/NoticeActionButton";
 import { ScopeDropdown } from "../components/ScopeDropdown";
 import {
   CATEGORIES,
@@ -95,7 +96,7 @@ function StandardNoticeListScreen() {
     >
       <View style={styles.count}>
         <AppText secondary size={12.923}>
-          전체 {vm.notices.length}건
+          불러온 공문 {vm.notices.length}건
         </AppText>
         <Pressable
           accessibilityRole="button"
@@ -112,10 +113,22 @@ function StandardNoticeListScreen() {
           </AppText>
         </Pressable>
       </View>
-      {vm.isPending || vm.isError ? (
+      {vm.isError && vm.data && (
+        <NoticeState
+          error
+          errorDetail={vm.error}
+          retrying={vm.isFetching}
+          retry={() => {
+            void vm.refetch();
+          }}
+        />
+      )}
+      {vm.isPending || (vm.isError && !vm.data) ? (
         <NoticeState
           loading={vm.isPending}
           error={vm.isError}
+          errorDetail={vm.error}
+          retrying={vm.isFetching}
           retry={() => {
             void vm.refetch();
           }}
@@ -127,9 +140,15 @@ function StandardNoticeListScreen() {
       ) : (
         <NoticeState message="검색 조건에 맞는 공문이 없어요." />
       )}
-      <AppText secondary size={11.08}>
-        화면 검토용 예시 공문입니다. 실제 공고가 아닙니다.
-      </AppText>
+      {vm.hasNextPage && (
+        <NoticeActionButton
+          label={vm.isFetchingNextPage ? "불러오는 중…" : "공문 더 보기"}
+          disabled={vm.isFetchingNextPage}
+          onPress={() => {
+            void vm.fetchNextPage();
+          }}
+        />
+      )}
     </Screen>
   );
 }

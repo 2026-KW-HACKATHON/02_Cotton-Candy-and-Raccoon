@@ -87,15 +87,27 @@ function StandardHomeScreen() {
             lineHeight={20.308}
             style={{ flex: 1 }}
           >
-            오늘의 공문 · {date} · 예시
+            최근 공문 · {date}
           </AppText>
           <ScopeDropdown />
         </View>
       </View>
-      {query.isPending || query.isError ? (
+      {query.isError && query.data && (
+        <NoticeState
+          error
+          errorDetail={query.error}
+          retrying={query.isFetching}
+          retry={() => {
+            void query.refetch();
+          }}
+        />
+      )}
+      {query.isPending || (query.isError && !query.data) ? (
         <NoticeState
           loading={query.isPending}
           error={query.isError}
+          errorDetail={query.error}
+          retrying={query.isFetching}
           retry={() => {
             void query.refetch();
           }}
@@ -190,9 +202,7 @@ function StandardHomeScreen() {
                   }
                   // 중앙 편지의 상세 이동과 접근성 포커스는 내부 버튼이 담당한다.
                   onPress={
-                    selected
-                      ? undefined
-                      : () => move(activeIndex + direction)
+                    selected ? undefined : () => move(activeIndex + direction)
                   }
                   style={{
                     width: pageWidth,

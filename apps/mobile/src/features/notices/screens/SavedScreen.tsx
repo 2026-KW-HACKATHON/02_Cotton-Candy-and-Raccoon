@@ -7,7 +7,7 @@ import { COLORS } from "@/shared/theme/tokens";
 import { NoticeCard } from "../components/NoticeCard";
 import { NoticeState } from "../components/NoticeState";
 import { ScopeDropdown } from "../components/ScopeDropdown";
-import { useNotices } from "../hooks/useNotices";
+import { useSavedNotices } from "../hooks/useNotices";
 import { useBookmarkStore } from "../store/bookmarkStore";
 import { useDisplayPreferences } from "@/shared/accessibility/displayPreferences";
 import { EasyNoticeListScreen } from "./EasyNoticeListScreen";
@@ -21,13 +21,13 @@ export function SavedScreen() {
   );
 }
 function StandardSavedScreen() {
-  const query = useNotices();
+  const ids = useBookmarkStore((state) => state.savedIds);
+  const query = useSavedNotices(ids);
   const { width } = useWindowDimensions();
   const fontScale = useDisplayPreferences((state) => state.fontScale);
   // 좁은 화면과 큰 글자에서는 날짜·제공처와 북마크가 겹치지 않도록 한 열을 쓴다.
   const singleColumn =
     (Math.min(width, 600) - 31.384) * 0.483 < 150 * fontScale;
-  const ids = useBookmarkStore((state) => state.savedIds);
   const [recentFirst, setRecentFirst] = useState(true);
   // savedIds의 추가 순서를 보관 시점으로 사용한다. 공문 게시일 정렬과는 별개다.
   const saved = (query.data ?? [])
@@ -65,10 +65,22 @@ function StandardSavedScreen() {
           </AppText>
         </Pressable>
       </View>
-      {query.isPending || query.isError ? (
+      {query.isError && query.data && (
+        <NoticeState
+          error
+          errorDetail={query.error}
+          retrying={query.isFetching}
+          retry={() => {
+            void query.refetch();
+          }}
+        />
+      )}
+      {query.isPending || (query.isError && !query.data) ? (
         <NoticeState
           loading={query.isPending}
           error={query.isError}
+          errorDetail={query.error}
+          retrying={query.isFetching}
           retry={() => {
             void query.refetch();
           }}
@@ -95,7 +107,7 @@ function StandardSavedScreen() {
         </View>
       )}
       <AppText secondary size={11.08}>
-        예시 데이터의 보관 상태는 앱 실행 중에만 유지됩니다.
+        보관 상태는 앱 실행 중에만 유지됩니다.
       </AppText>
     </Screen>
   );

@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Bookmark } from "lucide-react-native";
@@ -17,6 +17,8 @@ import { EasyNoticeDetailScreen } from "./EasyNoticeDetailScreen";
 import { DetailCharacter } from "@/shared/ui/character/AnimatedCharacter";
 import { NoticeDocumentText } from "../components/NoticeDocumentText";
 import { NoticeTermOverlay } from "../components/NoticeTermOverlay";
+import { NoticeFiles } from "../components/NoticeFiles";
+import { NoticeSummaryStatus } from "../components/NoticeSummaryStatus";
 import { type GlossaryTerm } from "../types/notice";
 
 const SUMMARY_ICONS = [
@@ -47,9 +49,8 @@ function StandardNoticeDetailScreen() {
   const query = useNotice(id);
   const saved = useBookmarkStore((state) => state.savedIds.includes(id));
   const toggleBookmark = useBookmarkStore((state) => state.toggleBookmark);
-  // 쉬운말은 미리 작성된 예시 문구를 전환한다. 이 화면에서 AI 변환 요청을 실행하지 않는다.
+  // 서버가 제공한 쉬운말만 표시하며 이 화면에서는 변환 요청을 실행하지 않는다.
   const [easy, setEasy] = useState(false);
-  const [documentOpen, setDocumentOpen] = useState(false);
   const [term, setTerm] = useState<GlossaryTerm | null>(null);
   const notice = query.data;
   const rows = notice
@@ -58,7 +59,7 @@ function StandardNoticeDetailScreen() {
         ["대상", notice.audience],
         ["할 일", notice.task],
         ["유의사항", notice.caution],
-      ]
+      ].filter(([, value]) => Boolean(value))
     : [];
   return (
     <Screen
@@ -95,10 +96,22 @@ function StandardNoticeDetailScreen() {
         />
       }
     >
-      {query.isPending || query.isError ? (
+      {query.isError && query.data && (
+        <NoticeState
+          error
+          errorDetail={query.error}
+          retrying={query.isFetching}
+          retry={() => {
+            void query.refetch();
+          }}
+        />
+      )}
+      {query.isPending || (query.isError && !query.data) ? (
         <NoticeState
           loading={query.isPending}
           error={query.isError}
+          errorDetail={query.error}
+          retrying={query.isFetching}
           retry={() => {
             void query.refetch();
           }}
@@ -129,32 +142,32 @@ function StandardNoticeDetailScreen() {
             </AppText>
             <DetailCharacter active={animationActive} />
           </View>
-          <View style={styles.summary}>
-            <AppText variant="bold" size={18} lineHeight={27}>
-              핵심만 먼저 확인해요
-            </AppText>
-            {rows.map(([label, value], index) => (
-              <View key={label} style={styles.summaryRow}>
-                <View style={styles.iconBadge}>
-                  <Image
-                    source={SUMMARY_ICONS[index]}
-                    style={{ width: 28, height: 28 }}
-                  />
+          <NoticeSummaryStatus status={notice.summaryStatus} />
+          {rows.length > 0 && (
+            <View style={styles.summary}>
+              <AppText variant="bold" size={18} lineHeight={27}>
+                핵심만 먼저 확인해요
+              </AppText>
+              {rows.map(([label, value], index) => (
+                <View key={label} style={styles.summaryRow}>
+                  <View style={styles.iconBadge}>
+                    <Image
+                      source={SUMMARY_ICONS[index]}
+                      style={{ width: 28, height: 28 }}
+                    />
+                  </View>
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <AppText variant="bold" size={16} lineHeight={26}>
+                      {label}
+                    </AppText>
+                    <AppText size={16} lineHeight={26}>
+                      {value}
+                    </AppText>
+                  </View>
                 </View>
-                <View style={{ flex: 1, gap: 4 }}>
-                  <AppText variant="bold" size={16} lineHeight={26}>
-                    {label}
-                  </AppText>
-                  <AppText size={16} lineHeight={26}>
-                    {value}
-                  </AppText>
-                </View>
-              </View>
-            ))}
-            <AppText secondary size={12} lineHeight={18}>
-              화면 검토용 예시 요약입니다. 정확한 조건은 원문을 확인해요.
-            </AppText>
-          </View>
+              ))}
+            </View>
+          )}
           <View style={styles.document}>
             <View
               style={styles.segment}
@@ -166,7 +179,11 @@ function StandardNoticeDetailScreen() {
                   key={String(mode)}
                   accessibilityRole="tab"
                   accessibilityLabel={mode ? "쉬운말" : "원문"}
-                  accessibilityState={{ selected: easy === mode }}
+                  accessibilityState={{
+                    selected: easy === mode,
+                    disabled: mode && !notice.hasEasyText,
+                  }}
+                  disabled={mode && !notice.hasEasyText}
                   aria-selected={easy === mode}
                   onPress={() => {
                     setTerm(null);
@@ -191,37 +208,37 @@ function StandardNoticeDetailScreen() {
               ))}
             </View>
             <AppText secondary size={12} lineHeight={18}>
-              {easy
-                ? "원문 표현을 누르면 원래 단어를 볼 수 있어요."
-                : "밑줄 친 단어를 누르면 뜻을 볼 수 있어요."}
+              {!notice.hasEasyText
+                ? "쉬운말이 아직 준비되지 않았어요. 원문으로 확인해 주세요."
+                : easy
+                  ? "점선 표현을 누르면 원문 단어를 볼 수 있어요."
+                  : "밑줄 친 단어를 누르면 뜻을 볼 수 있어요."}
             </AppText>
             <AppText variant="bold" size={18} lineHeight={27}>
               {notice.documentTitle}
             </AppText>
+            {easy && !notice.easyAttachmentContentIncluded && (
+              <AppText secondary size={12} lineHeight={18}>
+                첨부 파일 내용은 쉬운말에 포함되지 않아요. 파일을 따로 확인해
+                주세요.
+              </AppText>
+            )}
             <NoticeDocumentText
-              text={easy ? notice.easy : notice.original}
+              text={
+                (easy ? notice.easy : notice.original) ||
+                "본문 텍스트가 없어요. 아래 이미지 또는 공식 원문을 확인해 주세요."
+              }
+              parts={
+                easy
+                  ? notice.documentParts?.easy
+                  : notice.documentParts?.original
+              }
               terms={notice.terms}
               easy={easy}
               onTermPress={setTerm}
             />
           </View>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setDocumentOpen(true)}
-            style={styles.fileButton}
-          >
-            <AppText
-              variant="medium"
-              size={16}
-              lineHeight={24}
-              style={{ color: COLORS.primary }}
-            >
-              원문 파일 보기
-            </AppText>
-          </Pressable>
-          <AppText secondary size={12.923}>
-            화면 검토용 예시 공문입니다. 실제 공고가 아닙니다.
-          </AppText>
+          <NoticeFiles files={notice.files} sourceUrl={notice.sourceUrl} />
           <View style={{ gap: 4, paddingTop: 12 }}>
             <AppText secondary size={12} lineHeight={18}>
               월계알리미는 노원구청의 공식 서비스가 아닙니다.
@@ -230,33 +247,6 @@ function StandardNoticeDetailScreen() {
               공개된 공지 정보를 모아 쉽게 전달해요.
             </AppText>
           </View>
-          {/* 첨부 파일 연동 전에는 다운로드 대신 로컬 예시 원문을 모달로 보여준다. */}
-          <Modal
-            visible={documentOpen}
-            animationType="slide"
-            transparent
-            onRequestClose={() => setDocumentOpen(false)}
-          >
-            <View style={styles.overlay}>
-              <View accessibilityViewIsModal style={styles.modal}>
-                <AppText variant="bold" size={18}>
-                  예시 원문
-                </AppText>
-                <ScrollView>
-                  <AppText variant="bold">{notice.documentTitle}</AppText>
-                  <AppText>{notice.original}</AppText>
-                  <AppText>실제 원문 파일은 서버 연동 후 제공됩니다.</AppText>
-                </ScrollView>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => setDocumentOpen(false)}
-                  style={styles.fileButton}
-                >
-                  <AppText>닫기</AppText>
-                </Pressable>
-              </View>
-            </View>
-          </Modal>
         </>
       )}
     </Screen>
@@ -314,14 +304,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  fileButton: {
-    minHeight: 52,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 0.923,
-    borderColor: "#73899B",
-    borderRadius: RADIUS.control,
-  },
   segmentSelected: {
     backgroundColor: COLORS.primary,
     shadowColor: COLORS.text,
@@ -329,18 +311,5 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
-  },
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(36,59,83,0.4)",
-    justifyContent: "center",
-    padding: 24,
-  },
-  modal: {
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.card,
-    padding: 24,
-    gap: 20,
-    maxHeight: "80%",
   },
 });

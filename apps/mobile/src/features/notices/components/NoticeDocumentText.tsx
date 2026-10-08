@@ -3,7 +3,7 @@ import { Image } from "expo-image";
 import { AppText } from "@/shared/ui/AppText";
 import { COLORS } from "@/shared/theme/tokens";
 import { splitGlossaryText } from "../domain/noticePresentation";
-import { type GlossaryTerm } from "../types/notice";
+import { type DocumentPart, type GlossaryTerm } from "../types/notice";
 
 export function NoticeDocumentText({
   text,
@@ -11,22 +11,29 @@ export function NoticeDocumentText({
   easy,
   onTermPress,
   comfortable = false,
+  parts,
 }: {
   text: string;
   terms?: readonly GlossaryTerm[];
   easy: boolean;
   onTermPress: (term: GlossaryTerm) => void;
   comfortable?: boolean;
+  parts?: DocumentPart[];
 }) {
+  const paragraphs: DocumentPart[][] = [[]];
+  const sourceParts =
+    parts ?? splitGlossaryText(text, terms, easy ? "plain" : "original");
+  for (const part of sourceParts) {
+    part.text.split("\n").forEach((value, index) => {
+      if (index > 0) paragraphs.push([]);
+      paragraphs[paragraphs.length - 1].push({ ...part, text: value });
+    });
+  }
   return (
     <View style={[styles.paragraphs, comfortable && { gap: 16 }]}>
-      {text.split("\n").map((paragraph, index) => (
+      {paragraphs.map((paragraph, index) => (
         <View key={index} style={styles.paragraph}>
-          {splitGlossaryText(
-            paragraph,
-            terms,
-            easy ? "plain" : "original",
-          ).flatMap((part, partIndex) =>
+          {paragraph.flatMap((part, partIndex) =>
             part.term
               ? [
                   <Pressable

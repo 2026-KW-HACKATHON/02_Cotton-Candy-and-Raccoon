@@ -92,7 +92,7 @@ export function LetterIllustration({
           </AppText>
         </View>
         <AppText size={12} lineHeight={18} numberOfLines={2}>
-          {notice.description}
+          {notice.description || "자세한 내용은 원문을 확인해 주세요."}
         </AppText>
         <View style={styles.facts}>
           {[
@@ -125,7 +125,7 @@ export function LetterIllustration({
                 numberOfLines={1}
                 style={{ flex: 1 }}
               >
-                {value}
+                {value || "원문에서 확인"}
               </AppText>
             </View>
           ))}

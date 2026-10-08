@@ -4,7 +4,7 @@ import { Screen } from "@/shared/ui/Screen";
 import { AppText } from "@/shared/ui/AppText";
 import { EasyButton } from "@/shared/ui/EasyButton";
 import { EASY } from "@/shared/theme/tokens";
-import { useNotices } from "../hooks/useNotices";
+import { useNotices, useSavedNotices } from "../hooks/useNotices";
 import { useBookmarkStore } from "../store/bookmarkStore";
 import { EasyNoticeCard } from "../components/EasyNoticeCard";
 import { EasyNoticeState } from "../components/EasyNoticeState";
@@ -14,8 +14,10 @@ export function EasyNoticeListScreen({
 }: {
   kind: "home" | "notices" | "saved";
 }) {
-  const query = useNotices();
   const ids = useBookmarkStore((state) => state.savedIds);
+  const listQuery = useNotices(kind !== "saved");
+  const savedQuery = useSavedNotices(ids, kind === "saved");
+  const query = kind === "saved" ? savedQuery : listQuery;
   // 편한 화면은 검색·분류 조작을 생략하고 원본을 변경하지 않은 채 게시일순으로 표시한다.
   const notices = [...(query.data ?? [])]
     .filter((notice) => kind !== "saved" || ids.includes(notice.id))
@@ -55,21 +57,31 @@ export function EasyNoticeListScreen({
         )}
         {kind !== "saved" && (
           <AppText size={EASY.body} secondary>
-            {home
-              ? "이번 주 · 예시 9.28–10.1\n월요일부터 오늘까지"
-              : "공문 등록일 최신순"}
+            {home ? "새로 등록된 공문을 확인해 주세요." : "공문 등록일 최신순"}
           </AppText>
         )}
       </View>
       {home && (
         <AppText size={EASY.heading} variant="display">
-          이번 주 공문
+          최근 공문
         </AppText>
       )}
-      {query.isPending || query.isError ? (
+      {query.isError && query.data && (
+        <EasyNoticeState
+          error
+          errorDetail={query.error}
+          retrying={query.isFetching}
+          retry={() => {
+            void query.refetch();
+          }}
+        />
+      )}
+      {query.isPending || (query.isError && !query.data) ? (
         <EasyNoticeState
           loading={query.isPending}
           error={query.isError}
+          errorDetail={query.error}
+          retrying={query.isFetching}
           retry={() => {
             void query.refetch();
           }}
@@ -106,9 +118,16 @@ export function EasyNoticeListScreen({
           onPress={() => router.navigate("/notices")}
         />
       )}
-      <AppText size={14} secondary>
-        화면 검토용 예시 공문입니다. 실제 공고가 아닙니다.
-      </AppText>
+      {kind === "notices" && listQuery.hasNextPage && (
+        <EasyButton
+          label={listQuery.isFetchingNextPage ? "불러오는 중…" : "공문 더 보기"}
+          filled
+          disabled={listQuery.isFetchingNextPage}
+          onPress={() => {
+            void listQuery.fetchNextPage();
+          }}
+        />
+      )}
     </Screen>
   );
 }
