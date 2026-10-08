@@ -39,7 +39,7 @@ ANON_COLUMNS: dict[str, tuple[str, ...]] = {
     ),
     "notice_easy_texts": (
         "notice_id", "original_text", "easy_text", "changes", "generated_at",
-        "body_text_present", "attachment_content_included",
+        "body_text_present", "attachment_content_included", "easy_result",
     ),
 }
 
@@ -56,6 +56,7 @@ APP_VIEWS["app_notice_detail"] = APP_VIEWS["app_notice_list"] + (
     "url", "license_type", "body_text", "result", "generated_at", "file_references",
     "preparation_omissions", "files", "easy_original_text", "easy_text", "easy_changes",
     "easy_body_text_present", "easy_attachment_content_included", "easy_generated_at",
+    "easy_result",
 )
 ANON_READS = {**ANON_COLUMNS, **APP_VIEWS}
 

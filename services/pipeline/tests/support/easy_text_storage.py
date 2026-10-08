@@ -1,6 +1,5 @@
 """Helpers shared from test_easy_text_storage.py."""
 
-import json
 import os
 from datetime import UTC, datetime
 
@@ -14,6 +13,7 @@ from pipeline.glossary.easy_language import (
 )
 from pipeline.glossary.notice_service import load_notice_glossary_input
 from support.collect_easy_text_storage import _TEST_ROLES
+from support.easy_rewrite import rewrite_request
 from support.paths import REPO_ROOT
 
 __all__ = [
@@ -94,19 +94,7 @@ def _notice(conn):
 
 
 def _request(**kwargs):
-    return json.dumps(
-        {
-            "changes": [
-                {
-                    "original": "구비서류를",
-                    "replacement": "준비할 서류를",
-                    "context": "구비서류를 지참하세요.",
-                }
-            ],
-            "dictionary_candidates": [],
-        },
-        ensure_ascii=False,
-    )
+    return rewrite_request(**kwargs)
 
 
 def _result(source, now=_NOW):

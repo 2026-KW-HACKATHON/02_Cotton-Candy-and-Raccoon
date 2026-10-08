@@ -1,4 +1,4 @@
-"""Public Gemini Generate Content API for contextual notice term replacements."""
+"""Public Gemini Generate Content API for question-section notice rewrites."""
 
 from google import genai
 from google.genai import types
@@ -14,7 +14,7 @@ from pipeline.glossary.easy_language import (
     DEFAULT_MODEL,
     EasyLanguageAPIError,
     EasyLanguageConfigurationError,
-    EasyLanguageResponse,
+    EasyRewriteResponse,
 )
 from pipeline.transform.gemini_logging import private_gemini_logging
 
@@ -82,7 +82,7 @@ def _generate_easy_language_json_direct(
                 config=types.GenerateContentConfig(
                     system_instruction=prompt,
                     response_mime_type="application/json",
-                    response_json_schema=EasyLanguageResponse.model_json_schema(),
+                    response_json_schema=EasyRewriteResponse.model_json_schema(),
                     candidate_count=1,
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
                 ),

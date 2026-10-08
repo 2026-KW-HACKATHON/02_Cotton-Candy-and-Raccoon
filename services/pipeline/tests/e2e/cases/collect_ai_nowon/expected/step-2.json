@@ -5,6 +5,9 @@
     "total_count": 1,
     "selected_count": 1,
     "saved_count": 1,
+    "skipped_count": 0,
+    "skipped": [],
+    "failed_count": 0,
     "pages_read": 1,
     "initial_baseline": false,
     "listing_complete": true,
@@ -78,10 +81,7 @@
           "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900611"
         }
       ]
-    },
-    "skipped_count": 0,
-    "skipped": [],
-    "failed_count": 0
+    }
   },
   "stderr": [],
   "http_calls": [
@@ -243,15 +243,34 @@
         "notice_revision": "8658c31172e004423c16991849fdf377d98c6a0066f3a84979ad8273a6587c59",
         "source_hash": "42609aaa1b936f6d7fef75c6a09c9b33897d7cc0a6ae4ce09627f0e190e9cb2b",
         "original_text": "지원 사업 신청\n지원 사업 신청\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
-        "easy_text": "지원 사업 신청\n지원 사업 신청\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
+        "easy_text": "지원 사업 신청\n지원 사업 신청 안내예요.\n\n누가 신청하나요?\n월계1동 주민이 신청할 수 있어요.",
         "changes": [],
         "model": "gemini-3.5-flash-lite",
-        "prompt_version": "easy-language-v8",
+        "prompt_version": "easy-rewrite-v1",
         "attempt_count": 1,
         "generated_at": "<unchanged>",
         "body_text_present": true,
         "attachment_content_included": false,
-        "dictionary_candidates": []
+        "dictionary_candidates": [],
+        "easy_result": {
+          "attachment_hint": null,
+          "headline": "지원 사업 신청 안내예요.",
+          "intro": [],
+          "sections": [
+            {
+              "heading": "누가 신청하나요?",
+              "sentences": [
+                {
+                  "evidence": [
+                    "대상: 월계1동 주민"
+                  ],
+                  "text": "월계1동 주민이 신청할 수 있어요."
+                }
+              ],
+              "style": "paragraph"
+            }
+          ]
+        }
       }
     },
     "notice_dictionary_links": {
@@ -272,7 +291,7 @@
       "nowon/1001/900611|easy_text": {
         "feature": "easy_text",
         "input_version": "8658c31172e004423c16991849fdf377d98c6a0066f3a84979ad8273a6587c59",
-        "contract_key": "{\"model\":\"gemini-3.5-flash-lite\",\"prompt_version\":\"easy-language-v8\"}",
+        "contract_key": "{\"model\":\"gemini-3.5-flash-lite\",\"prompt_version\":\"easy-rewrite-v1\"}",
         "state": "succeeded",
         "attempts": 1,
         "next_attempt_at": null,
@@ -446,11 +465,30 @@
     "notice_easy_texts": {
       "nowon/1001/900611": {
         "original_text": "지원 사업 신청\n지원 사업 신청\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
-        "easy_text": "지원 사업 신청\n지원 사업 신청\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
+        "easy_text": "지원 사업 신청\n지원 사업 신청 안내예요.\n\n누가 신청하나요?\n월계1동 주민이 신청할 수 있어요.",
         "changes": [],
         "generated_at": "<unchanged>",
         "body_text_present": true,
-        "attachment_content_included": false
+        "attachment_content_included": false,
+        "easy_result": {
+          "attachment_hint": null,
+          "headline": "지원 사업 신청 안내예요.",
+          "intro": [],
+          "sections": [
+            {
+              "heading": "누가 신청하나요?",
+              "sentences": [
+                {
+                  "evidence": [
+                    "대상: 월계1동 주민"
+                  ],
+                  "text": "월계1동 주민이 신청할 수 있어요."
+                }
+              ],
+              "style": "paragraph"
+            }
+          ]
+        }
       }
     },
     "app_notice_list": {
@@ -607,11 +645,30 @@
         "preparation_omissions": [],
         "files": [],
         "easy_original_text": "지원 사업 신청\n지원 사업 신청\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
-        "easy_text": "지원 사업 신청\n지원 사업 신청\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
+        "easy_text": "지원 사업 신청\n지원 사업 신청 안내예요.\n\n누가 신청하나요?\n월계1동 주민이 신청할 수 있어요.",
         "easy_changes": [],
         "easy_body_text_present": true,
         "easy_attachment_content_included": false,
-        "easy_generated_at": "<unchanged>"
+        "easy_generated_at": "<unchanged>",
+        "easy_result": {
+          "attachment_hint": null,
+          "headline": "지원 사업 신청 안내예요.",
+          "intro": [],
+          "sections": [
+            {
+              "heading": "누가 신청하나요?",
+              "sentences": [
+                {
+                  "evidence": [
+                    "대상: 월계1동 주민"
+                  ],
+                  "text": "월계1동 주민이 신청할 수 있어요."
+                }
+              ],
+              "style": "paragraph"
+            }
+          ]
+        }
       }
     },
     "get_notice_dictionary": {
@@ -622,13 +679,13 @@
           "changes": [],
           "dictionary_candidates": [],
           "dictionary_status": "complete",
-          "easy_text": "지원 사업 신청\n지원 사업 신청\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
+          "easy_text": "지원 사업 신청\n지원 사업 신청 안내예요.\n\n누가 신청하나요?\n월계1동 주민이 신청할 수 있어요.",
           "generated_at": "<unchanged>",
           "model": "gemini-3.5-flash-lite",
           "notice_id": 1,
           "notice_revision": "8658c31172e004423c16991849fdf377d98c6a0066f3a84979ad8273a6587c59",
           "original_text": "지원 사업 신청\n지원 사업 신청\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
-          "prompt_version": "easy-language-v8"
+          "prompt_version": "easy-rewrite-v1"
         }
       }
     }

@@ -5,6 +5,9 @@
     "total_count": 1,
     "selected_count": 1,
     "saved_count": 1,
+    "skipped_count": 0,
+    "skipped": [],
+    "failed_count": 0,
     "pages_read": 1,
     "initial_baseline": false,
     "listing_complete": true,
@@ -29,10 +32,7 @@
         "pending_count": 0,
         "failures": []
       }
-    },
-    "skipped_count": 0,
-    "failed_count": 0,
-    "skipped": []
+    }
   },
   "stderr": [],
   "http_calls": [
@@ -67,23 +67,34 @@
         "notice_revision": "97370647384a84b2da2e66c18831a588a6a60320d7f7c06734286563d9d7b7bf",
         "source_hash": "0f33f8c29dd0b6165a6179ab07bf42219626ddc5cb91e7944e9f1603b50cc2c5",
         "original_text": "가을 축제 참가자 모집\n가을 축제 참가자를 모집합니다.",
-        "easy_text": "가을 축제 참가자 모집\n가을 축제 참여할 사람을 모집합니다.",
-        "changes": [
-          {
-            "context": "참가자를 모집합니다",
-            "end": 23,
-            "original": "참가자를",
-            "replacement": "참여할 사람을",
-            "start": 19
-          }
-        ],
+        "easy_text": "가을 축제 참가자 모집\n참여할 사람을 모집해요.\n\n누구를 모집하나요?\n참여할 사람을 모집해요.",
+        "changes": [],
         "model": "gemini-3.5-flash-lite",
-        "prompt_version": "easy-language-v8",
+        "prompt_version": "easy-rewrite-v1",
         "attempt_count": 1,
         "generated_at": "<unchanged>",
         "body_text_present": true,
         "attachment_content_included": false,
-        "dictionary_candidates": []
+        "dictionary_candidates": [],
+        "easy_result": {
+          "attachment_hint": null,
+          "headline": "참여할 사람을 모집해요.",
+          "intro": [],
+          "sections": [
+            {
+              "heading": "누구를 모집하나요?",
+              "sentences": [
+                {
+                  "evidence": [
+                    "참가자를 모집합니다"
+                  ],
+                  "text": "참여할 사람을 모집해요."
+                }
+              ],
+              "style": "paragraph"
+            }
+          ]
+        }
       }
     },
     "notice_dictionary_links": {
@@ -133,19 +144,30 @@
     "notice_easy_texts": {
       "nowon/1001/900491": {
         "original_text": "가을 축제 참가자 모집\n가을 축제 참가자를 모집합니다.",
-        "easy_text": "가을 축제 참가자 모집\n가을 축제 참여할 사람을 모집합니다.",
-        "changes": [
-          {
-            "context": "참가자를 모집합니다",
-            "end": 23,
-            "original": "참가자를",
-            "replacement": "참여할 사람을",
-            "start": 19
-          }
-        ],
+        "easy_text": "가을 축제 참가자 모집\n참여할 사람을 모집해요.\n\n누구를 모집하나요?\n참여할 사람을 모집해요.",
+        "changes": [],
         "generated_at": "<unchanged>",
         "body_text_present": true,
-        "attachment_content_included": false
+        "attachment_content_included": false,
+        "easy_result": {
+          "attachment_hint": null,
+          "headline": "참여할 사람을 모집해요.",
+          "intro": [],
+          "sections": [
+            {
+              "heading": "누구를 모집하나요?",
+              "sentences": [
+                {
+                  "evidence": [
+                    "참가자를 모집합니다"
+                  ],
+                  "text": "참여할 사람을 모집해요."
+                }
+              ],
+              "style": "paragraph"
+            }
+          ]
+        }
       }
     },
     "app_notice_list": {
@@ -197,19 +219,30 @@
         "preparation_omissions": null,
         "files": [],
         "easy_original_text": "가을 축제 참가자 모집\n가을 축제 참가자를 모집합니다.",
-        "easy_text": "가을 축제 참가자 모집\n가을 축제 참여할 사람을 모집합니다.",
-        "easy_changes": [
-          {
-            "context": "참가자를 모집합니다",
-            "end": 23,
-            "original": "참가자를",
-            "replacement": "참여할 사람을",
-            "start": 19
-          }
-        ],
+        "easy_text": "가을 축제 참가자 모집\n참여할 사람을 모집해요.\n\n누구를 모집하나요?\n참여할 사람을 모집해요.",
+        "easy_changes": [],
         "easy_body_text_present": true,
         "easy_attachment_content_included": false,
-        "easy_generated_at": "<unchanged>"
+        "easy_generated_at": "<unchanged>",
+        "easy_result": {
+          "attachment_hint": null,
+          "headline": "참여할 사람을 모집해요.",
+          "intro": [],
+          "sections": [
+            {
+              "heading": "누구를 모집하나요?",
+              "sentences": [
+                {
+                  "evidence": [
+                    "참가자를 모집합니다"
+                  ],
+                  "text": "참여할 사람을 모집해요."
+                }
+              ],
+              "style": "paragraph"
+            }
+          ]
+        }
       }
     },
     "get_notice_dictionary": {
@@ -217,24 +250,16 @@
         "result": {
           "attachment_content_included": false,
           "body_text_present": true,
-          "changes": [
-            {
-              "context": "참가자를 모집합니다",
-              "end": 23,
-              "original": "참가자를",
-              "replacement": "참여할 사람을",
-              "start": 19
-            }
-          ],
+          "changes": [],
           "dictionary_candidates": [],
           "dictionary_status": "complete",
-          "easy_text": "가을 축제 참가자 모집\n가을 축제 참여할 사람을 모집합니다.",
+          "easy_text": "가을 축제 참가자 모집\n참여할 사람을 모집해요.\n\n누구를 모집하나요?\n참여할 사람을 모집해요.",
           "generated_at": "<unchanged>",
           "model": "gemini-3.5-flash-lite",
           "notice_id": 1,
           "notice_revision": "97370647384a84b2da2e66c18831a588a6a60320d7f7c06734286563d9d7b7bf",
           "original_text": "가을 축제 참가자 모집\n가을 축제 참가자를 모집합니다.",
-          "prompt_version": "easy-language-v8"
+          "prompt_version": "easy-rewrite-v1"
         }
       }
     }

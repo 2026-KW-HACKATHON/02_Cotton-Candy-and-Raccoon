@@ -140,10 +140,12 @@ def test_changed_conversion_invalidates_token_with_generation_and_clock_unchange
     assert edited.prompt_version == previous.prompt_version
     assert edited.easy_text != previous.easy_text
     easy_db.execute(
-        "update public.notice_easy_texts set easy_text = %s, changes = %s where notice_id = %s",
+        "update public.notice_easy_texts set easy_text = %s, changes = %s, easy_result = %s "
+        "where notice_id = %s",
         (
             edited.easy_text,
             Jsonb([change.model_dump(mode="json") for change in edited.changes]),
+            Jsonb(edited.easy_result.model_dump(mode="json")),
             source.notice_id,
         ),
     )

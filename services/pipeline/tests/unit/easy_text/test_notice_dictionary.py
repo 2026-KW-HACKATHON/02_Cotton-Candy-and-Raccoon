@@ -1,9 +1,9 @@
 """Original-to-easy-text span boundaries for notice dictionary links."""
 
-import json
 import unicodedata
 
 import pytest
+from support.easy_rewrite import legacy_result, rewrite_response
 from support.easy_text_storage import _NOW
 
 from pipeline.glossary.dictionary import DictionaryQuery
@@ -13,19 +13,29 @@ from pipeline.glossary.source import NoticeGlossaryInput
 
 
 def _result(text, changes, candidates):
-    payload = {
-        "changes": [
+    """A legacy replacement row: candidates map onto its easy_text when unambiguous."""
+    return legacy_result(
+        text,
+        *(
             {"original": original, "replacement": replacement, "context": text}
             for original, replacement in changes
-        ],
-        "dictionary_candidates": [
+        ),
+        candidates=[
             {"original": original, "query_word": query, "context": context}
             for original, query, context in candidates
         ],
-    }
+        generated_at=_NOW,
+    )
+
+
+def _rewrite_result(text, candidates):
     return simplify_notice(
         NoticeGlossaryInput(text=text), api_key="test-key",
-        request=lambda **_: json.dumps(payload, ensure_ascii=False), clock=lambda: _NOW,
+        request=lambda **_: rewrite_response(text, candidates=[
+            {"original": original, "query_word": query, "context": context}
+            for original, query, context in candidates
+        ]),
+        clock=lambda: _NOW,
     )
 
 
@@ -94,3 +104,29 @@ def test_unknown_candidate_extraction_cannot_be_reported_as_empty():
 
     with pytest.raises(ValueError, match="사전 후보를 추출한 결과"):
         map_dictionary_candidates(result.model_copy(update={"dictionary_candidates": None}))
+
+
+def test_rewrite_candidates_are_shown_only_on_the_original_text():
+    text = "📌 이행 의무 안내. 담당자에게 문의."
+    result = _rewrite_result(
+        text, [("이행 의무", "이행 의무", text), ("담당자에게", "담당자", text)]
+    )
+
+    mapped = map_dictionary_candidates(result)
+
+    assert [item["mapping_status"] for item in mapped] == ["original_only", "original_only"]
+    assert all(
+        item["easy_start"] is None and item["easy_end"] is None and item["easy_expression"] is None
+        for item in mapped
+    )
+    assert [result.original_text[item["start"]:item["end"]] for item in mapped] == [
+        "이행 의무", "담당자에게",
+    ]
+    assert mapped[1]["cache_key"] == DictionaryQuery("담당자").cache_key
+
+
+def test_legacy_and_rewrite_rows_both_map_without_errors():
+    legacy = _result("서류 안내.", [], [("서류", "서류", "서류 안내.")])
+    rewritten = _rewrite_result("서류 안내.", [("서류", "서류", "서류 안내.")])
+    assert map_dictionary_candidates(legacy)[0]["mapping_status"] == "unchanged"
+    assert map_dictionary_candidates(rewritten)[0]["mapping_status"] == "original_only"
