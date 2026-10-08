@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
-import { useLocalSearchParams } from "expo-router";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Bookmark } from "lucide-react-native";
 import { Screen } from "@/shared/ui/Screen";
 import { Header } from "@/shared/ui/Header";
@@ -19,6 +19,7 @@ import { useNotice } from "../hooks/useNotices";
 import { useBookmarkStore } from "../store/bookmarkStore";
 import { useDisplayPreferences } from "@/shared/accessibility/displayPreferences";
 import { EasyNoticeDetailScreen } from "./EasyNoticeDetailScreen";
+import { DetailCharacter } from "@/shared/ui/character/AnimatedCharacter";
 
 const SUMMARY_ICONS = [
   require("@/assets/figma/detail-imgIconSummaryCalendar.svg"),
@@ -36,6 +37,13 @@ export function NoticeDetailScreen() {
   );
 }
 function StandardNoticeDetailScreen() {
+  const [animationActive, setAnimationActive] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      setAnimationActive(true);
+      return () => setAnimationActive(false);
+    }, []),
+  );
   const params = useLocalSearchParams<{ id: string }>();
   const id = typeof params.id === "string" ? params.id : "";
   const query = useNotice(id);
@@ -120,11 +128,7 @@ function StandardNoticeDetailScreen() {
             >
               {notice.title}
             </AppText>
-            <Image
-              source={require("@/assets/figma/detail-character.png")}
-              style={{ width: 120.923, height: 108 }}
-              contentFit="contain"
-            />
+            <DetailCharacter active={animationActive} />
           </View>
           <View style={styles.summary}>
             <AppText variant="bold" size={16.62}>
