@@ -41,7 +41,7 @@ EAS 클라우드 빌드는 기존 `pjparks-team/mobile` 프로젝트에 연결�
 ## 구현 시 검증 결과
 
 - TypeScript 및 Expo ESLint 통과
-- test 브랜치 통합 후 모바일 Node 테스트 74개 통과
+- test 브랜치(#89 포함) 통합 후 모바일 Node 테스트 84개 통과
 - React Compiler 적용 후 실제 라이브러리의 위젯 트리 생성 및 루트 접근성 라벨 검증
 - 동시 갱신, 위젯별 독립 갱신, 삭제 후 이전 응답 무시 검증
 - Android Expo prebuild 통과: 위젯 receiver, 30분 갱신 설정, 선택 화면 preview 생성 확인

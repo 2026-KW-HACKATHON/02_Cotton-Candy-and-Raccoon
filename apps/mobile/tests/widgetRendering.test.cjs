@@ -19,6 +19,7 @@ function loader(overrides = {}) {
     cache.set(file, module);
     const code = compile
       ? babel.transformFileSync(file, {
+          cwd: root,
           presets: [["babel-preset-expo", { platform: "android" }]],
           plugins: [
             "babel-plugin-react-compiler",

@@ -1,3 +1,4 @@
+import { DeadlineReminder } from "@/features/notifications/DeadlineReminder";
 import { useCallback, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
@@ -160,6 +161,7 @@ function StandardNoticeContent({
             <DetailCharacter active={animationActive} />
           </View>
           <NoticeSummaryStatus status={notice.summaryStatus} />
+          <DeadlineReminder key={notice.id} notice={notice} />
           {rows.length > 0 && (
             <View style={styles.summary}>
               <AppText variant="bold" size={18} lineHeight={27}>

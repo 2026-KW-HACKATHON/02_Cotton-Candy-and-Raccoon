@@ -1,3 +1,4 @@
+import { DeadlineReminder } from "@/features/notifications/DeadlineReminder";
 import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
@@ -110,6 +111,7 @@ export function EasyNoticeDetailScreen() {
             >{`공고 ${notice.publishedAt.replaceAll(" ", "")}\n정보제공처 ${notice.provider}`}</AppText>
           </View>
           <NoticeSummaryStatus comfortable status={notice.summaryStatus} />
+          <DeadlineReminder key={notice.id} notice={notice} />
           {isNoticeExpired(notice) && (
             <View style={styles.card}>
               <AppText

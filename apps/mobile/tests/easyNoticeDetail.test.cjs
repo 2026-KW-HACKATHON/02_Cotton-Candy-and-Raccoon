@@ -31,6 +31,7 @@ function loadDetail(initialNotice, standard = false) {
   const element = (type, props, key) => ({ type, props, key });
   let previousKey;
   const mocks = {
+    "@/features/notifications/DeadlineReminder": { DeadlineReminder: "DeadlineReminder" },
     react,
     "react/jsx-runtime": { jsx: element, jsxs: element, Fragment: "Fragment" },
     "react-native": {
@@ -139,6 +140,7 @@ function loadDetail(initialNotice, standard = false) {
     }
     visit(tree);
     return {
+      reminder: nodes.find((node) => node.type === "DeadlineReminder").props,
       evidence: nodes.find((node) => node.type === "NoticeEvidence").props,
       document: nodes.find((node) => node.type === "NoticeDocumentText").props,
       toggle: standard
@@ -270,6 +272,7 @@ test("일반·편한 상세 모두 근거와 누락 첨부 정보를 표시 컴�
   for (const standard of [false, true]) {
     const state = loadDetail(notice, standard).render();
     assert.equal(state.evidence.notice, notice);
+    assert.equal(state.reminder.notice, notice);
     assert.equal(!!state.evidence.comfortable, !standard);
   }
 });
