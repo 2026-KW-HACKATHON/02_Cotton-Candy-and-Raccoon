@@ -45,6 +45,7 @@ SAFE_REASONS = FAILURE_CODES | {
     "summary_execution_superseded", "easy_text_storage_failed", "invalid_response",
     "invalid_notice", "job_timeout", "worker_failed", "invalid_worker_response",
     "processing_failed", "configuration_error", "processing_attempts_exhausted",
+    "processing_result_not_current",
 }
 TRANSIENT_REASONS = frozenset({"api_timeout", "api_connection_error"})
 

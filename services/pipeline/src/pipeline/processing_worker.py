@@ -21,7 +21,12 @@ from pipeline.glossary.notice_service import load_notice_glossary_input
 from pipeline.processing_runner import ProcessingOutcome, failure_outcome
 from pipeline.storage.notice_easy_text import EasyTextStorageError
 from pipeline.storage.processing_context import processing_claim
-from pipeline.storage.processing_jobs import Claim, ProcessingClaimSuperseded, assert_active_claim
+from pipeline.storage.processing_jobs import (
+    Claim,
+    ProcessingClaimSuperseded,
+    assert_active_claim,
+    has_current_result,
+)
 from pipeline.storage.summaries import load_stored_summary
 from pipeline.summary_run import summarize_one
 
@@ -52,8 +57,18 @@ def process_claim(
                     with conn.transaction():
                         assert_active_claim(conn, claim)
                         stored = load_stored_summary(conn, claim.notice_id)
+                        current = has_current_result(conn, claim)
                 if stored is not None and stored.last_error_code == "summary_information_loss":
                     return ProcessingOutcome("failed", "summary_information_loss")
+                if not current:
+                    # A failed correction can preserve an older model/prompt's
+                    # good result. That is public availability, not completion of
+                    # this contract: marking success would reset attempts on the
+                    # next scan and allow an unlimited regeneration loop.
+                    return failure_outcome(
+                        {"reason_code": None if stored is None else stored.last_error_code},
+                        default_reason="processing_result_not_current",
+                    )
                 return ProcessingOutcome("succeeded")
             with psycopg.connect(database.database_url, connect_timeout=5) as conn:
                 with conn.transaction():

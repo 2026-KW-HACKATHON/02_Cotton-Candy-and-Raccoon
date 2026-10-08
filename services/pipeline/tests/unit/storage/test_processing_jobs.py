@@ -10,11 +10,14 @@ from uuid import uuid4
 import psycopg
 import pytest
 from psycopg.types.json import Jsonb
-from support.db import owned_migrated_database
+from support.db import database_uri, owned_migrated_database
 from support.easy_text_storage import _notice as easy_notice
 from support.easy_text_storage import _result as easy_result
-from support.summary_execution_storage import _completed, _metadata
+from support.summary_execution_storage import _completed, _metadata, _summary
 
+from pipeline.config import DatabaseSettings
+from pipeline.processing_runner import run_processing
+from pipeline.processing_worker import process_claim
 from pipeline.storage import processing_jobs
 from pipeline.storage.notice_easy_text import save_notice_easy_text
 from pipeline.storage.processing_context import processing_claim
@@ -33,6 +36,7 @@ from pipeline.storage.summaries import (
     record_summary_failure,
     save_notice_summary,
 )
+from pipeline.transform.prepared_summary import PreparedSummaryResult
 
 NOW = datetime(2026, 10, 8, 12, tzinfo=UTC)
 
@@ -350,3 +354,61 @@ def test_lease_expiring_while_waiting_for_job_lock_is_rejected(
             current[0] = claim.lease_expires_at + timedelta(seconds=1)
         with pytest.raises(ProcessingClaimSuperseded):
             future.result(timeout=2)
+
+
+@pytest.mark.parametrize("reason,state", [
+    ("api_timeout", "retry_wait"),
+    ("response_validation_failed", "blocked"),
+    ("input_preparation_failed", "blocked"),
+])
+def test_preserved_legacy_summary_does_not_reset_failed_generation_attempts(
+    conn: psycopg.Connection, database: dict[str, str], monkeypatch: pytest.MonkeyPatch,
+    reason: str, state: str,
+) -> None:
+    notice_id = _notice(conn)
+    save_notice_summary(conn, _completed(notice_id, "본문", "2026-10-20"))
+    before = conn.execute(
+        "select result,model,prompt_version from notice_summaries where notice_id=%s", (notice_id,),
+    ).fetchone()
+    calls = []
+
+    def corrected_candidate(prepared, **kwargs):
+        calls.append(prepared.notice_id)
+        return PreparedSummaryResult(
+            notice_id=prepared.notice_id, summary=_summary("2026-10-20"), warnings=(),
+            correction_failure_code=reason, file_manifest=kwargs["file_manifest"],
+        )
+
+    monkeypatch.setattr("pipeline.summary_job.summarize_prepared_notice", corrected_candidate)
+    settings = DatabaseSettings(database_uri(database))
+
+    def execute(database, claim, api_key, timeout):
+        return process_claim(database, claim, api_key=api_key)
+
+    first = run_processing(settings, api_key="synthetic", features=("summary",), executor=execute)
+    assert first.records[0]["state"] == state
+    second = run_processing(settings, api_key="synthetic", features=("summary",), executor=execute)
+    assert second.report()["attempted_count"] == 0
+    assert calls == [notice_id]
+    assert conn.execute(
+        "select state,attempts,last_error_code from notice_processing_jobs"
+    ).fetchone() == (state, 1, reason)
+    assert conn.execute(
+        "select result,model,prompt_version from notice_summaries where notice_id=%s", (notice_id,),
+    ).fetchone() == before
+    if state == "retry_wait":
+        conn.execute("update notice_processing_jobs set next_attempt_at=now()-interval '1 second'")
+        final = run_processing(
+            settings, api_key="synthetic", features=("summary",), max_attempts=2, executor=execute,
+        )
+        assert final.records[0]["state"] == "exhausted"
+        assert final.records[0]["attempts"] == 2
+        again = run_processing(
+            settings, api_key="synthetic", features=("summary",), executor=execute,
+        )
+        assert again.report()["attempted_count"] == 0
+        assert calls == [notice_id, notice_id]
+        assert conn.execute(
+            "select result,model,prompt_version from notice_summaries where notice_id=%s",
+            (notice_id,),
+        ).fetchone() == before

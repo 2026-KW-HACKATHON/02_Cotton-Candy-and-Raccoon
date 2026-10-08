@@ -178,7 +178,8 @@ def _lock_source(conn: Connection, candidate: Candidate, *, skip_locked: bool = 
     return row is not None and row[0] == candidate.input_version
 
 
-def _cache_ready(conn: Connection, candidate: Candidate) -> bool:
+def has_current_result(conn: Connection, candidate: Candidate) -> bool:
+    """Check the published cache contract; callers fencing completion must also hold the claim."""
     contract = json.loads(candidate.contract_key)
     params = {
         "id": candidate.notice_id,
@@ -205,7 +206,7 @@ def enqueue_candidates(
     # Parent -> job is the same lock order used by claim/finalize/public save.
     for candidate in sorted(candidates, key=lambda item: (item.notice_id, item.feature)):
         with conn.transaction():
-            if not _lock_source(conn, candidate) or _cache_ready(conn, candidate):
+            if not _lock_source(conn, candidate) or has_current_result(conn, candidate):
                 continue
             row = conn.execute(
                 "insert into public.notice_processing_jobs "
@@ -279,7 +280,7 @@ def claim_next(
                 continue
             # A blocked cache/parent/job read may outlive the original scan time.
             timestamp = _now(now)
-            if _cache_ready(conn, candidate):
+            if has_current_result(conn, candidate):
                 _settle(conn, candidate, "succeeded", None, None, timestamp)
                 recovered = {"state": "succeeded", "reason_code": None}
             elif job["attempts"] >= max_attempts:
