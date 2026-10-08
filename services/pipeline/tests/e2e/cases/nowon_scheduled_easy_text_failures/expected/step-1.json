@@ -20,6 +20,8 @@
     "notices": {},
     "notice_files": {},
     "notice_summaries": {},
-    "notice_easy_texts": {}
+    "notice_easy_texts": {},
+    "app_notice_list": {},
+    "app_notice_detail": {}
   }
 }

@@ -17,7 +17,8 @@
         "created_at": "<unchanged>",
         "updated_at": "<unchanged>",
         "content_updated_at": "<unchanged>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "경로당 프로그램을 안내합니다."
       }
     },
     "notice_files": {},
@@ -37,6 +38,8 @@
     "notices": {},
     "notice_files": {},
     "notice_summaries": {},
-    "notice_easy_texts": {}
+    "notice_easy_texts": {},
+    "app_notice_list": {},
+    "app_notice_detail": {}
   }
 }

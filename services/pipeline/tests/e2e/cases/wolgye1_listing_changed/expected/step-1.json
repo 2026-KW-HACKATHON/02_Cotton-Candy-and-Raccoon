@@ -36,7 +36,8 @@
         "created_at": "<set>",
         "updated_at": "<set>",
         "content_updated_at": "<set>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "월계1동 마을 축제 자원봉사자 모집"
       },
       "dong/1042/20261007090000202": {
         "dong_group": "wolgye1",
@@ -52,7 +53,8 @@
         "created_at": "<set>",
         "updated_at": "<set>",
         "content_updated_at": "<set>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "월계1동 방역 소독 일정 안내"
       }
     },
     "notice_files": {},
@@ -84,7 +86,8 @@
         "created_at": "<set>",
         "updated_at": "<set>",
         "content_updated_at": "<set>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "월계1동 마을 축제 자원봉사자 모집"
       },
       "dong/1042/20261007090000202": {
         "dong_group": "wolgye1",
@@ -100,11 +103,120 @@
         "created_at": "<set>",
         "updated_at": "<set>",
         "content_updated_at": "<set>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "월계1동 방역 소독 일정 안내"
       }
     },
     "notice_files": {},
     "notice_summaries": {},
-    "notice_easy_texts": {}
+    "notice_easy_texts": {},
+    "app_notice_list": {
+      "dong/1042/20261006090000201": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 마을 축제 자원봉사자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-06",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false
+      },
+      "dong/1042/20261007090000202": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 방역 소독 일정 안내",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false
+      }
+    },
+    "app_notice_detail": {
+      "dong/1042/20261006090000201": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 마을 축제 자원봉사자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-06",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false,
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261006090000201&q_deptCode=1047",
+        "license_type": "KOGL-1",
+        "body_text": "월계1동 마을 축제 자원봉사자 모집",
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [],
+        "easy_original_text": null,
+        "easy_text": null,
+        "easy_changes": null,
+        "easy_body_text_present": null,
+        "easy_attachment_content_included": null,
+        "easy_generated_at": null
+      },
+      "dong/1042/20261007090000202": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 방역 소독 일정 안내",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false,
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261007090000202&q_deptCode=1047",
+        "license_type": "KOGL-1",
+        "body_text": "월계1동 방역 소독 일정 안내",
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [],
+        "easy_original_text": null,
+        "easy_text": null,
+        "easy_changes": null,
+        "easy_body_text_present": null,
+        "easy_attachment_content_included": null,
+        "easy_generated_at": null
+      }
+    }
   }
 }

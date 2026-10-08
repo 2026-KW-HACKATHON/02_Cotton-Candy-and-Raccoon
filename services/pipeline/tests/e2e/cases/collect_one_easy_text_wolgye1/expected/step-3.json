@@ -17,7 +17,8 @@
         "created_at": "<unchanged>",
         "updated_at": "<unchanged>",
         "content_updated_at": "<unchanged>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "월계1동 바둑 교실 참가자를 모집합니다."
       }
     },
     "notice_files": {},
@@ -71,15 +72,14 @@
         "created_at": "<unchanged>",
         "updated_at": "<unchanged>",
         "content_updated_at": "<unchanged>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "월계1동 바둑 교실 참가자를 모집합니다."
       }
     },
     "notice_files": {},
     "notice_summaries": {},
     "notice_easy_texts": {
       "dong/1042/20261006090000501": {
-        "notice_revision": "133451aa612c034b9bdf1c28f113dd21a633b668d461e7587715422423a24740",
-        "source_hash": "756eae19f25314f165c01c3d42fe81cb4b539cb8becb021dbbfaeb15d53aedab",
         "original_text": "월계1동 바둑 교실 참가자 모집\n월계1동 바둑 교실 참가자를 모집합니다.",
         "easy_text": "월계1동 바둑 교실 참가자 모집\n월계1동 바둑 교실 참여할 사람을 모집합니다.",
         "changes": [
@@ -91,12 +91,73 @@
             "start": 29
           }
         ],
-        "model": "gemini-3.5-flash-lite",
-        "prompt_version": "easy-language-v7",
-        "attempt_count": 1,
         "generated_at": "<unchanged>",
         "body_text_present": true,
         "attachment_content_included": false
+      }
+    },
+    "app_notice_list": {
+      "dong/1042/20261006090000501": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 바둑 교실 참가자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-06",
+        "content_updated_at": "<unchanged>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true
+      }
+    },
+    "app_notice_detail": {
+      "dong/1042/20261006090000501": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 바둑 교실 참가자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-06",
+        "content_updated_at": "<unchanged>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true,
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261006090000501&q_deptCode=1047",
+        "license_type": "KOGL-1",
+        "body_text": "월계1동 바둑 교실 참가자를 모집합니다.",
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [],
+        "easy_original_text": "월계1동 바둑 교실 참가자 모집\n월계1동 바둑 교실 참가자를 모집합니다.",
+        "easy_text": "월계1동 바둑 교실 참가자 모집\n월계1동 바둑 교실 참여할 사람을 모집합니다.",
+        "easy_changes": [
+          {
+            "context": "참가자를 모집합니다",
+            "end": 33,
+            "original": "참가자를",
+            "replacement": "참여할 사람을",
+            "start": 29
+          }
+        ],
+        "easy_body_text_present": true,
+        "easy_attachment_content_included": false,
+        "easy_generated_at": "<unchanged>"
       }
     }
   }

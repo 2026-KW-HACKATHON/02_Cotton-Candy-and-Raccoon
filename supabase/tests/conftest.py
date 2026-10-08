@@ -11,6 +11,11 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture(scope="module")
+def pipeline_readme() -> str:
+    return (ROOT / "services/pipeline/README.md").read_text(encoding="utf-8")
+
+
+@pytest.fixture(scope="module")
 def database() -> Iterator[psycopg.Connection]:
     dsn = os.environ.get("SCHEMA_TEST_DATABASE_URL")
     if not dsn:
@@ -67,7 +72,9 @@ def database() -> Iterator[psycopg.Connection]:
         assert files, "supabase/migrations has no migration files"
         for path in files:
             conn.execute(path.read_text(encoding="utf-8"))
-        conn.execute((ROOT / "supabase/seed.sql").read_text(encoding="utf-8"))
+        # Preserve checkout line endings: read_text() would hide Windows CRLF
+        # hash failures that occur when the Supabase CLI loads the real seed.
+        conn.execute((ROOT / "supabase/seed.sql").read_bytes().decode("utf-8"))
         yield conn
     finally:
         conn.rollback()
