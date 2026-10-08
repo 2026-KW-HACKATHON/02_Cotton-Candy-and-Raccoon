@@ -16,6 +16,13 @@ on:
           - new
           - refresh
 
+      operation:
+        description: "collect or apply the verified issue-76 DB upgrade"
+        required: false
+        default: collect
+        type: choice
+        options: [collect, migrate-ai-db]
+
 permissions:
   contents: read
 
@@ -26,7 +33,7 @@ concurrency:
 jobs:
   collect:
     # This opt-in gate prevents writes when the workflow is first merged.
-    if: vars.PIPELINE_PRODUCTION_ENABLED == 'true'
+    if: vars.PIPELINE_PRODUCTION_ENABLED == 'true' && inputs.operation != 'migrate-ai-db'
     runs-on: ubuntu-latest
     timeout-minutes: 180
     defaults:
@@ -235,3 +242,51 @@ jobs:
           print(json.dumps(outcomes))
           sys.exit(0 if all(value == "success" for value in outcomes.values()) else 1)
           PY
+
+  migrate_ai_db:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'migrate-ai-db'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pipeline_schema_test_restore
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    defaults:
+      run:
+        working-directory: services/pipeline
+    env:
+      DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+      MIGRATION_BACKUP_KEY: ${{ secrets.PIPELINE_MIGRATION_BACKUP_KEY }}
+      RESTORE_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/pipeline_schema_test_restore
+      PG_DUMP: /usr/lib/postgresql/17/bin/pg_dump
+      PG_RESTORE: /usr/lib/postgresql/17/bin/pg_restore
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
+      - run: uv sync --no-dev --frozen
+      - name: Ensure PostgreSQL 17 backup tools
+        run: |
+          if [ ! -x "$PG_DUMP" ]; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client-17
+          fi
+      - name: Snapshot and encrypt before any schema writes
+        run: uv run --no-dev --frozen python scripts/production_ai_migrations.py prepare --backup "$RUNNER_TEMP/issue76-backup.enc"
+      - name: Verify backup can restore into disposable PostgreSQL
+        run: uv run --no-dev --frozen python scripts/production_ai_migrations.py restore-check --backup "$RUNNER_TEMP/issue76-backup.enc"
+      - name: Retain encrypted recovery artifact before applying
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue76-backup-${{ github.run_id }}
+          path: ${{ runner.temp }}/issue76-backup.enc
+          retention-days: 30
+          if-no-files-found: error
+      - name: Apply missing migrations and verify before commit
+        run: uv run --no-dev --frozen python scripts/production_ai_migrations.py apply --backup "$RUNNER_TEMP/issue76-backup.enc"
