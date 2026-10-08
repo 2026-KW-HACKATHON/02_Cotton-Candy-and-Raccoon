@@ -150,11 +150,13 @@ function StandardNoticeDetailScreen() {
                   onPress={() => setEasy(mode)}
                   style={[
                     styles.segmentItem,
-                    easy === mode && { backgroundColor: COLORS.primary },
+                    easy === mode && styles.segmentSelected,
                   ]}
                 >
                   <AppText
                     variant="bold"
+                    size={16}
+                    lineHeight={24}
                     style={{
                       color: easy === mode ? COLORS.surface : COLORS.secondary,
                     }}
@@ -262,13 +264,15 @@ const styles = StyleSheet.create({
   segment: {
     flexDirection: "row",
     backgroundColor: COLORS.soft,
-    borderRadius: RADIUS.card,
-    padding: 2.769,
+    borderRadius: RADIUS.pill,
+    padding: 4,
   },
   segmentItem: {
     flex: 1,
-    minHeight: 46.154,
-    borderRadius: RADIUS.card,
+    minHeight: 48,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: RADIUS.pill,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -279,6 +283,14 @@ const styles = StyleSheet.create({
     borderWidth: 0.923,
     borderColor: "#73899B",
     borderRadius: RADIUS.control,
+  },
+  segmentSelected: {
+    backgroundColor: COLORS.primary,
+    shadowColor: COLORS.text,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   overlay: {
     flex: 1,
