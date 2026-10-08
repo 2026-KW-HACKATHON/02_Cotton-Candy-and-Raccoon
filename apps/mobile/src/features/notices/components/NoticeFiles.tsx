@@ -9,7 +9,7 @@ import {
 import { AppText } from "@/shared/ui/AppText";
 import { COLORS } from "@/shared/theme/tokens";
 import { type NoticeFile } from "../types/notice";
-import { filePreviewKind } from "../domain/noticeFiles";
+import { useNoticeFilePreviews } from "../hooks/useNoticeFilePreviews";
 import { useNoticeFileActions } from "../hooks/useNoticeFileActions";
 import { NoticeActionButton } from "./NoticeActionButton";
 import { NoticeImage } from "./NoticeImage";
@@ -28,6 +28,7 @@ export function NoticeFiles({
   const { width } = useWindowDimensions();
   const actions = useNoticeFileActions();
   const attachments = files.filter((file) => file.kind === "attachment");
+  const filePreviews = useNoticeFilePreviews(attachments, listOpen);
   const images = files.filter((file) => file.kind === "inline_image");
   const size = comfortable ? 20 : 16;
   function showPreview(file: NoticeFile) {
@@ -98,52 +99,61 @@ export function NoticeFiles({
               {!attachments.length && (
                 <AppText size={size}>첨부된 파일이 없어요.</AppText>
               )}
-              {attachments.map((file, index) => (
-                <View key={file.id} style={styles.card}>
-                  <AppText variant="bold" size={size}>
-                    첨부 {index + 1}
-                  </AppText>
-                  {filePreviewKind(file) === "unsupported" && (
-                    <AppText secondary size={size}>
-                      앱 안에서 미리보기 어려운 형식이에요. 파일을 내려받아 열어
-                      주세요.
+              {attachments.map((file, index) => {
+                const { kind, checking } = filePreviews[index];
+                return (
+                  <View key={file.id} style={styles.card}>
+                    <AppText variant="bold" size={size}>
+                      첨부 {index + 1}
                     </AppText>
-                  )}
-                  {filePreviewKind(file) !== "unsupported" && (
+                    {kind === "unknown" && (
+                      <AppText
+                        secondary
+                        size={size}
+                        accessibilityLiveRegion="polite"
+                      >
+                        {checking
+                          ? "파일 형식을 확인하고 있어요."
+                          : "파일 형식을 확인하지 못했어요. ‘파일 직접 열기’에서 확인해 주세요."}
+                      </AppText>
+                    )}
+                    {kind === "unsupported" && (
+                      <AppText secondary size={size}>
+                        앱 안에서 미리보기 어려운 형식이에요. 파일을 내려받아
+                        열어 주세요.
+                      </AppText>
+                    )}
+                    {(kind === "image" || kind === "pdf") && (
+                      <NoticeActionButton
+                        label={kind === "pdf" ? "PDF 미리보기 ↗" : "미리보기"}
+                        comfortable={comfortable}
+                        disabled={actions.busy}
+                        onPress={() => {
+                          if (kind === "image") showPreview(file);
+                          else void actions.open(file.url);
+                        }}
+                      />
+                    )}
                     <NoticeActionButton
-                      label={
-                        filePreviewKind(file) === "pdf"
-                          ? "PDF 미리보기 ↗"
-                          : "미리보기"
-                      }
+                      label={actions.busy ? "파일 처리 중…" : "다운로드"}
+                      comfortable={comfortable}
+                      filled
+                      disabled={actions.busy}
+                      onPress={() => {
+                        void actions.download(file);
+                      }}
+                    />
+                    <NoticeActionButton
+                      label="파일 직접 열기 ↗"
                       comfortable={comfortable}
                       disabled={actions.busy}
                       onPress={() => {
-                        if (filePreviewKind(file) === "image")
-                          showPreview(file);
-                        else void actions.open(file.url);
+                        void actions.open(file.url);
                       }}
                     />
-                  )}
-                  <NoticeActionButton
-                    label={actions.busy ? "파일 처리 중…" : "다운로드"}
-                    comfortable={comfortable}
-                    filled
-                    disabled={actions.busy}
-                    onPress={() => {
-                      void actions.download(file);
-                    }}
-                  />
-                  <NoticeActionButton
-                    label="파일 직접 열기 ↗"
-                    comfortable={comfortable}
-                    disabled={actions.busy}
-                    onPress={() => {
-                      void actions.open(file.url);
-                    }}
-                  />
-                </View>
-              ))}
+                  </View>
+                );
+              })}
               {Boolean(actions.message) && (
                 <AppText size={size} accessibilityLiveRegion="polite">
                   {actions.message}
