@@ -11,7 +11,8 @@ from psycopg.sql import SQL, Identifier
 PIPELINE_DATABASE = "pipeline_schema_test_ci"
 SCHEMA_DATABASE = "pipeline_schema_test_empty_ci"
 GLOSSARY_DATABASE = "pipeline_glossary_test_ci"
-TEST_DATABASES = (PIPELINE_DATABASE, SCHEMA_DATABASE, GLOSSARY_DATABASE)
+E2E_DATABASE = "pipeline_e2e_test_ci"
+TEST_DATABASES = (PIPELINE_DATABASE, SCHEMA_DATABASE, GLOSSARY_DATABASE, E2E_DATABASE)
 TEST_ROLES = ("anon", "authenticated", "service_role")
 MIGRATION_DIRECTORY = Path(__file__).resolve().parents[3] / "supabase" / "migrations"
 
@@ -65,6 +66,7 @@ def prepare_test_databases(
 
     Pipeline integration tests need committed migrations. Schema and easy-text
     storage tests apply migrations in their own rollback-only empty databases.
+    The e2e database name only reserves the prefix: each case creates its own.
     """
     parameters = _connection_parameters(admin_url)
     migrations = sorted(migration_directory.glob("*.sql"))
@@ -72,7 +74,8 @@ def prepare_test_databases(
         raise TestDatabasePreparationError("missing_test_migrations")
     with psycopg.connect(**parameters, autocommit=True) as conn:
         existing = conn.execute(
-            "select datname from pg_database where datname in (%s,%s,%s)",
+            "select datname from pg_database where datname in ("
+            + ",".join(["%s"] * len(TEST_DATABASES)) + ")",
             TEST_DATABASES,
         ).fetchall()
         if existing:
@@ -98,7 +101,7 @@ def main() -> int:
         return 1
     print(
         f"Prepared pipeline database with {count} migrations and separate empty "
-        "schema and easy-text databases."
+        "schema, easy-text, and e2e databases."
     )
     return 0
 

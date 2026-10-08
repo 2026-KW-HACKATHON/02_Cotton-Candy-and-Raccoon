@@ -8,6 +8,9 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
+# pipeline e2e run reports (uploaded as a CI artifact)
+services/pipeline/artifacts/
+
 # local env files
 .env
 .env*.local

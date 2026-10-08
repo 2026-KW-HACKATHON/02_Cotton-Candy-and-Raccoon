@@ -208,6 +208,7 @@ npm run lint
 | --- | --- |
 | `tests/unit/<영역>/` | 영역별 단위 테스트. 영역은 `attachments`, `collect`, `easy_text`, `storage`, `summary`, `tooling` |
 | `tests/unit/legacy_flow/` | 수집에서 저장까지의 흐름 테스트. e2e 케이스로 대체한 뒤 삭제 |
+| `tests/e2e/` | API 응답 예시로 CLI를 실행해 DB 저장과 앱 노출을 기대값과 비교하는 케이스(`cases/`)와 하네스(`harness/`) |
 | `tests/support/` | 여러 테스트 파일이 함께 쓰는 helper, fixture, 경로 상수 |
 | `tests/fixtures/` | 테스트용 녹화 공지 등 자료 |
 
