@@ -12,8 +12,8 @@
     "complete": true,
     "failures": [],
     "summary": {
-      "dry_run": false,
       "complete": true,
+      "dry_run": false,
       "selected_count": 0,
       "enqueued_count": 0,
       "attempted_count": 0,
@@ -45,8 +45,8 @@
       ]
     },
     "easy_text": {
-      "dry_run": false,
       "complete": true,
+      "dry_run": false,
       "selected_count": 0,
       "enqueued_count": 0,
       "attempted_count": 0,
@@ -68,18 +68,14 @@
         "blocked": 0,
         "exhausted": 0
       },
+      "dictionary": [],
+      "dictionary_remaining_count": 0,
       "published": [
         {
           "id": 1,
           "display_status": "summarized",
           "has_easy_text": true,
           "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900611"
-        }
-      ],
-      "dictionary": [
-        {
-          "notice_id": 1,
-          "status": "complete"
         }
       ]
     }
@@ -259,7 +255,7 @@
       "nowon/1001/900611": {
         "easy_text_token": "<unchanged>",
         "candidates": [],
-        "generated_at": "<changed>"
+        "generated_at": "<unchanged>"
       }
     },
     "standard_dictionary_cache": {},

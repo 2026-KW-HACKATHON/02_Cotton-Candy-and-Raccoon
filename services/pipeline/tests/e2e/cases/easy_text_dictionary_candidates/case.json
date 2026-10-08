@@ -165,10 +165,12 @@
       "sql": "update public.standard_dictionary_cache set retry_after_at = clock_timestamp() - interval '1 second' where query_word = '지참하다';"
     },
     {
-      "type": "notice-glossary",
+      "type": "process-stored",
       "args": [
-        "--notice-id",
-        "1"
+        "--source",
+        "nowon",
+        "--feature",
+        "easy_text"
       ],
       "http": [
         {

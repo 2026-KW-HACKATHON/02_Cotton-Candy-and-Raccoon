@@ -1,172 +1,49 @@
 {
   "exit_code": 0,
   "report": {
-    "model": "gemini-3.5-flash-lite",
-    "changes": [
-      {
-        "end": 17,
-        "start": 13,
-        "context": "익일에는 구비서류를 지참하시어 방문하세요.",
-        "original": "익일에는",
-        "replacement": "다음 날에는"
-      }
-    ],
-    "easy_text": "구비서류 제출 안내\n📢 다음 날에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.",
-    "notice_id": 1,
-    "generated_at": "<set>",
-    "original_text": "구비서류 제출 안내\n📢 익일에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.",
-    "prompt_version": "easy-language-v8",
-    "notice_revision": "a848d30a1de9490a85bad59064739fd8f6820e2d27c864f8d0a6c4e689f32b5f",
-    "body_text_present": true,
-    "dictionary_status": "complete",
-    "dictionary_candidates": [
-      {
-        "end": 23,
-        "start": 18,
-        "context": "익일에는 구비서류를 지참하시어 방문하세요.",
-        "easy_end": 25,
-        "original": "구비서류를",
-        "retryable": false,
-        "dictionary": {
-          "status": "found",
-          "entries": [
-            {
-              "senses": [
-                {
-                  "pos_code": "1",
-                  "definition": "일을 처리하는 데 필요한 서류.",
-                  "sense_code": "101",
-                  "part_of_speech": "명사"
-                },
-                {
-                  "pos_code": "1",
-                  "definition": "일정한 조건에 맞추어 갖추어 놓은 서류.",
-                  "sense_code": "102",
-                  "part_of_speech": "명사"
-                }
-              ],
-              "headword": "구비^서류",
-              "source_url": "https://stdict.korean.go.kr/search/searchView.do?word_no=100",
-              "target_code": "100",
-              "homonym_number": null
-            }
-          ],
-          "query_word": "구비서류",
-          "contract_version": "stdict-v1"
-        },
-        "easy_start": 20,
-        "error_code": null,
-        "query_word": "구비서류",
-        "lookup_status": "found",
-        "mapping_status": "unchanged",
-        "easy_expression": "구비서류를",
-        "retry_after_seconds": 0
+    "source": "nowon",
+    "easy_text": {
+      "complete": true,
+      "dry_run": false,
+      "selected_count": 0,
+      "enqueued_count": 0,
+      "attempted_count": 0,
+      "succeeded_count": 0,
+      "skipped_count": 0,
+      "blocked_count": 0,
+      "retry_wait_count": 0,
+      "exhausted_count": 0,
+      "superseded_count": 0,
+      "retry_released": false,
+      "error_code": null,
+      "records": [],
+      "readiness": {
+        "ready": 1,
+        "skipped": 0,
+        "pending": 0,
+        "running": 0,
+        "retry_wait": 0,
+        "blocked": 0,
+        "exhausted": 0
       },
-      {
-        "end": 29,
-        "start": 24,
-        "context": "익일에는 구비서류를 지참하시어 방문하세요.",
-        "easy_end": 31,
-        "original": "지참하시어",
-        "retryable": false,
-        "dictionary": {
-          "status": "found",
-          "entries": [
-            {
-              "senses": [
-                {
-                  "pos_code": "1",
-                  "definition": "물건을 가지고 가거나 오다.",
-                  "sense_code": "201",
-                  "part_of_speech": "동사"
-                }
-              ],
-              "headword": "지참-하다",
-              "source_url": "https://stdict.korean.go.kr/search/searchView.do?word_no=200",
-              "target_code": "200",
-              "homonym_number": null
-            }
-          ],
-          "query_word": "지참하다",
-          "contract_version": "stdict-v1"
-        },
-        "easy_start": 26,
-        "error_code": null,
-        "query_word": "지참하다",
-        "lookup_status": "found",
-        "mapping_status": "unchanged",
-        "easy_expression": "지참하시어",
-        "retry_after_seconds": 0
-      },
-      {
-        "end": 42,
-        "start": 37,
-        "context": "직권처리는 담당자가 진행합니다.",
-        "easy_end": 44,
-        "original": "직권처리는",
-        "retryable": false,
-        "dictionary": {
-          "status": "not_found",
-          "entries": [],
-          "query_word": "직권처리",
-          "contract_version": "stdict-v1"
-        },
-        "easy_start": 39,
-        "error_code": null,
-        "query_word": "직권처리",
-        "lookup_status": "not_found",
-        "mapping_status": "unchanged",
-        "easy_expression": "직권처리는",
-        "retry_after_seconds": 0
-      },
-      {
-        "end": 69,
-        "start": 64,
-        "context": "재방문할 때에도 구비서류를 지참하시어 방문하세요.",
-        "easy_end": 71,
-        "original": "구비서류를",
-        "retryable": false,
-        "dictionary": {
-          "status": "found",
-          "entries": [
-            {
-              "senses": [
-                {
-                  "pos_code": "1",
-                  "definition": "일을 처리하는 데 필요한 서류.",
-                  "sense_code": "101",
-                  "part_of_speech": "명사"
-                },
-                {
-                  "pos_code": "1",
-                  "definition": "일정한 조건에 맞추어 갖추어 놓은 서류.",
-                  "sense_code": "102",
-                  "part_of_speech": "명사"
-                }
-              ],
-              "headword": "구비^서류",
-              "source_url": "https://stdict.korean.go.kr/search/searchView.do?word_no=100",
-              "target_code": "100",
-              "homonym_number": null
-            }
-          ],
-          "query_word": "구비서류",
-          "contract_version": "stdict-v1"
-        },
-        "easy_start": 66,
-        "error_code": null,
-        "query_word": "구비서류",
-        "lookup_status": "found",
-        "mapping_status": "unchanged",
-        "easy_expression": "구비서류를",
-        "retry_after_seconds": 0
-      }
-    ],
-    "attachment_content_included": false
+      "dictionary": [
+        {
+          "notice_id": 1,
+          "status": "complete"
+        }
+      ],
+      "dictionary_remaining_count": 0,
+      "published": [
+        {
+          "id": 1,
+          "display_status": "none",
+          "has_easy_text": true,
+          "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900551"
+        }
+      ]
+    }
   },
-  "stderr": [
-    "{\"gemini_requests\": 0, \"gemini_http_attempts\": 0}"
-  ],
+  "stderr": [],
   "http_calls": [
     "dictionary_search 지참하다 1 json",
     "dictionary_view 200"

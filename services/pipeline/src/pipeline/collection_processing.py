@@ -18,6 +18,7 @@ from pipeline.config import ConfigError, DatabaseSettings
 from pipeline.gemini_execution import GeminiExecutionError, execution_budget
 from pipeline.glossary.notice_dictionary_service import enrich_notice_dictionary
 from pipeline.processing_runner import run_processing
+from pipeline.storage.notice_dictionary import dictionary_work
 from pipeline.storage.processing_jobs import readiness_counts
 from pipeline.transform.gemini_prompt import GeminiConfigurationError, load_gemini_api_key
 
@@ -106,11 +107,14 @@ def create_easy_text_processing(database: DatabaseSettings) -> CollectionPostpro
 
 def create_ai_processing(
     database: DatabaseSettings, *, source: str, limit: int = 100,
+    features: tuple[Feature, ...] = ("summary", "easy_text"),
 ) -> CollectionPostprocessing:
     """Validate before collecting, then give each feature an independent batch."""
     categories = {"nowon": "nowon", "wolgye1": "dong", "seoul": "seoul"}
     if source not in categories or type(limit) is not int or not 1 <= limit <= 10000:
         raise ConfigError("후처리 출처 또는 작업 상한이 올바르지 않습니다.")
+    if features not in (("summary", "easy_text"), ("easy_text",)):
+        raise ConfigError("지원하지 않는 후처리 기능입니다.")
     try:
         api_key = load_gemini_api_key()
         with execution_budget():
@@ -121,54 +125,71 @@ def create_ai_processing(
     def run(notice_ids: tuple[int, ...]) -> FeatureReports:
         reports: FeatureReports = {}
         published_ids = set(notice_ids)
-        for feature in ("summary", "easy_text"):
+        for feature in features:
+            report: dict[str, object] = {"complete": False}
+            reports[feature] = report
             try:
                 result = run_processing(
                     database, api_key=api_key, features=(feature,),
                     source=categories[source], limit=limit,
                 )
-                report = result.report()
-                with psycopg.connect(
-                    database.database_url, connect_timeout=5,
-                    options="-c statement_timeout=10000 -c lock_timeout=5000",
-                ) as conn:
+                report.update(result.report())
+                published_ids.update(r["notice_id"] for r in result.records)
+                with _report_connection(database) as conn:
                     counts = readiness_counts(conn, feature=feature, source=categories[source])
                 report["readiness"] = counts
                 report["complete"] = report["complete"] and not any(
                     counts[state] for state in
                     ("pending", "running", "retry_wait", "blocked", "exhausted")
                 )
-                published_ids.update(r["notice_id"] for r in result.records)
-                ids = sorted(published_ids)
-                # A new connection observes committed data. App visibility comes
-                # exclusively from #58's existing invoker-rights view under anon.
-                report["published"] = read_published(database, ids)
-                if feature == "easy_text":
-                    report["dictionary"] = []
-                    for item in report["published"]:
-                        if not item["has_easy_text"]:
-                            continue
+            except Exception:
+                # Preserve committed execution counts/records even if a later
+                # readiness query fails. Reporting failure is not execution failure.
+                report.update(complete=False, error_code="postprocessing_failed")
+            if feature == "easy_text":
+                report["dictionary"] = []
+                try:
+                    with _report_connection(database) as conn:
+                        ids, _ = dictionary_work(conn, source=categories[source], limit=limit)
+                    published_ids.update(ids)
+                    for notice_id in ids:
                         try:
-                            dictionary = enrich_notice_dictionary(database, item["id"])
+                            dictionary = enrich_notice_dictionary(database, notice_id)
                             status = dictionary["dictionary_status"] if dictionary else "pending"
                         except Exception:
                             status = "partial"
-                        report["dictionary"].append({"notice_id": item["id"], "status": status})
+                        report["dictionary"].append({"notice_id": notice_id, "status": status})
                         if status != "complete":
                             report["complete"] = False
-                reports[feature] = report
-            except Exception:
-                reports[feature] = {
-                    "complete": False, "error_code": "postprocessing_failed",
-                }
-        # Both reports must show the final committed app state, including the
-        # other feature's successful result after a partial failure.
-        published = read_published(database, sorted(published_ids))
-        for report in reports.values():
-            report["published"] = published
+                    with _report_connection(database) as conn:
+                        _, remaining = dictionary_work(conn, source=categories[source], limit=limit)
+                    report["dictionary_remaining_count"] = remaining
+                    if remaining:
+                        report["complete"] = False
+                except Exception:
+                    report.update(
+                        complete=False, dictionary_error_code="dictionary_processing_failed",
+                    )
+        try:
+            published = read_published(database, sorted(published_ids))
+        except Exception:
+            for report in reports.values():
+                report.update(
+                    complete=False, published=None, published_error_code="published_read_failed",
+                )
+        else:
+            for report in reports.values():
+                report["published"] = published
         return reports
 
-    return CollectionPostprocessing(("summary", "easy_text"), run)
+    return CollectionPostprocessing(features, run)
+
+
+def _report_connection(database: DatabaseSettings) -> psycopg.Connection:
+    return psycopg.connect(
+        database.database_url, connect_timeout=5,
+        options="-c statement_timeout=10000 -c lock_timeout=5000",
+    )
 
 
 def read_published(database: DatabaseSettings, notice_ids: list[int]) -> list[dict[str, object]]:

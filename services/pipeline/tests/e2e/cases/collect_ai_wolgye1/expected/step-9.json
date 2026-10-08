@@ -12,8 +12,8 @@
     "complete": true,
     "failures": [],
     "summary": {
-      "dry_run": false,
       "complete": true,
+      "dry_run": false,
       "selected_count": 0,
       "enqueued_count": 0,
       "attempted_count": 0,
@@ -45,8 +45,8 @@
       ]
     },
     "easy_text": {
-      "dry_run": false,
       "complete": false,
+      "dry_run": false,
       "selected_count": 1,
       "enqueued_count": 1,
       "attempted_count": 1,
@@ -77,6 +77,8 @@
         "blocked": 0,
         "exhausted": 0
       },
+      "dictionary": [],
+      "dictionary_remaining_count": 0,
       "published": [
         {
           "id": 1,
@@ -84,8 +86,7 @@
           "has_easy_text": false,
           "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261006090000501&q_deptCode=1047"
         }
-      ],
-      "dictionary": []
+      ]
     }
   },
   "stderr": [],

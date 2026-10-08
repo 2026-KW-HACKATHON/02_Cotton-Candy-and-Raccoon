@@ -139,6 +139,12 @@ def build_parser() -> argparse.ArgumentParser:
     pending.add_argument("--max-attempts", type=int, default=3)
     pending.add_argument("--job-timeout-seconds", type=float, default=DEFAULT_JOB_TIMEOUT_SECONDS)
     pending.add_argument("--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS)
+    stored = subparsers.add_parser(
+        "process-stored", help="run AI and dictionary recovery after all sources are collected",
+    )
+    stored.add_argument("--source", choices=["nowon", "wolgye1", "seoul"], required=True)
+    stored.add_argument("--feature", choices=["all", "easy_text"], default="all")
+    stored.add_argument("--limit", type=int, default=100)
     return parser
 
 
@@ -167,6 +173,19 @@ def _exit_code(complete: bool, processor: CollectionPostprocessing | None) -> in
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.command == "process-stored":
+        try:
+            processor = create_ai_processing(
+                DatabaseSettings.from_env(), source=args.source, limit=args.limit,
+                features=(("easy_text",) if args.feature == "easy_text"
+                          else ("summary", "easy_text")),
+            )
+        except ConfigError as error:
+            print(f"설정 오류: {error}", file=sys.stderr)
+            return 2
+        _print_summary({"source": args.source}, processor)
+        return _exit_code(True, processor)
 
     if args.command == "summarize-one":
         return _summarize_one(args)

@@ -18,7 +18,9 @@ from e2e.harness.http_replay import API_KEY, CaseDefinitionError
 from e2e.harness.snapshot import normalize, normalize_json, read_anon, read_database
 from support.db import database_uri
 
-STEP_TYPES = ("collect", "collect-one", "process-pending", "notice-glossary", "sql")
+STEP_TYPES = (
+    "collect", "collect-one", "process-pending", "process-stored", "notice-glossary", "sql",
+)
 # Retry timestamps depend on real DB time and jitter. Preserve their presence;
 # policy intervals and Retry-After floors are checked in the runner boundary tests.
 REPORT_TIME_KEYS = frozenset({"next_attempt_at"})
@@ -160,7 +162,8 @@ def run_step(
         if fixed_now.tzinfo is None:
             raise CaseDefinitionError("case now must include a timezone")
         monkeypatch.setattr(clock, "now", lambda: fixed_now)
-    if step["type"] == "process-pending" or "--process-ai" in step.get("args", []):
+    if (step["type"] in ("process-pending", "process-stored")
+            or "--process-ai" in step.get("args", [])):
         from pipeline import processing_runner
         from pipeline.processing_worker import process_claim
 

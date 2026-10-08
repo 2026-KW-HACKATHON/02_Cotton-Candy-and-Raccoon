@@ -372,3 +372,17 @@ def test_common_runner_reports_both_features_without_changing_collection_success
     report = json.loads(capsys.readouterr().out)
     assert report["complete"] is True and report["saved_count"] == 1
     assert {feature: report[feature] for feature in reports} == reports
+
+
+@pytest.mark.parametrize("feature,expected", [("all", ("summary", "easy_text")),
+                                               ("easy_text", ("easy_text",))])
+def test_process_stored_without_source_keys(monkeypatch, capsys, feature, expected):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
+    reports = {name: {"complete": True} for name in expected}
+    runner = MagicMock(return_value=reports)
+    processor = CollectionPostprocessing(expected, runner)
+    with patch("pipeline.cli.create_ai_processing", return_value=processor) as create:
+        assert main(["process-stored", "--source", "seoul", "--feature", feature]) == 0
+    assert create.call_args.kwargs["features"] == expected
+    runner.assert_called_once_with(())
+    assert json.loads(capsys.readouterr().out)[expected[0]]["complete"] is True

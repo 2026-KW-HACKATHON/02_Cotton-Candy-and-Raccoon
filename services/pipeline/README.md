@@ -885,6 +885,9 @@ pipeline collect --source seoul --source-board 25 --mode new --process-ai
 pipeline collect-one --source seoul --source-board 25 --process-ai
 # 기능별 처리 상한 조정 (1~10000)
 pipeline collect --source nowon --mode refresh --process-ai --processing-limit 20
+# 원문을 다시 수집하지 않고 저장된 공지의 누락·실패 후처리 복구
+pipeline process-stored --source nowon --limit 20
+pipeline process-stored --source nowon --feature easy_text --limit 20
 ```
 
 DB와 해당 출처 API 설정 외에 `GEMINI_API_KEY`가 필요합니다. 설정 오류는 수집 전에 exit 2로
@@ -908,6 +911,10 @@ seoul 단위이며 서울시의 선택한 게시판 외 기존 서울 공지도 
 `skipped`, 처리 상한 초과·재시도 대기·실패는 `pending/retry_wait/blocked/...`로 구분합니다.
 남은 작업이 있으면 그 기능의 `complete=false`이므로 API 호출 0회가 생성 완료를 뜻하지 않습니다.
 원문 또는 기능·사전 처리가 불완전하면 exit 1, 모두 완료(이유 있는 건너뜀 포함)면 exit 0입니다.
+사전은 Gemini 작업과 별도로 현재 쉬운말의 미완료 연결을 조회합니다. 조회 대기 시간이 끝난
+재시도 가능 단어와 누락 연결을 최대 `limit`건 처리하며, 영구 실패·대기 중 작업은 호출하지
+않습니다. `dictionary_remaining_count`에는 상한 밖·대기·영구 실패도 포함하므로 남아 있으면
+완료로 보고하지 않습니다. 완료된 사전 연결은 재작성하지 않습니다.
 
 예를 들어 요약 시간 초과 후 쉬운말만 성공한 경우의 출력 발췌:
 
@@ -933,6 +940,8 @@ seoul 단위이며 서울시의 선택한 게시판 외 기존 서울 공지도 
 `app_notice_detail`을 다시 읽은 최종 `id/display_status/has_easy_text/url`입니다. 프론트 #34는
 `app_notice_list` / `app_notice_detail` 계약을 그대로 사용합니다. 결과가 없는 공지도 목록·원문
 링크로 접근하며, private 작업 큐나 모델 메타데이터를 공개 view에 추가하지 않습니다.
+최종 조회 실패 시 `published=null`, `published_error_code=published_read_failed`와 exit 1을
+반환하되, 이미 저장된 결과 및 기능별 실행 건수·기록은 보존합니다.
 
 ### backend 적용 순서
 
@@ -943,8 +952,11 @@ seoul 단위이며 서울시의 선택한 게시판 외 기존 서울 공지도 
 아래 ‘기존 데이터의 body_text 백필’ 절차 또는 재수집으로 채웁니다. 원격 DB에는 자동 적용하지 않습니다.
 
 GitHub Actions는 기존 `PIPELINE_PRODUCTION_ENABLED=true`일 때만 작동합니다.
-`PIPELINE_AI_PROCESSING_ENABLED=true`이면 `--process-ai`, 그렇지 않고
-`PIPELINE_EASY_TEXT_ENABLED=true`이면 `--easy-text`, 둘 다 없으면 원문만 수집합니다.
+활성화된 모든 출처의 원문 수집을 먼저 마친 뒤 `process-stored`를 출처별로 실행합니다.
+`PIPELINE_AI_PROCESSING_ENABLED=true`이면 두 AI 기능을, 그렇지 않고
+`PIPELINE_EASY_TEXT_ENABLED=true`이면 쉬운말·사전만 처리하며, 둘 다 없으면 원문만 수집합니다.
+각 후처리 단계는 30분 상한이 있고 실패해도 다음 출처 처리를 시도합니다. 중단된 작업은
+#61의 점유 만료 후 복구 정책을 따릅니다.
 두 옵션을 켜도 AI 통합 경로만 한 번 실행합니다. AI/쉬운말 활성화 시 Gemini·표준사전 Secret이
 필요합니다. 서울시 예약 수집은 `PIPELINE_SEOUL_ENABLED=true`와 `SEOUL_NEWS_API_KEY`
 Secret을 추가하면 게시판 25를 처리합니다. 다른 게시판은 CLI의 `--source-board`로 선택합니다.

@@ -13,7 +13,7 @@
     ],
     "easy_text": "구비서류 제출 안내\n📢 다음 날에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.",
     "notice_id": 1,
-    "generated_at": "<unchanged>",
+    "generated_at": "<set>",
     "original_text": "구비서류 제출 안내\n📢 익일에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.",
     "prompt_version": "easy-language-v8",
     "notice_revision": "a848d30a1de9490a85bad59064739fd8f6820e2d27c864f8d0a6c4e689f32b5f",

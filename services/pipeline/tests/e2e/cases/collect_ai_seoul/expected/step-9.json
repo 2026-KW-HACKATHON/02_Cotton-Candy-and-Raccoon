@@ -19,8 +19,8 @@
       }
     ],
     "summary": {
-      "dry_run": false,
       "complete": true,
+      "dry_run": false,
       "selected_count": 0,
       "enqueued_count": 0,
       "attempted_count": 0,
@@ -52,8 +52,8 @@
       ]
     },
     "easy_text": {
-      "dry_run": false,
       "complete": false,
+      "dry_run": false,
       "selected_count": 1,
       "enqueued_count": 1,
       "attempted_count": 1,
@@ -84,6 +84,8 @@
         "blocked": 0,
         "exhausted": 0
       },
+      "dictionary": [],
+      "dictionary_remaining_count": 0,
       "published": [
         {
           "id": 1,
@@ -91,8 +93,7 @@
           "has_easy_text": false,
           "url": "https://news.seoul.go.kr/env/archives/000777"
         }
-      ],
-      "dictionary": []
+      ]
     }
   },
   "stderr": [],

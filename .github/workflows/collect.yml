@@ -80,9 +80,9 @@ jobs:
           fi
           echo "mode=$mode" >> "$GITHUB_OUTPUT"
           if [ "$AI_PROCESSING_ENABLED" = "true" ]; then
-            echo "processing_flag=--process-ai" >> "$GITHUB_OUTPUT"
+            echo "processing_feature=all" >> "$GITHUB_OUTPUT"
           elif [ "$EASY_TEXT_ENABLED" = "true" ]; then
-            echo "processing_flag=--easy-text" >> "$GITHUB_OUTPUT"
+            echo "processing_feature=easy_text" >> "$GITHUB_OUTPUT"
           fi
       - name: Collect Nowon notices
         id: nowon
@@ -90,21 +90,17 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
           NOWON_NOTICE_API_KEY: ${{ secrets.NOWON_NOTICE_API_KEY }}
-          GEMINI_API_KEY: ${{ (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') && secrets.GEMINI_API_KEY || '' }}
-          STDICT_API_KEY: ${{ (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') && secrets.STDICT_API_KEY || '' }}
         run: >-
           uv run --no-dev --frozen pipeline collect --source nowon
-          --mode "${{ steps.mode.outputs.mode }}" ${{ steps.mode.outputs.processing_flag }}
+          --mode "${{ steps.mode.outputs.mode }}"
       - name: Collect Wolgye 1-dong notices
         id: wolgye1
         continue-on-error: true
         env:
           DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
-          GEMINI_API_KEY: ${{ (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') && secrets.GEMINI_API_KEY || '' }}
-          STDICT_API_KEY: ${{ (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') && secrets.STDICT_API_KEY || '' }}
         run: >-
           uv run --no-dev --frozen pipeline collect --source wolgye1
-          --mode "${{ steps.mode.outputs.mode }}" ${{ steps.mode.outputs.processing_flag }}
+          --mode "${{ steps.mode.outputs.mode }}"
       - name: Collect Seoul notices
         if: vars.PIPELINE_SEOUL_ENABLED == 'true'
         id: seoul
@@ -112,15 +108,54 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
           SEOUL_NEWS_API_KEY: ${{ secrets.SEOUL_NEWS_API_KEY }}
+        run: >-
+          uv run --no-dev --frozen pipeline collect --source seoul --source-board 25
+          --mode "${{ steps.mode.outputs.mode }}"
+      - name: Process stored Nowon notices
+        if: ${{ !cancelled() && (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') }}
+        id: process_nowon
+        continue-on-error: true
+        timeout-minutes: 30
+        env:
+          DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
           GEMINI_API_KEY: ${{ (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') && secrets.GEMINI_API_KEY || '' }}
           STDICT_API_KEY: ${{ (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') && secrets.STDICT_API_KEY || '' }}
         run: >-
-          uv run --no-dev --frozen pipeline collect --source seoul --source-board 25
-          --mode "${{ steps.mode.outputs.mode }}" ${{ steps.mode.outputs.processing_flag }}
+          uv run --no-dev --frozen pipeline process-stored --source nowon
+          --feature "${{ steps.mode.outputs.processing_feature }}"
+      - name: Process stored Wolgye 1-dong notices
+        if: ${{ !cancelled() && (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') }}
+        id: process_wolgye1
+        continue-on-error: true
+        timeout-minutes: 30
+        env:
+          DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+          GEMINI_API_KEY: ${{ (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') && secrets.GEMINI_API_KEY || '' }}
+          STDICT_API_KEY: ${{ (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') && secrets.STDICT_API_KEY || '' }}
+        run: >-
+          uv run --no-dev --frozen pipeline process-stored --source wolgye1
+          --feature "${{ steps.mode.outputs.processing_feature }}"
+      - name: Process stored Seoul notices
+        if: ${{ !cancelled() && (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') && vars.PIPELINE_SEOUL_ENABLED == 'true' }}
+        id: process_seoul
+        continue-on-error: true
+        timeout-minutes: 30
+        env:
+          DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+          GEMINI_API_KEY: ${{ (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') && secrets.GEMINI_API_KEY || '' }}
+          STDICT_API_KEY: ${{ (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') && secrets.STDICT_API_KEY || '' }}
+        run: >-
+          uv run --no-dev --frozen pipeline process-stored --source seoul
+          --feature "${{ steps.mode.outputs.processing_feature }}"
       - name: Report collection failures
         if: always()
         env:
           SEOUL_ENABLED: ${{ vars.PIPELINE_SEOUL_ENABLED }}
+          AI_ENABLED: ${{ vars.PIPELINE_AI_PROCESSING_ENABLED }}
+          EASY_ENABLED: ${{ vars.PIPELINE_EASY_TEXT_ENABLED }}
+          NOWON_PROCESS_OUTCOME: ${{ steps.process_nowon.outcome }}
+          WOLGYE_PROCESS_OUTCOME: ${{ steps.process_wolgye1.outcome }}
+          SEOUL_PROCESS_OUTCOME: ${{ steps.process_seoul.outcome }}
           SEOUL_OUTCOME: ${{ steps.seoul.outcome }}
           NOWON_OUTCOME: ${{ steps.nowon.outcome }}
           WOLGYE1_OUTCOME: ${{ steps.wolgye1.outcome }}
@@ -132,4 +167,14 @@ jobs:
           if [ "$NOWON_OUTCOME" != "success" ] || [ "$WOLGYE1_OUTCOME" != "success" ]; then
             echo "Collection, summary, easy-text or dictionary processing was incomplete. Review the per-source JSON above." >&2
             exit 1
+          fi
+          if [ "$AI_ENABLED" = "true" ] || [ "$EASY_ENABLED" = "true" ]; then
+            if [ "$NOWON_PROCESS_OUTCOME" != "success" ] || [ "$WOLGYE_PROCESS_OUTCOME" != "success" ]; then
+              echo "Stored notice processing was incomplete." >&2
+              exit 1
+            fi
+            if [ "$SEOUL_ENABLED" = "true" ] && [ "$SEOUL_PROCESS_OUTCOME" != "success" ]; then
+              echo "Stored Seoul processing was incomplete." >&2
+              exit 1
+            fi
           fi
