@@ -104,7 +104,12 @@ def _patch_sleep(monkeypatch: pytest.MonkeyPatch, sleeps: list[float]) -> None:
 
 def _drop_volatile(value: Any) -> Any:
     if isinstance(value, dict):
-        return {k: _drop_volatile(v) for k, v in value.items() if k not in VOLATILE_REPORT_KEYS}
+        # Exact Retry-After arithmetic is covered by runtime tests. Keep the field
+        # and null distinction here without freezing the scheduler's wall clock.
+        return {
+            k: "<retry-at>" if k == "retry_at" and v is not None else _drop_volatile(v)
+            for k, v in value.items() if k not in VOLATILE_REPORT_KEYS
+        }
     if isinstance(value, list):
         return [_drop_volatile(v) for v in value]
     return value

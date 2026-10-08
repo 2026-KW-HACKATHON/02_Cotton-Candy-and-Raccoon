@@ -1,6 +1,7 @@
 """Post-commit easy-text processing is isolated, bounded and safe to retry."""
 
 import json
+from contextlib import nullcontext
 from unittest.mock import MagicMock, patch
 
 import psycopg
@@ -8,11 +9,13 @@ import pytest
 
 from pipeline.after_collect import AfterCollectEasyText
 from pipeline.config import DatabaseSettings
+from pipeline.gemini_execution import GeminiExecutionError
 from pipeline.glossary.easy_language import (
     EasyLanguageAPIError,
     EasyLanguageConfigurationError,
     EasyLanguageValidationError,
     NoNoticeBodyError,
+    simplify_notice,
 )
 from pipeline.glossary.source import StoredNoticeInput
 from pipeline.storage.notice_easy_text import EasyTextStorageError
@@ -65,6 +68,8 @@ def test_separate_transaction_reuses_current_cache_without_forced_refresh(
         "complete": True,
         "attempted_count": 1,
         "successful_count": 1,
+        "gemini_requests": 0,
+        "gemini_http_attempts": 0,
         "skipped_count": 0,
         "failed_count": 0,
         "skipped": [],
@@ -129,7 +134,14 @@ def test_processing_failure_is_fixed_and_later_notice_still_runs(
     assert report["complete"] is False
     assert report["attempted_count"] == 2
     assert report["successful_count"] == report["failed_count"] == 1
-    assert report["failures"] == [{"notice_id": 42, "reason_code": reason}]
+    expected_failure = {"notice_id": 42, "reason_code": reason}
+    if isinstance(error, EasyLanguageAPIError):
+        expected_failure["execution_failure"] = error.to_dict()
+    elif isinstance(error, EasyLanguageValidationError):
+        expected_failure["execution_failure"] = GeminiExecutionError(
+            "response_validation_failed"
+        ).to_dict()
+    assert report["failures"] == [expected_failure]
     assert "private" not in json.dumps(report)
     assert "secret" not in json.dumps(report)
 
@@ -161,3 +173,56 @@ def test_commit_failure_does_not_claim_success_or_skip(
     assert processor.report()["successful_count"] == 0
     assert processor.report()["skipped_count"] == 0
     assert processor.report()["failed_count"] == 1
+
+
+@pytest.mark.parametrize("shared", [False, True])
+def test_counters_are_per_notice_deltas_even_with_a_shared_budget(
+    processor, conn, monkeypatch, shared
+):
+    from pipeline import gemini_execution
+
+    def worker(operation, payload, budget):
+        gemini_execution.record_http_dispatch()
+        return '{"changes": [], "dictionary_candidates": []}'
+
+    def process(connection, source, **kwargs):
+        return simplify_notice(source, api_key="fake")
+
+    monkeypatch.setattr(gemini_execution, "_invoke_worker", worker)
+    with (
+        patch("pipeline.after_collect.psycopg.connect", return_value=conn),
+        patch("pipeline.after_collect.load_notice_glossary_input", return_value=_source()),
+        patch("pipeline.after_collect.simplify_and_store_notice", side_effect=process),
+        gemini_execution.execution_budget() if shared else nullcontext(),
+    ):
+        processor(42)
+        processor(43)
+    report = processor.report()
+    assert report["successful_count"] == 2
+    assert report["gemini_requests"] == report["gemini_http_attempts"] == 2
+
+
+def test_cache_read_time_does_not_exhaust_the_default_ai_budget(processor, conn, monkeypatch):
+    from pipeline import gemini_execution
+
+    now = [0.0]
+    monkeypatch.setattr(gemini_execution.time, "monotonic", lambda: now[0])
+
+    def worker(operation, payload, budget):
+        assert budget.remaining_seconds() == 120
+        gemini_execution.record_http_dispatch()
+        return '{"changes": [], "dictionary_candidates": []}'
+
+    def process(connection, source, **kwargs):
+        now[0] += 180.0  # Simulate the service's cache read before it starts conversion.
+        return simplify_notice(source, api_key="fake")
+
+    monkeypatch.setattr(gemini_execution, "_invoke_worker", worker)
+    with (
+        patch("pipeline.after_collect.psycopg.connect", return_value=conn),
+        patch("pipeline.after_collect.load_notice_glossary_input", return_value=_source()),
+        patch("pipeline.after_collect.simplify_and_store_notice", side_effect=process),
+    ):
+        processor(42)
+    assert processor.report()["successful_count"] == 1
+    assert processor.report()["gemini_http_attempts"] == 1

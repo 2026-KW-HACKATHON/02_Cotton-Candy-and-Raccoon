@@ -4,10 +4,17 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 
-import httpx
 from google import genai
-from google.genai import errors, types
+from google.genai import types
 
+from pipeline.gemini_execution import GeminiExecutionError, run_gemini_request
+from pipeline.gemini_sdk_adapter import (
+    disable_interaction_retries,
+    is_api_error,
+    record_request,
+    reject_failed_response,
+    safe_api_failure,
+)
 from pipeline.transform.gemini_input import (
     GeminiInput,
     GeminiInputError,
@@ -29,8 +36,8 @@ _request_counter: ContextVar[list[int] | None] = ContextVar(
 def count_summary_requests() -> Iterator[list[int]]:
     """Count Gemini summary requests sent in this context, as ``counter[0]``.
 
-    Only calls that reach the SDK request are counted; input validation and
-    configuration failures before it are not. A run reports gemini_called from this.
+    This legacy counter counts logical calls after input validation, not HTTP
+    attempts. Execution statistics separately count actual transport dispatches.
     """
     counter = [0]
     token = _request_counter.set(counter)
@@ -40,72 +47,48 @@ def count_summary_requests() -> Iterator[list[int]]:
         _request_counter.reset(token)
 
 
-class GeminiRequestError(RuntimeError):
-    """Gemini did not return a usable response."""
+class GeminiRequestError(GeminiExecutionError):
+    """A safe Gemini failure with retry metadata for the execution caller."""
 
-    def __init__(
-        self, message: str, *, reason_code: str = "api_error", status_code: int | None = None
-    ) -> None:
-        self.reason_code = reason_code
-        self.status_code = status_code
-        super().__init__(message)
+    def __init__(self, message: str, *, reason_code: str = "api_error", **metadata) -> None:
+        super().__init__(reason_code, **metadata)
+        if self.reason_code != reason_code:
+            self.reason_code = "summary_processing_failed"
+        self.args = (message,)
 
 
-def _is_api_error(error: Exception) -> bool:
-    """Recognize SDK API errors without importing its private exception modules.
-
-    Interactions in the locked SDK uses a separate APIError/GenAiError hierarchy
-    from google.genai.errors.APIError. Check API base classes in the SDK namespace,
-    allowing its internal module path to move without suppressing ordinary bugs.
-    """
-    if isinstance(error, (errors.APIError, httpx.HTTPError)):
-        return True
-    return any(
-        base.__name__ in {"APIError", "GenAiError"}
-        and (base.__module__ == "google.genai" or base.__module__.startswith("google.genai."))
-        for base in type(error).__mro__
+def _request_error(error: GeminiExecutionError) -> GeminiRequestError:
+    message = (
+        f"Gemini API returned status {error.status_code}."
+        if error.status_code is not None else {
+            "empty_response": "Gemini returned no summary text.",
+            "response_incomplete": "Gemini interaction did not complete.",
+        }.get(error.reason_code, "Gemini API request failed.")
     )
-
-
-def _api_status(error: Exception) -> int | None:
-    """Use only an actual HTTP failure status, never provider text or payload codes."""
-    values = [getattr(error, "status_code", None), getattr(error, "code", None)]
-    response = getattr(error, "response", None)
-    if isinstance(response, httpx.Response):
-        values.append(response.status_code)
-    return next(
-        (
-            value
-            for value in values
-            if isinstance(value, int) and not isinstance(value, bool) and 400 <= value <= 599
-        ),
-        None,
+    return GeminiRequestError(
+        message, reason_code=error.reason_code, failure_kind=error.failure_kind,
+        retryable=error.retryable, retry_at=error.retry_at, status_code=error.status_code,
     )
-
-
-def _transport_reason(error: BaseException) -> str:
-    """Recognize public HTTPX causes without retaining their request or message."""
-    seen: set[int] = set()
-    current: BaseException | None = error
-    while current is not None and id(current) not in seen:
-        seen.add(id(current))
-        if isinstance(current, httpx.TimeoutException):
-            return "api_timeout"
-        if isinstance(current, httpx.HTTPError):
-            return "api_connection_error"
-        current = current.__cause__
-    return "api_error"
 
 
 def generate_summary_json(
     *, prompt: str, notice_text: GeminiInput, api_key: str, model: str = DEFAULT_MODEL
 ) -> str:
-    """Request JSON without retaining the interaction on Gemini's server.
+    """Validate locally, then run bounded Gemini I/O in an isolated worker."""
+    validated_input, _ = _validate_request(prompt, notice_text, api_key, model)
+    counter = _request_counter.get()
+    if counter is not None:
+        counter[0] += 1
+    try:
+        return run_gemini_request("summary", {
+            "prompt": prompt, "notice_text": validated_input, "api_key": api_key, "model": model,
+        })
+    except GeminiExecutionError as error:
+        raise _request_error(error) from None
 
-    The locked Interactions SDK maps public retry attempts=1 to one retry, so
-    one logical call can send two HTTP attempts. summarize.py permits at most
-    two logical calls for response correction, for at most four HTTP attempts.
-    """
+
+def _validate_request(prompt: str, notice_text: GeminiInput, api_key: str, model: str):
+    """Share validation with the child without allowing invalid inputs to launch it."""
     if not api_key.strip():
         raise GeminiRequestError("GEMINI_API_KEY is required.", reason_code="missing_api_key")
     if not prompt.strip():
@@ -129,6 +112,14 @@ def generate_summary_json(
     except GeminiInputError as exc:
         raise GeminiRequestError(exc.reason_code, reason_code=exc.reason_code) from None
 
+    return validated_input, response_format
+
+
+def _generate_summary_json_direct(
+    *, prompt: str, notice_text: GeminiInput, api_key: str, model: str = DEFAULT_MODEL
+) -> str:
+    """One SDK attempt inside the worker; never use directly for production jobs."""
+    validated_input, response_format = _validate_request(prompt, notice_text, api_key, model)
     try:
         with (
             private_gemini_logging(),
@@ -136,15 +127,14 @@ def generate_summary_json(
                 api_key=api_key,
                 http_options=types.HttpOptions(
                     timeout=REQUEST_TIMEOUT_MS,
-                    # Without this explicit option the locked Interactions SDK
-                    # sends up to four HTTP attempts for a single logical call.
                     retry_options=types.HttpRetryOptions(attempts=1),
+                    client_args={"event_hooks": {
+                        "request": [record_request], "response": [reject_failed_response],
+                    }},
                 ),
             ) as client,
         ):
-            counter = _request_counter.get()
-            if counter is not None:
-                counter[0] += 1
+            disable_interaction_retries(client.interactions)
             interaction = client.interactions.create(
                 model=model,
                 system_instruction=prompt,
@@ -152,22 +142,12 @@ def generate_summary_json(
                 response_format=response_format,
                 store=False,
             )
-    except Exception as exc:
-        # Keep this boundary around the SDK call only. Unexpected programming or
-        # configuration exceptions must retain their original type and traceback.
-        if not _is_api_error(exc):
+    except GeminiExecutionError as error:
+        raise _request_error(error) from None
+    except Exception as error:
+        if not is_api_error(error):
             raise
-        status = _api_status(exc)
-        if status is None:
-            reason_code = _transport_reason(exc)
-            raise GeminiRequestError(
-                "Gemini API request failed.", reason_code=reason_code
-            ) from None
-        raise GeminiRequestError(
-            f"Gemini API returned status {status}.",
-            reason_code="input_too_large" if status == 413 else "api_error",
-            status_code=status,
-        ) from None
+        raise _request_error(safe_api_failure(error)) from None
 
     if getattr(interaction, "status", None) != "completed":
         raise GeminiRequestError(

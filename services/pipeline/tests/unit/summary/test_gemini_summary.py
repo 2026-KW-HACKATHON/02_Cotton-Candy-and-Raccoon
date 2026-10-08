@@ -789,7 +789,9 @@ def test_client_uses_stateless_structured_response(monkeypatch: pytest.MonkeyPat
     class FakeClient:
         def __init__(self, **kwargs: object) -> None:
             captured["client"] = kwargs
-            self.interactions = SimpleNamespace(create=self.create)
+            self.interactions = SimpleNamespace(
+                create=self.create, sdk_configuration=SimpleNamespace(retry_config=None)
+            )
 
         def __enter__(self) -> "FakeClient":
             return self
@@ -802,7 +804,7 @@ def test_client_uses_stateless_structured_response(monkeypatch: pytest.MonkeyPat
             return SimpleNamespace(status="completed", output_text='{"category":"unknown"}')
 
     monkeypatch.setattr(gemini_client.genai, "Client", FakeClient)
-    result = gemini_client.generate_summary_json(
+    result = gemini_client._generate_summary_json_direct(
         prompt="instructions", notice_text="notice data", api_key="dummy-key"
     )
 
@@ -819,7 +821,9 @@ def test_sdk_api_error_is_wrapped_without_response_body(monkeypatch: pytest.Monk
 
     class FakeClient:
         def __init__(self, **_kwargs: object) -> None:
-            self.interactions = SimpleNamespace(create=self.create)
+            self.interactions = SimpleNamespace(
+                create=self.create, sdk_configuration=SimpleNamespace(retry_config=None)
+            )
 
         def __enter__(self) -> "FakeClient":
             return self
@@ -834,7 +838,7 @@ def test_sdk_api_error_is_wrapped_without_response_body(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(gemini_client.genai, "Client", FakeClient)
     with pytest.raises(gemini_client.GeminiRequestError, match="status 429") as exc:
-        gemini_client.generate_summary_json(
+        gemini_client._generate_summary_json_direct(
             prompt="instructions", notice_text="notice data", api_key="dummy-key"
         )
     assert "dummy sensitive body" not in str(exc.value)

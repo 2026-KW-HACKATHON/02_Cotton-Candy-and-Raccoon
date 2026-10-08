@@ -3,9 +3,16 @@
 import json
 import re
 from copy import deepcopy
+from dataclasses import replace
 
 from pydantic import ValidationError
 
+from pipeline.gemini_execution import (
+    ExecutionBudget,
+    GeminiExecutionError,
+    current_execution,
+    execution_budget,
+)
 from pipeline.transform.action_coverage import (
     MissingActionCondition,
     find_missing_action_conditions,
@@ -890,9 +897,20 @@ def _correct_news_text(first_raw: str, retry_raw: str, notice: NoticeInput) -> s
 
 
 def summarize_notice(
-    notice: NoticeInput, *, model: str = DEFAULT_MODEL, api_key: str | None = None
+    notice: NoticeInput,
+    *,
+    model: str = DEFAULT_MODEL,
+    api_key: str | None = None,
+    budget: ExecutionBudget | None = None,
 ) -> NoticeSummary:
     """Generate one summary with one shared retry for shape errors or clear omissions."""
+    with execution_budget(budget):
+        return _summarize_notice(notice, model=model, api_key=api_key)
+
+
+def _summarize_notice(
+    notice: NoticeInput, *, model: str, api_key: str | None
+) -> NoticeSummary:
     # Revalidate a deep snapshot before serializing the request. A caller may
     # mutate its model while Gemini runs; grounding and status must still use
     # the exact text and reference clock belonging to the original request.
@@ -903,9 +921,12 @@ def summarize_notice(
     if not notice.body_text.strip() and not notice.attachments:
         return unknown_summary(notice)
 
-    return _require_generated_cards(
-        _summarize_input(notice, render_notice_input(notice), model=model, api_key=api_key),
-        notice=notice,
+    summary = _summarize_input(notice, render_notice_input(notice), model=model, api_key=api_key)
+    # Recovery may finish after expiry, but only an already usable candidate can
+    # take this path. Ordinary candidates complete the final checks in the loop.
+    return (
+        _require_generated_cards(summary, notice=notice)
+        if summary._correction_failure_code is not None else summary
     )
 
 
@@ -933,6 +954,29 @@ def _require_generated_cards(
     return summary
 
 
+def _finish_candidate(
+    summary: NoticeSummary,
+    notice: NoticeInput,
+    *,
+    fallback: NoticeSummary | None = None,
+) -> NoticeSummary:
+    """New candidates must finish local checks within the same generation budget."""
+    active = current_execution()
+    assert active is not None
+    try:
+        try:
+            checked = _require_generated_cards(summary, notice=notice)
+        except SummaryValidationError:
+            active.check()
+            raise
+        active.check()
+    except GeminiExecutionError as error:
+        if fallback is not None:
+            return _preserve_after_correction_failure(fallback, reason_code=error.reason_code)
+        raise
+    return checked
+
+
 _UNSET_MANIFEST = object()
 
 
@@ -942,6 +986,7 @@ def summarize_prepared_notice(
     model: str = DEFAULT_MODEL,
     api_key: str | None = None,
     file_manifest: PrivateSummaryFileManifest | None | object = _UNSET_MANIFEST,
+    budget: ExecutionBudget | None = None,
 ) -> PreparedSummaryResult:
     """Summarize #13's prepared text/files, keeping its warnings beside the output.
 
@@ -950,6 +995,29 @@ def summarize_prepared_notice(
     failure code privately for the storage caller.
     This entry point does not read the DB, download files, extract text, or save results.
     """
+    with execution_budget(budget) as active:
+        previous_failure = active.last_failure
+        result = _summarize_prepared_notice(
+            prepared, model=model, api_key=api_key, file_manifest=file_manifest,
+        )
+        failure = active.last_failure
+        if (
+            result.correction_failure_code and failure is not None
+            and failure is not previous_failure
+        ):
+            result = replace(result, execution_failure=failure.to_dict())
+        if result.correction_failure_code is None:
+            active.check()
+        return result
+
+
+def _summarize_prepared_notice(
+    prepared: PreparedSummaryLike,
+    *,
+    model: str,
+    api_key: str | None,
+    file_manifest: PrivateSummaryFileManifest | None | object,
+) -> PreparedSummaryResult:
     if prepared.failures:
         raise SummaryPreparationError("input_preparation_failed")
     try:
@@ -971,16 +1039,15 @@ def summarize_prepared_notice(
     original_input, media_sources = prepare_gemini_request(
         prepared, notice=notice, file_manifest=manifest,
     )
-    summary = _require_generated_cards(
-        _summarize_input(
-            notice,
-            original_input,
-            model=model,
-            api_key=api_key,
-            media_sources=media_sources,
-        ),
-        notice=notice,
+    summary = _summarize_input(
+        notice,
+        original_input,
+        model=model,
+        api_key=api_key,
+        media_sources=media_sources,
     )
+    if summary._correction_failure_code is not None:
+        summary = _require_generated_cards(summary, notice=notice)
     if manifest is not None and manifest.omissions:
         summary = summary.model_copy(update={
             "uncertainties": list(dict.fromkeys([*summary.uncertainties, "일부 첨부 미확인"])),
@@ -1024,10 +1091,16 @@ def _summarize_input(
 
     for attempt in range(2):
         try:
+            active = current_execution()
+            assert active is not None
+            active.check()
             raw = generate_summary_json(
                 prompt=prompt, notice_text=request_input, api_key=key, model=model
             )
-        except (GeminiRequestError, GeminiInputError) as exc:
+            active.check()
+        except (GeminiRequestError, GeminiInputError, GeminiExecutionError) as exc:
+            if isinstance(exc, GeminiExecutionError):
+                active.last_failure = exc
             if first_usable_summary is not None:
                 return _preserve_after_correction_failure(
                     first_usable_summary, reason_code=exc.reason_code
@@ -1039,7 +1112,22 @@ def _summarize_input(
             summary = _validate_summary(
                 raw, notice, media_sources=media_sources, require_card_summaries=True
             )
+            active.check()
+        except GeminiExecutionError as error:
+            if first_usable_summary is not None:
+                return _preserve_after_correction_failure(
+                    first_usable_summary, reason_code=error.reason_code,
+                )
+            raise
         except SummaryValidationError as exc:
+            try:
+                active.check()
+            except GeminiExecutionError as error:
+                if first_usable_summary is not None:
+                    return _preserve_after_correction_failure(
+                        first_usable_summary, reason_code=error.reason_code,
+                    )
+                raise
             if attempt == 1:
                 if first_usable_summary is not None:
                     return _preserve_after_correction_failure(first_usable_summary)
@@ -1055,15 +1143,18 @@ def _summarize_input(
                 summary = _validate_summary(
                     repaired, notice, media_sources=media_sources, require_card_summaries=True
                 )
-                return _with_notes_review(
-                    _merge_text_retry(
-                        first_raw,
-                        first_summary,
-                        raw,
-                        summary,
+                return _finish_candidate(
+                    _with_notes_review(
+                        _merge_text_retry(
+                            first_raw,
+                            first_summary,
+                            raw,
+                            summary,
+                            notice,
+                            correct_notes=bool(first_missing),
+                            media_sources=media_sources,
+                        ),
                         notice,
-                        correct_notes=bool(first_missing),
-                        media_sources=media_sources,
                     ),
                     notice,
                 )
@@ -1071,6 +1162,7 @@ def _summarize_input(
             first_usable_summary = _usable_card_omission_candidate(
                 raw, notice, media_sources=media_sources
             )
+            active.check()
             first_missing = _missing_notes_after_shape_repair(
                 raw, notice, media_sources=media_sources
             )
@@ -1123,11 +1215,15 @@ def _summarize_input(
                             first_usable_summary, reason_code=exc.reason_code
                         )
                     continue
-                return summary
+                return _finish_candidate(
+                    summary, notice, fallback=first_usable_summary if attempt == 1 else None,
+                )
             if attempt == 1:
                 if missing_actions:
-                    return _preserve_after_correction_failure(summary)
-                return _with_notes_review(summary, notice)
+                    summary = _preserve_after_correction_failure(summary)
+                return _finish_candidate(
+                    _with_notes_review(summary, notice), notice, fallback=first_usable_summary,
+                )
             first_raw = raw
             first_missing = missing
             first_missing_actions = missing_actions
@@ -1352,10 +1448,16 @@ def _summarize_file_only_input(
     first_usable_summary: NoticeSummary | None = None
     for attempt in range(2):
         try:
+            active = current_execution()
+            assert active is not None
+            active.check()
             raw = generate_summary_json(
                 prompt=prompt, notice_text=request_input, api_key=api_key, model=model
             )
-        except (GeminiRequestError, GeminiInputError) as exc:
+            active.check()
+        except (GeminiRequestError, GeminiInputError, GeminiExecutionError) as exc:
+            if isinstance(exc, GeminiExecutionError):
+                active.last_failure = exc
             if first_usable_summary is not None:
                 return _preserve_after_correction_failure(
                     first_usable_summary, reason_code=exc.reason_code
@@ -1365,7 +1467,22 @@ def _summarize_file_only_input(
             summary = _validate_summary(
                 raw, notice, media_sources=media_sources, require_card_summaries=True
             )
+            active.check()
+        except GeminiExecutionError as error:
+            if first_usable_summary is not None:
+                return _preserve_after_correction_failure(
+                    first_usable_summary, reason_code=error.reason_code,
+                )
+            raise
         except SummaryValidationError as exc:
+            try:
+                active.check()
+            except GeminiExecutionError as error:
+                if first_usable_summary is not None:
+                    return _preserve_after_correction_failure(
+                        first_usable_summary, reason_code=error.reason_code,
+                    )
+                raise
             if attempt == 1:
                 if first_usable_summary is not None:
                     return _preserve_after_correction_failure(first_usable_summary)
@@ -1374,17 +1491,22 @@ def _summarize_file_only_input(
                     raise SummaryValidationError(
                         "Gemini summary JSON failed validation after one retry."
                     ) from None
-                return _merge_file_reference_correction(
-                    first_summary,
-                    _validate_summary(
-                        repaired, notice, media_sources=media_sources, require_card_summaries=True
+                return _finish_candidate(
+                    _merge_file_reference_correction(
+                        first_summary,
+                        _validate_summary(
+                            repaired, notice, media_sources=media_sources,
+                            require_card_summaries=True,
+                        ),
+                        notice,
+                        media_sources,
                     ),
                     notice,
-                    media_sources,
                 )
             first_usable_summary = _usable_card_omission_candidate(
                 raw, notice, media_sources=media_sources
             )
+            active.check()
             repaired = _drop_invalid_fields(raw, allow_extra=True)
             if repaired is not None:
                 first_summary = _validate_summary(repaired, notice, media_sources=media_sources)
@@ -1397,11 +1519,15 @@ def _summarize_file_only_input(
             original_summary = NoticeSummary.model_validate_json(raw)
             problems = file_reference_problems(original_summary, notice, media_sources)
             if not problems or attempt == 1:
-                return _check_correction_merge(
-                    _merge_file_reference_correction(
-                        first_summary, summary, notice, media_sources
+                return _finish_candidate(
+                    _check_correction_merge(
+                        _merge_file_reference_correction(
+                            first_summary, summary, notice, media_sources
+                        ),
+                        first_usable_summary or summary,
                     ),
-                    first_usable_summary or summary,
+                    notice,
+                    fallback=first_usable_summary if attempt == 1 else None,
                 )
             first_summary = summary
             problem = "; ".join(problems)

@@ -30,6 +30,7 @@ from pipeline.config import (
     Settings,
     WolgyeSettings,
 )
+from pipeline.gemini_execution import GeminiExecutionError
 from pipeline.sources.nowon_api import NowonSourceError, collect_one
 from pipeline.sources.nowon_page import NowonPageError, fetch_notice_page
 from pipeline.sources.seoul_api import SeoulSourceError
@@ -598,6 +599,10 @@ def _summarize_one(args: argparse.Namespace) -> int:
     except (ConfigError, GeminiConfigurationError) as error:
         print(f"설정 오류: {error}", file=sys.stderr)
         return 2
-    result = summarize_one(database, args.notice_id, api_key=api_key)
+    try:
+        result = summarize_one(database, args.notice_id, api_key=api_key)
+    except GeminiExecutionError as error:
+        print(json.dumps({"execution_failure": error.to_dict()}), file=sys.stderr)
+        return 2 if error.reason_code == "configuration_error" else 1
     print(json.dumps(result.report(), ensure_ascii=True))
     return result.exit_code

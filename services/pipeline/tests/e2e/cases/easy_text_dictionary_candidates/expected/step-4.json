@@ -16,6 +16,8 @@
       "complete": true,
       "attempted_count": 1,
       "successful_count": 1,
+      "gemini_requests": 1,
+      "gemini_http_attempts": 1,
       "skipped_count": 0,
       "failed_count": 0,
       "skipped": [],
@@ -123,7 +125,8 @@
     "notice_files": 0,
     "notice_summaries": 0,
     "notice_summary_executions": 0,
-    "notices": 1
+    "notices": 1,
+    "standard_dictionary_cache": 0
   },
   "anon": {
     "notices": {

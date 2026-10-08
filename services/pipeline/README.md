@@ -693,13 +693,65 @@ Gemini 호출 중 원문, 파일 목록이 바뀌거나 같은 공지의 더 최
 
 ### Gemini 호출 횟수와 비용
 
-- 한 번 실행에 요약 요청은 최대 2회입니다(응답 형식 교정 재요청 1회 포함). SDK 설정상 요청 1회는
-  HTTP 시도 최대 2회이므로, 실행 1회의 HTTP 요청은 최대 4회입니다.
-- 출력의 `gemini_requests`가 이번 실행에서 실제로 보낸 요약 요청 수입니다. 0이면 비용이 발생하지
-  않았습니다.
+- 한 작업의 논리 호출은 최대 2회이며, 형식·내용 보정은 최대 1회입니다. 실제 HTTP 시도도 최대
+  2회이고 통신 재시도와 보정이 이 한도를 함께 사용합니다. 첫 호출에서 일시 오류로 HTTP 시도를
+  두 번 사용했다면 추가 보정은 보내지 않고 이미 확보한 유효 후보를 기존 보존 규칙으로 처리합니다.
+- `gemini_requests`는 논리 호출 수, `gemini_http_attempts`는 HTTP 전송 시도 수입니다.
+  `gemini_called`는 HTTP 시도 수가 0보다 큰지 나타냅니다. 전송 전 시간 초과라면 논리 호출이
+  있어도 HTTP 시도는 0일 수 있으며, 이 수치는 제공자의 실제 과금 내역을 대신하지 않습니다.
 - 공지 없음, 비공개 공지, 읽을 본문과 첨부가 없음, 설정 오류, 이미 오래된 입력이면 Gemini를 호출하지
   않습니다.
 - 첨부 PDF와 이미지는 입력 토큰에 포함되어 본문만 있는 공지보다 비용이 큽니다.
+
+### Gemini 전체 시간 예산과 재시도
+
+`GEMINI_EXECUTION_TIMEOUT_SECONDS`는 공지 한 건의 요약 또는 쉬운말 작업에 적용하는 AI 처리
+예산이며 기본값은 **120초**입니다. 유한한 양수만 허용하고 빈 값, 0, 음수, `nan`, `inf`는 설정
+오류입니다. 두 기능을 독립 작업으로 순서대로 실행하면 기본 AI 처리 예산의 합계는 **240초**입니다.
+현재 수집 후 자동 처리는 쉬운말만 실행하며, 요약 자동 실행·재처리 예약은 추가하지 않습니다.
+
+요약의 첨부 준비가 끝난 뒤 예산을 시작합니다. 최초 요청, SDK 시작과 입력 전달, 통신 재시도 대기,
+응답 검증과 보정은 같은 monotonic 종료 시각을 사용합니다. 요청마다 120초로 초기화하지 않습니다.
+시간 설정은 프로세스 환경 변수를 우선하고, 없으면 로컬 `.env`에서 읽습니다.
+기본 AI 예산은 요약 실행 토큰의 DB 등록 이후 시작합니다. 호출자가 전달하거나
+이미 활성화된 예산의 종료 시각은 재설정하지 않습니다.
+DB 조회·저장과 첨부 다운로드는 이 AI 예산으로 강제 종료하지 않으므로 전체 명령의 실행 시간과는
+구분합니다. Python 호출자는 `ExecutionBudget(timeout_seconds=...)`를 전달하거나 같은 작업의
+여러 호출을 `execution_budget(...)`로 감싸 예산을 공유할 수 있습니다. 공유한 예산의 HTTP·논리
+호출 한도도 누적되므로 요약과 쉬운말을 하나의 기본 예산에 묶으면 두 기능에 각각 2회가 주어지지
+않습니다.
+
+Gemini 통신은 DB를 소유하지 않는 자식 프로세스에서 실행합니다. 부모는 종료 정리 시간을 먼저
+확보하고 시간 소진 시 프로세스를 종료·회수합니다. Windows의 큰 stdin 전달 중 멈춤도 별도
+watchdog가 끊으며, 함수가 반환될 때 이 로컬 통신 작업이 남지 않습니다. 종료 시각 이후 응답은
+새 성공 결과로 채택하지 않습니다. 원격 제공자가 이미 접수한 추론의 취소까지 보장하는 것은 아닙니다.
+자식이 부모로 전달하는 응답 프로토콜은 UTF-8 기준 4 MiB로 제한합니다. 초과 응답은
+`response_incomplete` 실패로 처리하고 기존 결과를 보존합니다.
+
+SDK 자동 재시도는 두 API 모두 끕니다. Interactions의 `attempts=1`은 현재 잠긴 SDK에서
+"HTTP 1회"를 뜻하지 않으므로 `gemini_sdk_adapter`에 호환 처리를 격리했습니다. SDK를 올릴 때는
+실제 HTTP 횟수를 검증하는 계약 테스트를 함께 실행해야 합니다.
+
+재시도 가능한 오류는 남은 시간과 HTTP 한도가 모두 허용할 때만 재호출합니다.
+`Retry-After`의 초·HTTP 날짜와 `retry-after-ms`를 읽으며 여러 값이 있으면 더 늦은 시각을
+따릅니다. 서버가 요구한 대기를 줄이지 않습니다. 이번 예산 안에 기다릴 수 없으면 즉시 종료하고
+`execution_failure.retry_at`에 UTC 재시도 가능 시각을 전달합니다.
+
+`execution_failure`는 `reason_code`, `failure_kind`(`deadline`, `transient`, `permanent`,
+`deferred`), `retryable`, `retry_at`, `status_code`만 담습니다. 원문, 키, HTTP 헤더나 제공자
+오류 본문은 포함하지 않습니다. DB에는 기존 오류 코드만 저장하므로 이번 변경에 마이그레이션은
+없습니다. 상세 실행 정보·재시도 시각은 실행 결과이며, 재시작 이후에도 예약을 유지할 작업 저장소와
+스케줄러는 후속 범위입니다.
+
+보정이 실패해도 같은 원문의 기존 정상 결과를 보존합니다. 기존 결과가 없고 이미 검증한 요약
+후보가 있으면 `needs_review`로 보존합니다. 유효하지 않은 쉬운말 응답은 성공으로 저장하지
+않습니다. 보존한 결과와 이번 실패를 구분하므로 요약은 `execution_status=failed`와
+`stored_status=summarized` 또는 `needs_review`를 함께 반환할 수 있습니다.
+
+수집 결과의 `easy_text`에도 두 요청 카운터와 API 실패별 `execution_failure`가 포함됩니다.
+`notice-glossary`는 성공 결과 JSON 형식을 유지하고 실행 카운터를 stderr의 JSON으로 출력합니다.
+API 실패 시 stdout에 성공 결과를 출력하거나 기존 결과 파일을 덮어쓰지 않고 stderr에 안전한
+실행 실패 정보를 출력합니다.
 
 ### 출력 JSON
 
@@ -712,7 +764,9 @@ Gemini 호출 중 원문, 파일 목록이 바뀌거나 같은 공지의 더 최
 | `attachment_status` | 이번 실행이 읽은 첨부 범위: `none`, `all_read`, `partial`, `unread`. 공지를 찾지 못했으면 `null` |
 | `reason_code` | 실패나 검토 사유 코드. 없으면 `null` |
 | `gemini_called` | 이번 실행에서 Gemini 요약 요청을 보냈는지 |
-| `gemini_requests` | 보낸 요약 요청 수 |
+| `gemini_requests` | 논리 요약 호출 수 |
+| `gemini_http_attempts` | 실제 HTTP 전송 시도 수. 재시도 포함 |
+| `execution_failure` | 이번 실행의 안전한 실패·재시도 정보. 없으면 `null` |
 | `view` | 커밋된 행으로 만든 공개 응답(`build_notice_summary_view`). 행이 없으면 `null` |
 
 이번 실행이 실패해도 기존 정상 결과가 남아 있으면 `stored_status`, `public_result`, `view`는 그 행을
@@ -723,7 +777,7 @@ Gemini 호출 중 원문, 파일 목록이 바뀌거나 같은 공지의 더 최
 | --- | --- |
 | `summarized` | `null` |
 | `needs_review` | `attachments_partial`, `attachments_unread`(첨부를 다 읽지 못함), `summary_review_required`(근거, 불확실성 등 요약 판정) |
-| `failed` | 저장된 `last_error_code`와 같음. 예: `api_timeout`, `api_error`, `response_validation_failed`, `input_preparation_failed` |
+| `failed` | 이번 실행의 실패 코드. 예: `api_timeout`, `api_error`, `response_validation_failed`, `input_preparation_failed`. 기존 결과를 보존하면 저장된 `last_error_code`와 다를 수 있음 |
 | `superseded` | `summary_execution_superseded` |
 | `not_found` | `notice_not_found_or_hidden` |
 | `storage_failed` | `db_unavailable`(시작 전 연결 실패), `summary_storage_failed` 등 저장 오류 코드, `summary_read_failed`(저장 후 재조회 실패) |

@@ -1,15 +1,19 @@
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
 
 @pytest.fixture(autouse=True)
-def isolate_pipeline_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+def isolate_pipeline_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Do not let the developer's real credentials or overrides affect tests."""
+    from pipeline.transform import gemini_prompt
+
+    monkeypatch.setattr(gemini_prompt, "DEFAULT_ENV_PATH", tmp_path / ".env")
     for name in (
         "DATABASE_URL", "SEOUL_API_KEY", "NOWON_NOTICE_API_KEY", "SEOUL_NEWS_API_KEY",
         "HTTP_CONNECT_TIMEOUT_SECONDS", "HTTP_READ_TIMEOUT_SECONDS",
-        "STDICT_API_KEY",
+        "STDICT_API_KEY", "GEMINI_API_KEY", "GEMINI_EXECUTION_TIMEOUT_SECONDS",
     ):
         monkeypatch.delenv(name, raising=False)
 
