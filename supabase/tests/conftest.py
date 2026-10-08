@@ -22,6 +22,7 @@ MIGRATION_NAMES = [
     "20261007133000_notice_summary_source_revisions.sql",
     "20261007140000_notice_summary_file_references.sql",
     "20261008120000_notice_summary_omissions.sql",
+    "20261008130000_notice_summary_information_loss.sql",
 ]
 
 
@@ -141,6 +142,7 @@ def database() -> Iterator[psycopg.Connection]:
         apply_migration("20261007133000_notice_summary_source_revisions.sql")
         apply_migration("20261007140000_notice_summary_file_references.sql")
         apply_migration("20261008120000_notice_summary_omissions.sql")
+        apply_migration("20261008130000_notice_summary_information_loss.sql")
         upgraded_execution = conn.execute(
             "select e.execution_token,e.source_revision,n.content_revision "
             "from notice_summary_executions e join notices n on n.id=e.notice_id "

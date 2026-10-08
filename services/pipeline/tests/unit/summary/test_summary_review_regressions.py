@@ -98,7 +98,7 @@ def _assert_review_content_preserved(result: PreparedSummaryResult) -> None:
     assert record.deadline_on is None
     conn = MagicMock()
     cursor = conn.cursor.return_value.__enter__.return_value
-    cursor.fetchone.return_value = (17,)
+    cursor.fetchone.return_value = (17, "needs_review", None, GENERATED_AT, None)
     stored = save_prepared_summary(
         conn, result, _metadata(), deadline_on=DEADLINE, generated_at=GENERATED_AT
     )
@@ -131,7 +131,9 @@ def test_file_application_dates_require_review_even_when_other_claims_match_text
     _assert_review_content_preserved(result)
     monkeypatch.setattr(summary_job, "summarize_prepared_notice", lambda *_args, **_kwargs: result)
     conn = MagicMock()
-    conn.cursor.return_value.__enter__.return_value.fetchone.return_value = (17,)
+    conn.cursor.return_value.__enter__.return_value.fetchone.side_effect = [
+        (17,), (17, "needs_review", None, GENERATED_AT, None),
+    ]
     resolver = MagicMock(side_effect=AssertionError("unverified dates must not reach the resolver"))
     stored = summary_job.summarize_and_save_prepared_notice(
         conn, _prepared("행사 안내"), _metadata(), deadline_resolver=resolver,
