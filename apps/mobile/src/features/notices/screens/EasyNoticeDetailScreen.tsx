@@ -12,7 +12,7 @@ import { useBookmarkStore } from "../store/bookmarkStore";
 import { EasyNoticeState } from "../components/EasyNoticeState";
 import { NoticeDocumentText } from "../components/NoticeDocumentText";
 import { NoticeTermOverlay } from "../components/NoticeTermOverlay";
-import { getSummaryRows } from "../domain/noticePresentation";
+import { getSummaryRows, isNoticeExpired } from "../domain/noticePresentation";
 import { type GlossaryTerm } from "../types/notice";
 
 // Figma QYCEBzvJCSX22QZ1VmJn8Q, 460:955/1231 및 연결 오버레이, 조회 2026-10-08.
@@ -89,6 +89,18 @@ export function EasyNoticeDetailScreen() {
               secondary
             >{`공고 ${notice.publishedAt.replaceAll(" ", "")}\n정보제공처 ${notice.provider}`}</AppText>
           </View>
+          {isNoticeExpired(notice) && (
+            <View style={styles.card}>
+              <AppText
+                size={EASY.body}
+                variant="bold"
+                style={{ color: EASY.expired }}
+              >
+                종료된 공문 · 신청기한{"\n"}
+                {notice.deadline}
+              </AppText>
+            </View>
+          )}
           {rows.length > 0 && (
             <View
               style={[styles.card, { backgroundColor: COLORS.soft, gap: 12 }]}
