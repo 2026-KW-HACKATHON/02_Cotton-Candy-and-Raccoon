@@ -4,15 +4,6 @@ node_modules/
 # Python
 __pycache__/
 *.py[cod]
-.venv/
-.pytest_cache/
-.ruff_cache/
-.coverage
-.coverage.*
-coverage.json
-
-# pipeline e2e run reports (uploaded as a CI artifact)
-services/pipeline/artifacts/
 
 # local env files
 .env
