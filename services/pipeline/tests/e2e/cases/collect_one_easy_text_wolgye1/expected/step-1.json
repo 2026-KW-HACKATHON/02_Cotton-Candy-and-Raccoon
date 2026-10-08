@@ -16,15 +16,31 @@
       "complete": false,
       "attempted_count": 1,
       "successful_count": 0,
+      "gemini_requests": 1,
+      "gemini_http_attempts": 2,
       "skipped_count": 0,
       "failed_count": 1,
       "skipped": [],
       "failures": [
         {
           "notice_id": 1,
-          "reason_code": "api_failed"
+          "reason_code": "api_failed",
+          "execution_failure": {
+            "reason_code": "api_error",
+            "failure_kind": "deferred",
+            "retryable": true,
+            "retry_at": "<retry-at>",
+            "status_code": 500
+          }
         }
-      ]
+      ],
+      "dictionary": {
+        "attempted_count": 0,
+        "complete_count": 0,
+        "partial_count": 0,
+        "pending_count": 0,
+        "failures": []
+      }
     }
   },
   "stderr": [],
@@ -34,6 +50,16 @@
   ],
   "gemini_calls": {
     "easy_text": [
+      {
+        "model": "gemini-3.5-flash-lite",
+        "input": [
+          {
+            "type": "text",
+            "sha256": "d33a5ab8bd851b7a",
+            "length": 22
+          }
+        ]
+      },
       {
         "model": "gemini-3.5-flash-lite",
         "input": [
@@ -69,15 +95,21 @@
     "notice_files": {},
     "notice_summaries": {},
     "notice_easy_texts": {},
-    "notice_summary_executions": {}
+    "notice_dictionary_links": {},
+    "standard_dictionary_cache": {},
+    "notice_summary_executions": {},
+    "notice_processing_jobs": {}
   },
   "row_counts": {
     "holidays": 0,
+    "notice_dictionary_links": 0,
     "notice_easy_texts": 0,
     "notice_files": 0,
+    "notice_processing_jobs": 0,
     "notice_summaries": 0,
     "notice_summary_executions": 0,
-    "notices": 1
+    "notices": 1,
+    "standard_dictionary_cache": 0
   },
   "anon": {
     "notices": {
@@ -156,6 +188,11 @@
         "easy_body_text_present": null,
         "easy_attachment_content_included": null,
         "easy_generated_at": null
+      }
+    },
+    "get_notice_dictionary": {
+      "dong/1042/20261006090000501": {
+        "result": null
       }
     }
   }

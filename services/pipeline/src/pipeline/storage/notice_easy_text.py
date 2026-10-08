@@ -9,12 +9,13 @@ from psycopg.types.json import Jsonb
 
 from pipeline.glossary.easy_language import EasyLanguageResult
 from pipeline.glossary.source import notice_content_revision
+from pipeline.storage.processing_context import guard_processing_write
 from pipeline.transform.html_text import html_to_notice_text
 
 _SELECT = """
 select notice_id, notice_revision, source_hash, original_text, easy_text, changes,
        model, prompt_version, attempt_count, generated_at,
-       body_text_present, attachment_content_included
+       body_text_present, attachment_content_included, dictionary_candidates
 from public.notice_easy_texts where notice_id = %s
 """
 _NAMES = (
@@ -30,6 +31,7 @@ _NAMES = (
     "generated_at",
     "body_text_present",
     "attachment_content_included",
+    "dictionary_candidates",
 )
 # Hash the raw row so old prompt results need not pass today's result validator.
 # Epoch time keeps the token identical across connections with different time zones.
@@ -156,6 +158,7 @@ def fill_notice_easy_text_scope(
             "select title, body_html from public.notices where id = %s for share", (notice_id,)
         )
         parent = cursor.fetchone()
+        guard_processing_write(conn, notice_id, "easy_text")
         if parent is None or notice_content_revision(*parent) != result.notice_revision:
             raise EasyTextStorageError("공지 원문이 바뀌어 처리 범위를 보충하지 않았습니다.")
         title, body_html = parent
@@ -226,6 +229,7 @@ def save_notice_easy_text(
             (notice_id,),
         )
         parent = cursor.fetchone()
+        guard_processing_write(conn, notice_id, "easy_text")
         if parent is None or notice_content_revision(*parent) != result.notice_revision:
             raise EasyTextStorageError("공지 원문이 바뀌어 이전 쉬운말 결과를 저장하지 않았습니다.")
         title, body_html = parent
@@ -246,17 +250,20 @@ def save_notice_easy_text(
             raise EasyTextStorageError("쉬운말 처리 범위가 DB 원문과 일치하지 않습니다.")
         # Standalone JSON has unknown provenance. DB storage establishes it from
         # the locked parent, rather than trusting any caller-provided assertion.
-        result = EasyLanguageResult.model_validate(
-            {
-                **result.model_dump(),
-                "original_title": title,
-                "body_text_present": bool(body),
-                "attachment_content_included": False,
-            }
-        )
+        try:
+            result = EasyLanguageResult.model_validate(
+                {
+                    **result.model_dump(),
+                    "original_title": title,
+                    "body_text_present": bool(body),
+                    "attachment_content_included": False,
+                }
+            )
+        except (TypeError, ValueError):
+            raise EasyTextStorageError("쉬운말 결과의 본문 범위를 검증하지 못했습니다.") from None
         values = tuple(
-            Jsonb([item.model_dump(mode="json") for item in result.changes])
-            if name == "changes"
+            Jsonb([item.model_dump(mode="json") for item in getattr(result, name)])
+            if name in {"changes", "dictionary_candidates"} and getattr(result, name) is not None
             else getattr(result, name)
             for name in _NAMES
         )
@@ -264,8 +271,8 @@ def save_notice_easy_text(
             "insert into public.notice_easy_texts "
             "(notice_id, notice_revision, source_hash, original_text, easy_text, changes, "
             "model, prompt_version, attempt_count, generated_at, "
-            "body_text_present, attachment_content_included) "
-            "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+            "body_text_present, attachment_content_included, dictionary_candidates) "
+            "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
             "on conflict (notice_id) do update set "
             "notice_revision = excluded.notice_revision, source_hash = excluded.source_hash, "
             "original_text = excluded.original_text, easy_text = excluded.easy_text, "
@@ -273,7 +280,8 @@ def save_notice_easy_text(
             "prompt_version = excluded.prompt_version, attempt_count = excluded.attempt_count, "
             "generated_at = excluded.generated_at, "
             "body_text_present = excluded.body_text_present, "
-            "attachment_content_included = excluded.attachment_content_included "
+            "attachment_content_included = excluded.attachment_content_included, "
+            "dictionary_candidates = excluded.dictionary_candidates "
             "where (notice_easy_texts.notice_revision != excluded.notice_revision "
             "or (notice_easy_texts.model = excluded.model "
             "and notice_easy_texts.prompt_version = excluded.prompt_version "
@@ -284,6 +292,20 @@ def save_notice_easy_text(
             f"and (%s::boolean or {_CACHE_TOKEN} = %s::text)",
             (*values, cache_token, not check_cache_token, cache_token),
         )
+        if cursor.rowcount == 1 and result.dictionary_candidates is not None:
+            # An older worker omits this column, so SQL clears unchanged candidates
+            # when source/conversion/generation metadata changes. Explicit [] and
+            # identical nonempty candidates are indistinguishable at the trigger.
+            # Restore our validated payload only after a successful upsert while
+            # its row lock is still held; a losing CAS must never restore anything.
+            cursor.execute(
+                "update public.notice_easy_texts set dictionary_candidates = %s "
+                "where notice_id = %s and dictionary_candidates is null",
+                (
+                    Jsonb([item.model_dump(mode="json") for item in result.dictionary_candidates]),
+                    notice_id,
+                ),
+            )
         # An unchanged scope across a source change is cleared by the migration
         # trigger to protect old workers; restore it after exact source validation.
         token = get_notice_easy_text_cache_token(conn, notice_id)

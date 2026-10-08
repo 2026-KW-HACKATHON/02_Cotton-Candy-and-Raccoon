@@ -128,7 +128,7 @@ def test_contract_total_wire_size_rejects_small_input_with_oversized_prompt_befo
     monkeypatch.setattr(gemini_input, "MAX_GEMINI_INPUT_BYTES", 100)
     monkeypatch.setattr(gemini_client.genai, "Client", lambda **kwargs: pytest.fail("SDK created"))
     with pytest.raises(gemini_client.GeminiRequestError, match="input_too_large"):
-        gemini_client.generate_summary_json(
+        gemini_client._generate_summary_json_direct(
             prompt="instructions" * 20, notice_text="source", api_key="audit-key"
         )
 
@@ -213,7 +213,7 @@ def test_contract_bad_input_prevents_sdk_creation(monkeypatch, kind):
                else "image/png", "data": "not-base64"}]
     )
     with pytest.raises(gemini_client.GeminiRequestError):
-        gemini_client.generate_summary_json(prompt="instructions", notice_text=blocks,
+        gemini_client._generate_summary_json_direct(prompt="instructions", notice_text=blocks,
                                             api_key="audit-key")
 
 
@@ -384,7 +384,9 @@ def test_runtime_sdk_diagnostics_from_a_late_child_logger_are_private(monkeypatc
 
     class Client:
         def __init__(self, **kwargs):
-            self.interactions = SimpleNamespace(create=self.create)
+            self.interactions = SimpleNamespace(
+                create=self.create, sdk_configuration=SimpleNamespace(retry_config=None)
+            )
 
         def __enter__(self):
             return self
@@ -399,7 +401,7 @@ def test_runtime_sdk_diagnostics_from_a_late_child_logger_are_private(monkeypatc
 
     caplog.set_level(logging.DEBUG)
     monkeypatch.setattr(gemini_client.genai, "Client", Client)
-    assert gemini_client.generate_summary_json(
+    assert gemini_client._generate_summary_json_direct(
         prompt="instructions", notice_text="notice", api_key="audit-key"
     ) == '{"ok":true}'
     assert marker not in caplog.text
@@ -479,7 +481,7 @@ def test_runtime_overlapping_request_scopes_remain_private_until_the_last_exit(c
     assert "MOCK_PRIVATE" not in caplog.text
 
 
-def test_runtime_locked_sdk_logical_call_has_at_most_two_http_attempts(monkeypatch):
+def test_runtime_locked_sdk_direct_call_disables_hidden_http_retries(monkeypatch):
     real_client = gemini_client.genai.Client
     requests = []
 
@@ -490,16 +492,21 @@ def test_runtime_locked_sdk_logical_call_has_at_most_two_http_attempts(monkeypat
     def factory(*, api_key, http_options):
         options = http_options.model_copy(update={
             "base_url": "https://gemini.invalid",
-            "client_args": {"transport": httpx.MockTransport(handler)},
+            "client_args": {**(http_options.client_args or {}),
+                            "transport": httpx.MockTransport(handler)},
         })
         return real_client(api_key=api_key, http_options=options)
 
     monkeypatch.setattr(gemini_client.genai, "Client", factory)
+    monkeypatch.setattr(
+        gemini_client, "run_gemini_request",
+        lambda _operation, payload: gemini_client._generate_summary_json_direct(**payload),
+    )
     with pytest.raises(gemini_client.GeminiRequestError):
-        gemini_client.generate_summary_json(prompt="instructions", notice_text="notice",
+        gemini_client._generate_summary_json_direct(prompt="instructions", notice_text="notice",
                                             api_key="audit-key")
-    # The locked SDK maps public attempts=1 to one retry, hence two wire POSTs.
-    assert len(requests) == 2
+    # The compatibility adapter disables the otherwise hidden Interactions retry.
+    assert len(requests) == 1
 
 
 # Sweep 3: captured real source replay through the public entrypoint and real SDK.
@@ -553,13 +560,18 @@ def test_replay_real_sdk_serialization_retains_media_bytes_and_strict_fresh_sche
     def factory(*, api_key, http_options):
         options = http_options.model_copy(update={
             "base_url": "https://gemini.invalid",
-            "client_args": {"transport": httpx.MockTransport(handler)},
+            "client_args": {**(http_options.client_args or {}),
+                            "transport": httpx.MockTransport(handler)},
             "retry_options": types.HttpRetryOptions(attempts=1),
         })
         return real_client(api_key=api_key, http_options=options)
 
     monkeypatch.setattr(gemini_client.genai, "Client", factory)
-    assert gemini_client.generate_summary_json(
+    monkeypatch.setattr(
+        gemini_client, "run_gemini_request",
+        lambda _operation, payload: gemini_client._generate_summary_json_direct(**payload),
+    )
+    assert gemini_client._generate_summary_json_direct(
         prompt="instructions", notice_text=blocks, api_key="audit-key"
     ) == '{"summary":"captured mock"}'
     assert len(requests) == 1
@@ -590,11 +602,16 @@ def test_replay_public_prepared_entrypoint_uses_actual_sdk_transport_and_validat
     def factory(*, api_key, http_options):
         options = http_options.model_copy(update={
             "base_url": "https://gemini.invalid",
-            "client_args": {"transport": httpx.MockTransport(handler)},
+            "client_args": {**(http_options.client_args or {}),
+                            "transport": httpx.MockTransport(handler)},
         })
         return real_client(api_key=api_key, http_options=options)
 
     monkeypatch.setattr(gemini_client.genai, "Client", factory)
+    monkeypatch.setattr(
+        gemini_client, "run_gemini_request",
+        lambda _operation, payload: gemini_client._generate_summary_json_direct(**payload),
+    )
     result = summarize_module.summarize_prepared_notice(_prepared(notice), api_key="audit-key")
     view = build_notice_summary_view(
         status="summarized", result=result.summary, attachment_status="all_read", notice=notice,
@@ -607,7 +624,7 @@ def test_replay_public_prepared_entrypoint_uses_actual_sdk_transport_and_validat
     assert view.text_highlights.cards.audience.status == "ready"
 
 
-def test_replay_two_sdk_corrections_have_at_most_four_wire_posts_with_identical_media(monkeypatch):
+def test_replay_one_correction_sends_two_posts_with_identical_original_media(monkeypatch):
     real_client = gemini_client.genai.Client
     notice = _notice()
     first = _response(notice)
@@ -617,9 +634,7 @@ def test_replay_two_sdk_corrections_have_at_most_four_wire_posts_with_identical_
 
     def handler(request):
         requests.append(json.loads(request.content))
-        if len(requests) in {1, 3}:
-            return httpx.Response(503, json={"error": {"code": 503, "message": "MOCK_PRIVATE"}})
-        raw = json.dumps(first if len(requests) == 2 else retry, ensure_ascii=False)
+        raw = json.dumps(first if len(requests) == 1 else retry, ensure_ascii=False)
         return httpx.Response(200, json={
             "status": "completed", "steps": [{"type": "model_output",
             "content": [{"type": "text", "text": raw}]}],
@@ -629,19 +644,22 @@ def test_replay_two_sdk_corrections_have_at_most_four_wire_posts_with_identical_
         assert http_options.retry_options.attempts == 1
         options = http_options.model_copy(update={
             "base_url": "https://gemini.invalid",
-            "client_args": {"transport": httpx.MockTransport(handler)},
+            "client_args": {**(http_options.client_args or {}),
+                            "transport": httpx.MockTransport(handler)},
         })
         return real_client(api_key=api_key, http_options=options)
 
     monkeypatch.setattr(gemini_client.genai, "Client", factory)
+    monkeypatch.setattr(
+        gemini_client, "run_gemini_request",
+        lambda _operation, payload: gemini_client._generate_summary_json_direct(**payload),
+    )
     prepared = _prepared(notice)
     before = deepcopy(prepared.blocks)
     result = summarize_module.summarize_prepared_notice(prepared, api_key="audit-key")
-    assert len(requests) == 4
-    assert requests[0]["input"] == requests[1]["input"]
-    assert requests[2]["input"] == requests[3]["input"]
+    assert len(requests) == 2
     original_content = requests[0]["input"][0]["content"]
-    retry_content = requests[2]["input"][0]["content"]
+    retry_content = requests[1]["input"][0]["content"]
     assert retry_content[:-1] == original_content
     assert prepared.blocks == before
     assert result.summary.audience == first["audience"]

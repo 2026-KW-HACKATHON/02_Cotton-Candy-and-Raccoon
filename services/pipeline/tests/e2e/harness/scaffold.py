@@ -143,7 +143,9 @@ def scaffold(argv: list[str] | None = None) -> int:
                     )
         if args.easy_text:
             name = f"input/easy_{notice.post_sn}.json"
-            (case_dir / name).write_text('{"changes": []}\n', encoding="utf-8")
+            (case_dir / name).write_text(
+                '{"changes": [], "dictionary_candidates": []}\n', encoding="utf-8"
+            )
             easy_text.append(name)
             todos.append(f"{notice.post_sn}: {name}를 실제 Gemini 쉬운말 응답으로 바꾸세요")
     for name in sorted(set(files) - used_files):

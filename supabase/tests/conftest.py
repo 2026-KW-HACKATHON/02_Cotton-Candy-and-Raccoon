@@ -16,7 +16,8 @@ def pipeline_readme() -> str:
 
 
 @pytest.fixture(scope="module")
-def database() -> Iterator[psycopg.Connection]:
+def database(request: pytest.FixtureRequest) -> Iterator[psycopg.Connection]:
+    """Apply all migrations, or stop before one for an incremental upgrade test."""
     dsn = os.environ.get("SCHEMA_TEST_DATABASE_URL")
     if not dsn:
         pytest.skip("SCHEMA_TEST_DATABASE_URL is required")
@@ -70,11 +71,17 @@ def database() -> Iterator[psycopg.Connection]:
         # The migrations create the schema from scratch; apply them in version order.
         files = sorted((ROOT / "supabase/migrations").glob("*.sql"))
         assert files, "supabase/migrations has no migration files"
+        stop_before = getattr(request, "param", None)
+        assert stop_before is None or any(path.name == stop_before for path in files), (
+            "Requested migration boundary does not exist"
+        )
         for path in files:
+            if path.name == stop_before:
+                break
             conn.execute(path.read_text(encoding="utf-8"))
-        # Preserve checkout line endings: read_text() would hide Windows CRLF
-        # hash failures that occur when the Supabase CLI loads the real seed.
-        conn.execute((ROOT / "supabase/seed.sql").read_bytes().decode("utf-8"))
+        seed = ROOT / ("supabase/tests/fixtures/pre_app_views_seed.sql"
+                       if stop_before else "supabase/seed.sql")
+        conn.execute(seed.read_bytes().decode("utf-8"))
         yield conn
     finally:
         conn.rollback()

@@ -22,15 +22,31 @@
       "complete": false,
       "attempted_count": 2,
       "successful_count": 1,
+      "gemini_requests": 2,
+      "gemini_http_attempts": 3,
       "skipped_count": 0,
       "failed_count": 1,
       "skipped": [],
       "failures": [
         {
           "notice_id": 2,
-          "reason_code": "api_failed"
+          "reason_code": "api_failed",
+          "execution_failure": {
+            "reason_code": "api_error",
+            "failure_kind": "deferred",
+            "retryable": true,
+            "retry_at": "<retry-at>",
+            "status_code": 500
+          }
         }
-      ]
+      ],
+      "dictionary": {
+        "attempted_count": 1,
+        "complete_count": 1,
+        "partial_count": 0,
+        "pending_count": 0,
+        "failures": []
+      }
     }
   },
   "stderr": [],
@@ -42,6 +58,16 @@
   ],
   "gemini_calls": {
     "easy_text": [
+      {
+        "model": "gemini-3.5-flash-lite",
+        "input": [
+          {
+            "type": "text",
+            "sha256": "2bd8a88d8d3a6244",
+            "length": 22
+          }
+        ]
+      },
       {
         "model": "gemini-3.5-flash-lite",
         "input": [
@@ -119,22 +145,35 @@
           }
         ],
         "model": "gemini-3.5-flash-lite",
-        "prompt_version": "easy-language-v7",
+        "prompt_version": "easy-language-v8",
         "attempt_count": 1,
         "generated_at": "<set>",
         "body_text_present": true,
-        "attachment_content_included": false
+        "attachment_content_included": false,
+        "dictionary_candidates": []
       }
     },
-    "notice_summary_executions": {}
+    "notice_dictionary_links": {
+      "dong/1042/20261006090000601": {
+        "easy_text_token": "<set>",
+        "candidates": [],
+        "generated_at": "<set>"
+      }
+    },
+    "standard_dictionary_cache": {},
+    "notice_summary_executions": {},
+    "notice_processing_jobs": {}
   },
   "row_counts": {
     "holidays": 0,
+    "notice_dictionary_links": 1,
     "notice_easy_texts": 1,
     "notice_files": 0,
+    "notice_processing_jobs": 0,
     "notice_summaries": 0,
     "notice_summary_executions": 0,
-    "notices": 2
+    "notices": 2,
+    "standard_dictionary_cache": 0
   },
   "anon": {
     "notices": {
@@ -307,6 +346,35 @@
         "easy_body_text_present": null,
         "easy_attachment_content_included": null,
         "easy_generated_at": null
+      }
+    },
+    "get_notice_dictionary": {
+      "dong/1042/20261006090000601": {
+        "result": {
+          "attachment_content_included": false,
+          "body_text_present": true,
+          "changes": [
+            {
+              "context": "참가자를 모집합니다",
+              "end": 33,
+              "original": "참가자를",
+              "replacement": "참여할 사람을",
+              "start": 29
+            }
+          ],
+          "dictionary_candidates": [],
+          "dictionary_status": "complete",
+          "easy_text": "월계1동 공예 교실 참가자 모집\n월계1동 공예 교실 참여할 사람을 모집합니다.",
+          "generated_at": "<set>",
+          "model": "gemini-3.5-flash-lite",
+          "notice_id": 3,
+          "notice_revision": "48fa8d33e865a0d128c897547bd29a518eaab72781ce6fd893b5db2d326007ef",
+          "original_text": "월계1동 공예 교실 참가자 모집\n월계1동 공예 교실 참가자를 모집합니다.",
+          "prompt_version": "easy-language-v8"
+        }
+      },
+      "dong/1042/20261007090000602": {
+        "result": null
       }
     }
   }

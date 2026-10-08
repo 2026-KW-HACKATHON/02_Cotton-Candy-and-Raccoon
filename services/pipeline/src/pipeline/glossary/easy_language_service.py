@@ -69,7 +69,9 @@ def simplify_and_store_notice(
                 model=model,
                 prompt_version=PROMPT_VERSION,
             )
-            if cached is not None:
+            # Legacy rows may contain a valid conversion but no candidate extraction.
+            # Only an explicit list (including an empty one) completes this generation.
+            if cached is not None and cached.dictionary_candidates is not None:
                 if expected_cache_token is not None:
                     fill_notice_easy_text_scope(
                         conn, cached, expected_cache_token=expected_cache_token
@@ -82,7 +84,7 @@ def simplify_and_store_notice(
                     model=model,
                     prompt_version=PROMPT_VERSION,
                 )
-                if cached is None:
+                if cached is None or cached.dictionary_candidates is None:
                     raise EasyTextStorageError(
                         "캐시 처리 중 공지 원문이나 저장 결과가 바뀌었습니다."
                     )
@@ -106,6 +108,6 @@ def simplify_and_store_notice(
             model=result.model,
             prompt_version=result.prompt_version,
         )
-        if saved is None:
+        if saved is None or saved.dictionary_candidates is None:
             raise EasyTextStorageError("쉬운말 저장 후 재조회를 확인하지 못했습니다.")
     return saved

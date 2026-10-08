@@ -5,21 +5,21 @@
     "total_count": 3,
     "selected_count": 3,
     "saved_count": 2,
+    "pages_read": 1,
+    "initial_baseline": true,
+    "listing_complete": true,
+    "failed_ranges": [],
+    "complete": true,
+    "failures": [],
     "skipped_count": 1,
+    "failed_count": 0,
     "skipped": [
       {
         "post_sn": "900442",
         "stage": "page_missing",
         "reason_code": "source_page_missing"
       }
-    ],
-    "failed_count": 0,
-    "pages_read": 1,
-    "initial_baseline": true,
-    "listing_complete": true,
-    "failed_ranges": [],
-    "complete": true,
-    "failures": []
+    ]
   },
   "stderr": [],
   "http_calls": [
@@ -70,15 +70,21 @@
     "notice_files": {},
     "notice_summaries": {},
     "notice_easy_texts": {},
-    "notice_summary_executions": {}
+    "notice_dictionary_links": {},
+    "standard_dictionary_cache": {},
+    "notice_summary_executions": {},
+    "notice_processing_jobs": {}
   },
   "row_counts": {
     "holidays": 0,
+    "notice_dictionary_links": 0,
     "notice_easy_texts": 0,
     "notice_files": 0,
+    "notice_processing_jobs": 0,
     "notice_summaries": 0,
     "notice_summary_executions": 0,
-    "notices": 2
+    "notices": 2,
+    "standard_dictionary_cache": 0
   },
   "anon": {
     "notices": {
@@ -226,6 +232,14 @@
         "easy_body_text_present": null,
         "easy_attachment_content_included": null,
         "easy_generated_at": null
+      }
+    },
+    "get_notice_dictionary": {
+      "nowon/1001/900441": {
+        "result": null
+      },
+      "nowon/1001/900443": {
+        "result": null
       }
     }
   }

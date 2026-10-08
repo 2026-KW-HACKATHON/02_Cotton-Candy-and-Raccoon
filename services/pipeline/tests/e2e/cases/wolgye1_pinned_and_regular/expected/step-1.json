@@ -105,15 +105,21 @@
     },
     "notice_summaries": {},
     "notice_easy_texts": {},
-    "notice_summary_executions": {}
+    "notice_dictionary_links": {},
+    "standard_dictionary_cache": {},
+    "notice_summary_executions": {},
+    "notice_processing_jobs": {}
   },
   "row_counts": {
     "holidays": 0,
+    "notice_dictionary_links": 0,
     "notice_easy_texts": 0,
     "notice_files": 1,
+    "notice_processing_jobs": 0,
     "notice_summaries": 0,
     "notice_summary_executions": 0,
-    "notices": 4
+    "notices": 4,
+    "standard_dictionary_cache": 0
   },
   "anon": {
     "notices": {
@@ -358,6 +364,20 @@
         "easy_body_text_present": null,
         "easy_attachment_content_included": null,
         "easy_generated_at": null
+      }
+    },
+    "get_notice_dictionary": {
+      "dong/1042/20261001090000101": {
+        "result": null
+      },
+      "dong/1042/20261002090000102": {
+        "result": null
+      },
+      "dong/1042/20261006090000103": {
+        "result": null
+      },
+      "dong/1042/20261007090000104": {
+        "result": null
       }
     }
   }

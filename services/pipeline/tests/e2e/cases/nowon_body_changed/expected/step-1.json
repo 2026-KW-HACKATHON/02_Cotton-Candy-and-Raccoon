@@ -16,14 +16,23 @@
       "complete": true,
       "attempted_count": 1,
       "successful_count": 1,
+      "gemini_requests": 1,
+      "gemini_http_attempts": 1,
       "skipped_count": 0,
       "failed_count": 0,
       "skipped": [],
-      "failures": []
+      "failures": [],
+      "dictionary": {
+        "attempted_count": 1,
+        "complete_count": 1,
+        "partial_count": 0,
+        "pending_count": 0,
+        "failures": []
+      }
     },
-    "skipped": [],
     "skipped_count": 0,
-    "failed_count": 0
+    "failed_count": 0,
+    "skipped": []
   },
   "stderr": [],
   "http_calls": [
@@ -82,22 +91,35 @@
           }
         ],
         "model": "gemini-3.5-flash-lite",
-        "prompt_version": "easy-language-v7",
+        "prompt_version": "easy-language-v8",
         "attempt_count": 1,
         "generated_at": "<set>",
         "body_text_present": true,
-        "attachment_content_included": false
+        "attachment_content_included": false,
+        "dictionary_candidates": []
       }
     },
-    "notice_summary_executions": {}
+    "notice_dictionary_links": {
+      "nowon/1001/900411": {
+        "easy_text_token": "<set>",
+        "candidates": [],
+        "generated_at": "<set>"
+      }
+    },
+    "standard_dictionary_cache": {},
+    "notice_summary_executions": {},
+    "notice_processing_jobs": {}
   },
   "row_counts": {
     "holidays": 0,
+    "notice_dictionary_links": 1,
     "notice_easy_texts": 1,
     "notice_files": 0,
+    "notice_processing_jobs": 0,
     "notice_summaries": 0,
     "notice_summary_executions": 0,
-    "notices": 1
+    "notices": 1,
+    "standard_dictionary_cache": 0
   },
   "anon": {
     "notices": {
@@ -201,6 +223,32 @@
         "easy_body_text_present": true,
         "easy_attachment_content_included": false,
         "easy_generated_at": "<set>"
+      }
+    },
+    "get_notice_dictionary": {
+      "nowon/1001/900411": {
+        "result": {
+          "attachment_content_included": false,
+          "body_text_present": true,
+          "changes": [
+            {
+              "context": "참가자를 모집합니다",
+              "end": 27,
+              "original": "참가자를",
+              "replacement": "참여할 사람을",
+              "start": 23
+            }
+          ],
+          "dictionary_candidates": [],
+          "dictionary_status": "complete",
+          "easy_text": "구민 체육대회 참가자 모집\n구민 체육대회 참여할 사람을 모집합니다.\n일시: 2026-10-24(토) 10:00",
+          "generated_at": "<set>",
+          "model": "gemini-3.5-flash-lite",
+          "notice_id": 1,
+          "notice_revision": "b4233add1f956287abf578525f411942871d8514115cad556035e4a21ccdf8b1",
+          "original_text": "구민 체육대회 참가자 모집\n구민 체육대회 참가자를 모집합니다.\n일시: 2026-10-24(토) 10:00",
+          "prompt_version": "easy-language-v8"
+        }
       }
     }
   }

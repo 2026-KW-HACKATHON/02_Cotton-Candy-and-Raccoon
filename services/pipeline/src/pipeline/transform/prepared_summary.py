@@ -54,6 +54,8 @@ class PreparedSummaryResult:
     media_sources: tuple[MediaSource, ...] = ()
     correction_failure_code: str | None = None
     file_manifest: PrivateSummaryFileManifest | None = field(default=None, repr=False)
+    # Safe runtime diagnostics only; never persisted into result JSON or public views.
+    execution_failure: dict[str, object] | None = field(default=None, repr=False)
 
 
 class SummaryPreparationError(ValueError):

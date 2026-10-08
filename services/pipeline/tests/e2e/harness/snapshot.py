@@ -16,7 +16,10 @@ SNAPSHOT_TABLES = (
     "notice_files",
     "notice_summaries",
     "notice_easy_texts",
+    "notice_dictionary_links",
+    "standard_dictionary_cache",
     "notice_summary_executions",
+    "notice_processing_jobs",
 )
 
 # What the app can read. Kept explicit (no "select *"): check_anon_grants() fails when
@@ -111,11 +114,15 @@ def _key_rows(table: str, rows: list[dict[str, Any]], notice_keys: dict[int, str
             row.pop("id", None)
         elif table in APP_VIEWS:
             key = notice_keys.get(row.pop("id", None), "<unknown notice>")
+        elif table == "standard_dictionary_cache":
+            key = row.pop("cache_key")
         else:
             notice = notice_keys.get(row.pop("notice_id", None), "<unknown notice>")
             if table == "notice_files":
                 row.pop("id", None)
                 key = f"{notice}|{row.get('kind')}|{row.get('file_key', row.get('url'))}"
+            elif table == "notice_processing_jobs":
+                key = f"{notice}|{row['feature']}"
             else:
                 key = notice
         if key in keyed:
@@ -125,7 +132,7 @@ def _key_rows(table: str, rows: list[dict[str, Any]], notice_keys: dict[int, str
 
 
 def read_database(conn: psycopg.Connection) -> tuple[Raw, dict[str, int], dict[str, dict]]:
-    """Raw rows of SNAPSHOT_TABLES keyed by notice, plus row counts of every public table."""
+    """Raw rows keyed by notice or shared cache key, plus counts of every public table."""
     types = _column_types(conn, SNAPSHOT_TABLES + tuple(APP_VIEWS))
     with conn.cursor(row_factory=dict_row) as cursor:
         notice_rows = cursor.execute("select * from public.notices").fetchall()
@@ -157,7 +164,7 @@ def read_database(conn: psycopg.Connection) -> tuple[Raw, dict[str, int], dict[s
 
 
 def read_anon(conn: psycopg.Connection) -> tuple[Raw, dict[str, str]]:
-    """Rows visible to the app role, using its explicit column list per table."""
+    """Rows and per-notice dictionary RPC results available to the app role."""
     check_anon_grants(conn)
     raw: Raw = {}
     denied: dict[str, str] = {}
@@ -181,6 +188,14 @@ def read_anon(conn: psycopg.Connection) -> tuple[Raw, dict[str, str]]:
                     for row in rows
                 }
             raw[table] = _key_rows(table, rows, notice_keys)
+        with conn.cursor(row_factory=dict_row) as cursor:
+            rows = [
+                {"notice_id": notice_id, "result": cursor.execute(
+                    "select public.get_notice_dictionary(%s) as result", (notice_id,),
+                ).fetchone()["result"]}
+                for notice_id in notice_keys
+            ]
+        raw["get_notice_dictionary"] = _key_rows("get_notice_dictionary", rows, notice_keys)
     return raw, denied
 
 
@@ -191,8 +206,28 @@ def _text(value: str) -> str:
     return f"<text len={len(value)} sha256={digest}>"
 
 
+def normalize_json(value: Any, previous: Any = None) -> Any:
+    """Normalize public JSON timestamps and keep the waiting/ready countdown distinction."""
+    if isinstance(value, dict):
+        before = previous if isinstance(previous, dict) else {}
+        result = {}
+        for key, item in value.items():
+            if key == "generated_at":
+                result[key] = _value(
+                    item, "timestamp with time zone", key, before.get(key), key in before,
+                )
+            elif key == "retry_after_seconds" and isinstance(item, int) and item > 0:
+                result[key] = "<positive>"
+            else:
+                result[key] = normalize_json(item, before.get(key))
+        return result
+    if isinstance(value, list):
+        return [normalize_json(item) for item in value]
+    return value
+
+
 def _value(value: Any, data_type: str, column: str, previous: Any, existed: bool) -> Any:
-    if data_type in TIME_TYPES:
+    if data_type in TIME_TYPES or column == "easy_text_token":
         if value is None:
             return None
         if not existed:
@@ -212,7 +247,7 @@ def _value(value: Any, data_type: str, column: str, previous: Any, existed: bool
     if isinstance(value, str):
         return _text(value)
     if isinstance(value, (dict, list)):
-        return json.loads(json.dumps(value, sort_keys=True, default=str))
+        return normalize_json(json.loads(json.dumps(value, sort_keys=True, default=str)), previous)
     return value
 
 

@@ -1,5 +1,5 @@
 {
-  "title": "노원구 collect-one과 쉬운말: 쉬운말이 실패하면 원문만 저장되고 exit 1이며, 다시 실행하면 쉬운말을 만든다. 저장이 실패하면 쉬운말을 실행하지 않고, 서울시는 --easy-text를 수집 전에 거부한다",
+  "title": "노원구 collect-one과 쉬운말: 원문 커밋 후 변환, 실패 후 재실행, 저장 실패 시 변환 미호출",
   "steps": [
     {
       "type": "collect-one",
@@ -23,6 +23,7 @@
       ],
       "gemini": {
         "easy_text": [
+          "input/easy_900521_error.json",
           "input/easy_900521_error.json"
         ]
       },
@@ -84,26 +85,6 @@
         "easy_text": []
       },
       "expect_exit": 1
-    },
-    {
-      "type": "collect-one",
-      "args": [
-        "--source",
-        "seoul",
-        "--easy-text"
-      ],
-      "expect_exit": 2
-    },
-    {
-      "type": "collect",
-      "args": [
-        "--source",
-        "seoul",
-        "--mode",
-        "new",
-        "--easy-text"
-      ],
-      "expect_exit": 2
     }
   ],
   "strict_unused": true

@@ -24,6 +24,7 @@ import psycopg
 from pipeline import clock
 from pipeline.attachments.summary_bundle import prepare_summary_source
 from pipeline.config import DatabaseSettings
+from pipeline.gemini_execution import ExecutionBudget, capture_execution_stats
 from pipeline.storage.summaries import (
     StoredPreparedSummary,
     StoredSummaryRow,
@@ -72,10 +73,12 @@ class SummaryRunResult:
     reason_code: str | None
     gemini_requests: int
     view: NoticeSummaryView | None = field(default=None, repr=False)
+    gemini_http_attempts: int = 0
+    execution_failure: dict[str, object] | None = field(default=None, repr=False)
 
     @property
     def gemini_called(self) -> bool:
-        return self.gemini_requests > 0
+        return self.gemini_http_attempts > 0
 
     @property
     def exit_code(self) -> int:
@@ -92,6 +95,8 @@ class SummaryRunResult:
             "reason_code": self.reason_code,
             "gemini_called": self.gemini_called,
             "gemini_requests": self.gemini_requests,
+            "gemini_http_attempts": self.gemini_http_attempts,
+            "execution_failure": self.execution_failure,
             "view": None if self.view is None else self.view.model_dump(mode="json"),
         }
 
@@ -114,11 +119,13 @@ def summarize_one(
     *,
     api_key: str,
     model: str = DEFAULT_MODEL,
+    budget: ExecutionBudget | None = None,
 ) -> SummaryRunResult:
     """Summarize one visible notice and report the committed public result.
 
-    The caller validates configuration first (DATABASE_URL, GEMINI_API_KEY); this function
-    never reads environment variables. It opens and closes its own connections, so the
+    The caller supplies validated database/key settings. The AI budget reads its timeout
+    setting after preparation unless the caller supplies a budget. Connections are owned
+    by this function, so the
     caller owns no transaction. A database error at any step returns storage_failed rather
     than raising, and nothing in the report claims a write that was not committed.
     Programming errors and invalid stored data still raise.
@@ -135,6 +142,8 @@ def summarize_one(
             attachment_status=extra.get("attachment_status"),
             reason_code=reason,
             gemini_requests=requests,
+            execution_failure=extra.get("execution_failure"),
+            gemini_http_attempts=extra.get("gemini_http_attempts", 0),
         )
 
     try:
@@ -152,8 +161,9 @@ def summarize_one(
     )
     attachment_status = metadata.attachment_status
 
-    with count_summary_requests() as requests:
-        try:
+    # Observe calls without charging DB connection/registration to the AI budget.
+    try:
+        with capture_execution_stats() as stats, count_summary_requests() as requests:
             with _connect(database) as conn:
                 outcome = summarize_and_save_prepared_notice(
                     conn,
@@ -161,29 +171,38 @@ def summarize_one(
                     metadata,
                     expected_source_revision=source.content_revision,
                     api_key=api_key,
+                    budget=budget,
                 )
-        except SummaryStorageError as error:
-            return stopped(
-                "storage_failed",
-                error.reason_code,
-                requests[0],
-                attachment_status=attachment_status,
-            )
-        except psycopg.Error:
-            return stopped(
-                "storage_failed",
-                "summary_storage_failed",
-                requests[0],
-                attachment_status=attachment_status,
-            )
+    except SummaryStorageError as error:
+        return stopped(
+            "storage_failed",
+            error.reason_code,
+            requests[0],
+            attachment_status=attachment_status,
+            gemini_http_attempts=stats.http_attempts,
+        )
+    except psycopg.Error:
+        return stopped(
+            "storage_failed",
+            "summary_storage_failed",
+            requests[0],
+            attachment_status=attachment_status,
+            gemini_http_attempts=stats.http_attempts,
+        )
 
     if isinstance(outcome, StoredPreparedSummary):
         status: ExecutionStatus = outcome.status
         reason = None if status == "summarized" else _review_reason(attachment_status)
+        execution_failure = outcome.result.execution_failure
+        if outcome.result.correction_failure_code is not None:
+            status, reason = "failed", outcome.result.correction_failure_code
+            execution_failure = execution_failure or _failure_details(reason)
     elif isinstance(outcome, StoredSummaryFailure):
         status, reason = "failed", outcome.reason_code
+        execution_failure = outcome.execution_failure or _failure_details(reason)
     elif isinstance(outcome, StoredSummarySuperseded):
         status, reason = "superseded", outcome.reason_code
+        execution_failure = None
     else:  # pragma: no cover - summary_job returns only the three types above
         raise TypeError("unexpected summary outcome")
 
@@ -197,6 +216,8 @@ def summarize_one(
             "summary_read_failed",
             requests[0],
             attachment_status=attachment_status,
+            execution_failure=execution_failure,
+            gemini_http_attempts=stats.http_attempts,
         )
     view = _public_view(row, prepared.notice, metadata.source_hash)
     return SummaryRunResult(
@@ -208,7 +229,21 @@ def summarize_one(
         reason_code=reason,
         gemini_requests=requests[0],
         view=view,
+        execution_failure=execution_failure,
+        gemini_http_attempts=stats.http_attempts,
     )
+
+
+def _failure_details(reason_code: str) -> dict[str, object]:
+    """Fill safe legacy diagnostics when an injected/older client has no runtime metadata."""
+    retryable = reason_code in {"api_error", "api_timeout", "api_connection_error"}
+    return {
+        "reason_code": reason_code,
+        "failure_kind": "transient" if retryable else "permanent",
+        "retryable": retryable,
+        "retry_at": None,
+        "status_code": None,
+    }
 
 
 def _public_view(

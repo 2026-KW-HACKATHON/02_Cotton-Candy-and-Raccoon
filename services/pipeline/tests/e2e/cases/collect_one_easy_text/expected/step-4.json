@@ -47,22 +47,35 @@
           }
         ],
         "model": "gemini-3.5-flash-lite",
-        "prompt_version": "easy-language-v7",
+        "prompt_version": "easy-language-v8",
         "attempt_count": 1,
         "generated_at": "<unchanged>",
         "body_text_present": true,
-        "attachment_content_included": false
+        "attachment_content_included": false,
+        "dictionary_candidates": []
       }
     },
-    "notice_summary_executions": {}
+    "notice_dictionary_links": {
+      "nowon/1001/900521": {
+        "easy_text_token": "<unchanged>",
+        "candidates": [],
+        "generated_at": "<unchanged>"
+      }
+    },
+    "standard_dictionary_cache": {},
+    "notice_summary_executions": {},
+    "notice_processing_jobs": {}
   },
   "row_counts": {
     "holidays": 0,
+    "notice_dictionary_links": 1,
     "notice_easy_texts": 1,
     "notice_files": 0,
+    "notice_processing_jobs": 0,
     "notice_summaries": 0,
     "notice_summary_executions": 0,
-    "notices": 1
+    "notices": 1,
+    "standard_dictionary_cache": 0
   },
   "anon": {
     "notices": {
@@ -166,6 +179,32 @@
         "easy_body_text_present": true,
         "easy_attachment_content_included": false,
         "easy_generated_at": "<unchanged>"
+      }
+    },
+    "get_notice_dictionary": {
+      "nowon/1001/900521": {
+        "result": {
+          "attachment_content_included": false,
+          "body_text_present": true,
+          "changes": [
+            {
+              "context": "참가자를 모집합니다",
+              "end": 23,
+              "original": "참가자를",
+              "replacement": "참여할 사람을",
+              "start": 19
+            }
+          ],
+          "dictionary_candidates": [],
+          "dictionary_status": "complete",
+          "easy_text": "주민 강좌 참가자 모집\n주민 강좌 참여할 사람을 모집합니다.",
+          "generated_at": "<unchanged>",
+          "model": "gemini-3.5-flash-lite",
+          "notice_id": 1,
+          "notice_revision": "7f082014648d9fcb395d4ab90078f2fb5d2a7e730595db53c1f59fa20f4c8f97",
+          "original_text": "주민 강좌 참가자 모집\n주민 강좌 참가자를 모집합니다.",
+          "prompt_version": "easy-language-v8"
+        }
       }
     }
   }

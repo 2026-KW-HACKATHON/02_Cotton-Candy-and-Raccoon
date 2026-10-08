@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit
 
 import httpx
 import pytest
@@ -12,6 +12,7 @@ API_KEY = "test-only-key"
 KEY_PLACEHOLDER = "<key>"
 SEOUL_OPENAPI = "http://openapi.seoul.go.kr:8088"
 NOWON_ORIGIN = "https://www.nowon.kr"
+DICTIONARY_API = "https://stdict.korean.go.kr/api/"
 
 CONTENT_TYPES = {
     ".xml": "text/xml; charset=utf-8",
@@ -79,6 +80,26 @@ def _route_url(spec: dict[str, Any]) -> tuple[str, str]:
         if route == "file":
             url = str(spec["url"])
             return url, f"file {url}"
+        if route == "dictionary_search":
+            word = str(spec["query_word"])
+            start = int(spec.get("start", 1))
+            request_type = str(spec.get("req_type", "json"))
+            params = {
+                "key": API_KEY, "req_type": request_type, "q": word,
+                "advanced": "y", "target": 1, "method": "exact", "pos": 0,
+                "start": start, "num": 100,
+            }
+            return (
+                DICTIONARY_API + "search.do?" + urlencode(params),
+                f"dictionary_search {word} {start} {request_type}",
+            )
+        if route == "dictionary_view":
+            target = str(spec["target_code"])
+            params = {
+                "key": API_KEY, "req_type": "json", "q": target,
+                "method": "target_code", "type_search": "view",
+            }
+            return DICTIONARY_API + "view.do?" + urlencode(params), f"dictionary_view {target}"
     except (KeyError, TypeError, ValueError):
         raise CaseDefinitionError(f"http route {route!r} is missing a required field") from None
     raise CaseDefinitionError(f"unknown http route {route!r}")

@@ -6,6 +6,7 @@ import sys
 import time
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -14,11 +15,15 @@ import psycopg
 import pytest
 from e2e.harness import gemini_replay, http_replay
 from e2e.harness.http_replay import API_KEY, CaseDefinitionError
-from e2e.harness.snapshot import normalize, read_anon, read_database
+from e2e.harness.snapshot import normalize, normalize_json, read_anon, read_database
 from support.db import database_uri
 
-STEP_TYPES = ("collect", "collect-one", "sql")
-# Values in the CLI JSON report that change between runs; none are known today.
+STEP_TYPES = (
+    "collect", "collect-one", "process-pending", "process-stored", "notice-glossary", "sql",
+)
+# Retry timestamps depend on real DB time and jitter. Preserve their presence;
+# policy intervals and Retry-After floors are checked in the runner boundary tests.
+REPORT_TIME_KEYS = frozenset({"next_attempt_at"})
 VOLATILE_REPORT_KEYS: frozenset[str] = frozenset()
 
 
@@ -60,7 +65,10 @@ def load_case(path: Path) -> Case:
 
 def configure_environment(monkeypatch: pytest.MonkeyPatch, info: dict[str, str]) -> None:
     monkeypatch.setenv("DATABASE_URL", database_uri(info))
-    for name in ("NOWON_NOTICE_API_KEY", "SEOUL_NEWS_API_KEY", "SEOUL_API_KEY", "GEMINI_API_KEY"):
+    for name in (
+        "NOWON_NOTICE_API_KEY", "SEOUL_NEWS_API_KEY", "SEOUL_API_KEY", "GEMINI_API_KEY",
+        "STDICT_API_KEY",
+    ):
         # GEMINI_API_KEY must be set: otherwise the pipeline falls back to a local .env file.
         monkeypatch.setenv(name, API_KEY)
 
@@ -104,7 +112,12 @@ def _patch_sleep(monkeypatch: pytest.MonkeyPatch, sleeps: list[float]) -> None:
 
 def _drop_volatile(value: Any) -> Any:
     if isinstance(value, dict):
-        return {k: _drop_volatile(v) for k, v in value.items() if k not in VOLATILE_REPORT_KEYS}
+        return {
+            k: "<retry-at>" if k == "retry_at" and v is not None
+            else "<set>" if k in REPORT_TIME_KEYS and v is not None
+            else _drop_volatile(v)
+            for k, v in value.items() if k not in VOLATILE_REPORT_KEYS
+        }
     if isinstance(value, list):
         return [_drop_volatile(v) for v in value]
     return value
@@ -115,9 +128,12 @@ def _parse_report(stdout: str) -> Any:
     if not lines:
         return None
     try:
-        return _drop_volatile(json.loads(lines[-1]))
+        return _drop_volatile(json.loads(stdout))
     except ValueError:
-        return None
+        try:
+            return _drop_volatile(json.loads(lines[-1]))
+        except ValueError:
+            return None
 
 
 def run_step(
@@ -139,15 +155,44 @@ def run_step(
     http_replay.install(monkeypatch, result.http)
     gemini_replay.install(monkeypatch, result.gemini)
     _patch_sleep(monkeypatch, result.sleeps)
+    if case.now is not None:
+        from pipeline import clock
+
+        fixed_now = datetime.fromisoformat(case.now)
+        if fixed_now.tzinfo is None:
+            raise CaseDefinitionError("case now must include a timezone")
+        monkeypatch.setattr(clock, "now", lambda: fixed_now)
+    if (step["type"] in ("process-pending", "process-stored")
+            or "--process-ai" in step.get("args", [])):
+        from pipeline import processing_runner
+        from pipeline.processing_worker import process_claim
+
+        # Keep the production claim, worker, guarded writes and completion flow;
+        # only process isolation is replaced so the HTTP/SDK replay stays visible.
+        # Worker termination and real subprocess behavior belong in boundary tests.
+        monkeypatch.setattr(
+            processing_runner,
+            "execute_claim",
+            lambda database, claim, api_key, timeout_seconds: process_claim(
+                database, claim, api_key=api_key
+            ),
+        )
 
     if step["type"] == "sql":
         conn.execute(step["sql"])
     else:
-        argv = [step["type"], *[str(arg) for arg in step.get("args", [])]]
+        args = [str(arg) for arg in step.get("args", [])]
+        if step["type"] == "notice-glossary":
+            from pipeline.glossary.cli import main
+
+            argv = args
+        else:
+            main = cli.main
+            argv = [step["type"], *args]
         out, err = io.StringIO(), io.StringIO()
         try:
             with redirect_stdout(out), redirect_stderr(err):
-                result.exit_code = cli.main(argv)
+                result.exit_code = main(argv)
         except SystemExit as exit_:
             result.exit_code = exit_.code if isinstance(exit_.code, int) else 2
         except Exception as error:  # reported as a step problem, with the report still written
@@ -178,7 +223,7 @@ def run_step(
     if step["type"] != "sql":
         snapshot |= {
             "exit_code": result.exit_code,
-            "report": result.report,
+            "report": normalize_json(result.report, previous.report if previous else None),
             "stderr": [line for line in result.stderr.splitlines() if line.strip()],
         }
     snapshot |= {

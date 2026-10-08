@@ -3,12 +3,14 @@
 import logging
 import traceback
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import httpx
 import pytest
 from google.genai import errors, types
 
+from pipeline.gemini_execution import GeminiExecutionError
 from pipeline.glossary import easy_language_client
 from pipeline.glossary.easy_language import (
     EasyLanguageAPIError,
@@ -18,7 +20,8 @@ from pipeline.glossary.easy_language import (
 
 KEY = "fake-gemini-client-secret"
 REMOTE_TEXT = "private-provider-response"
-JSON_TEXT = '{"changes": []}'
+JSON_TEXT = '{"changes": [], "dictionary_candidates": []}'
+REAL_SDK_CLIENT = easy_language_client.genai.Client
 
 
 def completed_response() -> types.GenerateContentResponse:
@@ -91,7 +94,7 @@ def sdk_stub(monkeypatch: pytest.MonkeyPatch) -> StubSDK:
 
 
 def generate(**changes: str) -> str:
-    return easy_language_client.generate_easy_language_json(
+    return easy_language_client._generate_easy_language_json_direct(
         **{"prompt": "instructions", "notice_text": "notice data", "api_key": KEY, **changes}
     )
 
@@ -139,8 +142,8 @@ def test_public_generate_content_keeps_notice_exact_and_uses_structured_schema(
     assert config.system_instruction == prompt
     assert config.response_mime_type == "application/json"
     assert config.response_json_schema == EasyLanguageResponse.model_json_schema()
-    assert set(config.response_json_schema["required"]) == {"changes"}
-    assert set(config.response_json_schema["properties"]) == {"changes"}
+    assert set(config.response_json_schema["required"]) == {"changes", "dictionary_candidates"}
+    assert set(config.response_json_schema["properties"]) == {"changes", "dictionary_candidates"}
     assert config.candidate_count == 1
     assert isinstance(config.automatic_function_calling, types.AutomaticFunctionCallingConfig)
     assert config.automatic_function_calling.disable is True
@@ -329,3 +332,61 @@ def test_close_failure_is_private_and_does_not_return_success(
         generate()
     assert_private_error(caught.value, caplog)
     assert_closed_once(sdk_stub)
+
+
+@pytest.mark.parametrize("status", [403, 429, 503])
+def test_locked_sdk_dispatches_once_and_preserves_retry_metadata(monkeypatch, status):
+    from pipeline import gemini_sdk_adapter
+
+    dispatched = []
+    requests = []
+    monkeypatch.setattr(gemini_sdk_adapter, "record_http_dispatch", lambda: dispatched.append(1))
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(status, headers={"Retry-After": "3600"}, json={
+            "error": {"code": status, "message": REMOTE_TEXT},
+        })
+
+    def factory(*, api_key, http_options):
+        options = http_options.model_copy(update={
+            "base_url": "https://gemini.invalid",
+            "client_args": {
+                **(http_options.client_args or {}), "transport": httpx.MockTransport(handler),
+            },
+        })
+        return REAL_SDK_CLIENT(api_key=api_key, http_options=options)
+
+    monkeypatch.setattr(easy_language_client.genai, "Client", factory)
+    before = datetime.now(UTC)
+    with pytest.raises(EasyLanguageAPIError) as caught:
+        generate()
+    assert len(requests) == len(dispatched) == 1
+    assert caught.value.status_code == status
+    assert caught.value.retryable is (status != 403)
+    if status != 403:
+        assert caught.value.retry_at >= before + timedelta(hours=1)
+    else:
+        assert caught.value.retry_at is None
+
+
+def test_public_boundary_preserves_deferred_error_metadata(monkeypatch):
+    retry_at = datetime(2026, 10, 8, 13, tzinfo=UTC)
+    calls = []
+
+    def stopped(operation, payload):
+        calls.append((operation, payload))
+        raise GeminiExecutionError(
+            "api_error", failure_kind="deferred", retryable=True,
+            retry_at=retry_at, status_code=429,
+        )
+
+    monkeypatch.setattr(easy_language_client, "run_gemini_request", stopped)
+    with pytest.raises(EasyLanguageAPIError) as caught:
+        easy_language_client.generate_easy_language_json(
+            prompt="instructions", notice_text="notice data", api_key=KEY,
+        )
+    assert len(calls) == 1 and calls[0][0] == "easy_language"
+    assert caught.value.failure_kind == "deferred"
+    assert caught.value.retryable and caught.value.retry_at == retry_at
+    assert caught.value.status_code == 429

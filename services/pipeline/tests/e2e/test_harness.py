@@ -12,6 +12,8 @@ from e2e.harness.runner import CASES_DIR, run_case, update_requested
 from e2e.harness.steps import credential_patterns, database_uri, redact
 from support.db import owned_migrated_database
 
+from pipeline.glossary.dictionary import DictionaryQuery
+from pipeline.glossary.dictionary_client import DictionaryClient
 from pipeline.glossary.easy_language import EasyLanguageAPIError
 from pipeline.glossary.easy_language_client import generate_easy_language_json
 from pipeline.transform.gemini_client import GeminiRequestError, generate_summary_json
@@ -104,12 +106,17 @@ def _install(monkeypatch, tmp_path, kind: str, *payloads: object) -> gemini_repl
 
 
 def test_easy_text_replay_matches_the_real_client(monkeypatch, tmp_path):
-    replay = _install(monkeypatch, tmp_path, "easy_text", {"changes": []}, {"__error__": "timeout"})
+    replay = _install(
+        monkeypatch, tmp_path, "easy_text", {"changes": []},
+        {"__error__": "timeout"}, {"__error__": "timeout"},
+    )
     output = generate_easy_language_json(prompt="p", notice_text="본문", api_key=API_KEY)
     assert json.loads(output) == {"changes": []}
     with pytest.raises(EasyLanguageAPIError):
         generate_easy_language_json(prompt="p", notice_text="본문", api_key=API_KEY)
-    assert [call["input"][0]["type"] for call in replay.calls["easy_text"]] == ["text", "text"]
+    assert [call["input"][0]["type"] for call in replay.calls["easy_text"]] == [
+        "text", "text", "text",
+    ]
     assert replay.leftovers() == {}
 
 
@@ -124,7 +131,10 @@ def test_easy_text_replay_matches_the_real_client(monkeypatch, tmp_path):
 def test_summary_replay_errors_follow_the_real_client_classification(
     monkeypatch, tmp_path, error, reason_code
 ):
-    _install(monkeypatch, tmp_path, "summary", {"summary": "ok"}, {"__error__": error})
+    _install(
+        monkeypatch, tmp_path, "summary", {"summary": "ok"},
+        {"__error__": error}, {"__error__": error},
+    )
     output = generate_summary_json(prompt="p", notice_text="본문", api_key=API_KEY)
     assert json.loads(output) == {"summary": "ok"}
     with pytest.raises(GeminiRequestError) as failure:
@@ -196,6 +206,29 @@ def test_routes_for_the_same_url_are_used_in_order_and_the_last_one_repeats(tmp_
     assert statuses == [503, 200, 200]
     assert replay.calls == ["nowon_api 1-50"] * 3
     assert replay.unused() == []
+
+
+def test_dictionary_replay_matches_the_real_search_view_and_empty_xml_client(monkeypatch):
+    case_dir = CASES_DIR / "easy_text_dictionary_candidates"
+    definition = json.loads((case_dir / "case.json").read_text(encoding="utf-8"))
+    replay = http_replay.HttpReplay([
+        http_replay.Route.from_spec(spec, case_dir)
+        for spec in definition["steps"][0]["http"]
+        if spec["route"].startswith("dictionary_")
+    ])
+    http_replay.install(monkeypatch, replay)
+    dictionary = DictionaryClient(API_KEY)
+
+    documents = dictionary.lookup(DictionaryQuery("구비서류"))
+    bring = dictionary.lookup(DictionaryQuery("지참하다"))
+    absent = dictionary.lookup(DictionaryQuery("직권처리"))
+
+    assert documents.status == bring.status == "found"
+    assert len(documents.entries[0].senses) == 2
+    assert absent.status == "not_found" and not absent.entries
+    assert len(replay.calls) == 6
+    assert replay.unexpected == replay.unused() == []
+    assert all(API_KEY not in label for label in replay.calls)
 
 
 def test_redaction_hides_credentials_but_keeps_ordinary_words():
