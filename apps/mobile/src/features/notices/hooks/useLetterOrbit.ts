@@ -5,7 +5,7 @@ import {
   cancelAnimation,
   Easing,
   ReduceMotion,
-  useDerivedValue,
+  useAnimatedReaction,
   useSharedValue,
   withSequence,
   withTiming,
@@ -55,16 +55,31 @@ export function useLetterOrbit(notices: Notice[], width: number) {
   const previousOrder = useRef(notices);
   const suppressClick = useRef(false);
 
-  useDerivedValue(() => {
-    if (mode.value === 1) {
+  // 드래그 입력만 읽고 개폐·위치를 출력한다. 출력값을 다시 입력으로 구독하지 않는다.
+  useAnimatedReaction(
+    () => {
+      if (mode.value !== 1) return null;
       const pose = getDragPose(dragInput.value, spacing);
+      return { stage: pose.stage, position: base.value + pose.offset };
+    },
+    (pose) => {
+      if (pose === null) return;
       clock.set(pose.stage);
-      position.set(base.value + pose.offset);
-    } else if (mode.value === 2) {
+      position.set(pose.position);
+    },
+  );
+
+  // 자동 재생은 개폐 진행값을 입력으로만 사용하고 원호 위치만 갱신한다.
+  useAnimatedReaction(
+    () => {
+      if (mode.value !== 2) return null;
       const progress = Math.max(0, Math.min(1, clock.value - 5));
-      position.set(base.value + (target.value - base.value) * progress);
-    }
-  });
+      return base.value + (target.value - base.value) * progress;
+    },
+    (nextPosition) => {
+      if (nextPosition !== null) position.set(nextPosition);
+    },
+  );
 
   const restore = useCallback(
     (next: number) => {
