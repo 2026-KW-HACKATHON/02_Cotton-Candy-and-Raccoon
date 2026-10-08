@@ -54,4 +54,6 @@ npx eas-cli build --platform android --profile preview
 - Node 테스트: 날짜·권한·채널·예약 교체·취소·재조회·알림 진입을 포함해 검증.
 - `expo export --platform android` 성공: Android 배포용 JS/Hermes 번들 생성 확인.
 - APK 빌드와 실기기 수신은 미검증. 현재 PC에는 Android SDK와 빌드용 JDK가 없다.
-  EAS 빌드도 실행하지 않았다. 위 실기기 완료 조건을 확인하기 전에는 이슈를 완료 처리하지 않는다.
+  EAS preview 빌드는 아래 링크로 접수했으며, 문서 갱신 시점에는 진행 중이다.
+  [#86 APK 빌드](https://expo.dev/accounts/pjparks-team/projects/mobile/builds/96e2f9d5-0446-4fdc-b5a1-19426abc23a5)
+  팀 프로젝트의 preview 환경 변수와 원격 서명 키를 재사용했다. 실기기 완료 조건 확인 전에는 이슈를 완료 처리하지 않는다.
