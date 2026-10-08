@@ -88,8 +88,15 @@ class RawNotice:
     def __post_init__(self) -> None:
         _source_board(self.category, self.source_board)
         _notice_fields(
-            self.category, self.dong_group, self.is_pinned, self.post_sn,
-            self.title, self.url, self.department, self.body_html, self.license_type,
+            self.category,
+            self.dong_group,
+            self.is_pinned,
+            self.post_sn,
+            self.title,
+            self.url,
+            self.department,
+            self.body_html,
+            self.license_type,
         )
         _string("registered_on", self.registered_on)
 
@@ -144,8 +151,15 @@ class NoticeRecord:
     def __post_init__(self) -> None:
         _source_board(self.category, self.source_board)
         _notice_fields(
-            self.category, self.dong_group, self.is_pinned, self.post_sn,
-            self.title, self.url, self.department, self.body_html, self.license_type,
+            self.category,
+            self.dong_group,
+            self.is_pinned,
+            self.post_sn,
+            self.title,
+            self.url,
+            self.department,
+            self.body_html,
+            self.license_type,
         )
         # datetime subclasses date, but would silently introduce a time component.
         if type(self.registered_on) is not date:
@@ -175,7 +189,8 @@ class FileRecord:
         _source_board(self.category, self.source_board)
         _choice("kind", self.kind, ("attachment", "inline_image"))
         for name, value in (
-            ("post_sn", self.post_sn), ("url", self.url),
+            ("post_sn", self.post_sn),
+            ("url", self.url),
         ):
             _string(name, value)
         _string("file_name", self.file_name, optional=True)

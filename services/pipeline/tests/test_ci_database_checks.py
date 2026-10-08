@@ -45,11 +45,14 @@ def test_connection_parameters_pin_loopback_and_short_timeout():
     assert parameters["port"] == "61009"
 
 
-def test_preparation_refuses_existing_database_without_resetting_it(monkeypatch, tmp_path):
+@pytest.mark.parametrize("existing_database", prepare.TEST_DATABASES)
+def test_preparation_refuses_existing_database_without_resetting_it(
+    monkeypatch, tmp_path, existing_database
+):
     (tmp_path / "0001.sql").write_text("select 1", encoding="utf-8")
     conn = MagicMock()
     conn.__enter__.return_value = conn
-    conn.execute.return_value.fetchall.return_value = [(prepare.PIPELINE_DATABASE,)]
+    conn.execute.return_value.fetchall.return_value = [(existing_database,)]
     monkeypatch.setattr(prepare.psycopg, "connect", lambda **kwargs: conn)
     with pytest.raises(prepare.TestDatabasePreparationError, match="test_database_already_exists"):
         prepare.prepare_test_databases(
@@ -57,6 +60,41 @@ def test_preparation_refuses_existing_database_without_resetting_it(monkeypatch,
         )
     assert conn.execute.call_count == 1
     assert conn.execute.call_args.args[0].startswith("select datname")
+    assert conn.execute.call_args.args[1] == prepare.TEST_DATABASES
+
+
+def test_preparation_migrates_only_pipeline_and_keeps_rollback_databases_empty(
+    monkeypatch, tmp_path
+):
+    (tmp_path / "0002.sql").write_text("select 'second'", encoding="utf-8")
+    (tmp_path / "0001.sql").write_text("select 'first'", encoding="utf-8")
+    admin = MagicMock()
+    admin.__enter__.return_value = admin
+    admin.execute.return_value.fetchall.return_value = []
+    migrated = MagicMock()
+    migrated.__enter__.return_value = migrated
+    connect = MagicMock(side_effect=[admin, migrated])
+    roles = MagicMock()
+    monkeypatch.setattr(prepare.psycopg, "connect", connect)
+    monkeypatch.setattr(prepare, "_ensure_plain_roles", roles)
+
+    assert prepare.prepare_test_databases(
+        "postgresql://postgres@127.0.0.1/postgres", migration_directory=tmp_path,
+    ) == 2
+
+    roles.assert_called_once_with(admin)
+    assert [call.args[0] for call in admin.execute.call_args_list[1:]] == [
+        prepare.SQL("create database {}").format(prepare.Identifier(database))
+        for database in prepare.TEST_DATABASES
+    ]
+    assert [call.kwargs["dbname"] for call in connect.call_args_list] == [
+        "postgres", prepare.PIPELINE_DATABASE,
+    ]
+    assert [call.args[0] for call in migrated.execute.call_args_list] == [
+        "grant usage on schema public to anon, authenticated, service_role",
+        "select 'first'",
+        "select 'second'",
+    ]
 
 
 @pytest.mark.parametrize("flags,membership", [

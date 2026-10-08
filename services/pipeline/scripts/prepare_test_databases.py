@@ -10,6 +10,8 @@ from psycopg.sql import SQL, Identifier
 
 PIPELINE_DATABASE = "pipeline_schema_test_ci"
 SCHEMA_DATABASE = "pipeline_schema_test_empty_ci"
+GLOSSARY_DATABASE = "pipeline_glossary_test_ci"
+TEST_DATABASES = (PIPELINE_DATABASE, SCHEMA_DATABASE, GLOSSARY_DATABASE)
 TEST_ROLES = ("anon", "authenticated", "service_role")
 MIGRATION_DIRECTORY = Path(__file__).resolve().parents[3] / "supabase" / "migrations"
 
@@ -61,8 +63,8 @@ def prepare_test_databases(
 ) -> int:
     """Create fresh test databases, never reset an existing database.
 
-    Pipeline integration tests need committed migrations. Schema tests instead
-    apply migrations and seed in their own rollback-only empty database.
+    Pipeline integration tests need committed migrations. Schema and easy-text
+    storage tests apply migrations in their own rollback-only empty databases.
     """
     parameters = _connection_parameters(admin_url)
     migrations = sorted(migration_directory.glob("*.sql"))
@@ -70,13 +72,13 @@ def prepare_test_databases(
         raise TestDatabasePreparationError("missing_test_migrations")
     with psycopg.connect(**parameters, autocommit=True) as conn:
         existing = conn.execute(
-            "select datname from pg_database where datname in (%s,%s)",
-            (PIPELINE_DATABASE, SCHEMA_DATABASE),
+            "select datname from pg_database where datname in (%s,%s,%s)",
+            TEST_DATABASES,
         ).fetchall()
         if existing:
             raise TestDatabasePreparationError("test_database_already_exists")
         _ensure_plain_roles(conn)
-        for database in (PIPELINE_DATABASE, SCHEMA_DATABASE):
+        for database in TEST_DATABASES:
             conn.execute(SQL("create database {}").format(Identifier(database)))
     with psycopg.connect(**(parameters | {"dbname": PIPELINE_DATABASE})) as conn:
         conn.execute("grant usage on schema public to anon, authenticated, service_role")
@@ -95,7 +97,8 @@ def main() -> int:
         print("Test database preparation failed: database_preparation_failed", file=sys.stderr)
         return 1
     print(
-        f"Prepared pipeline database with {count} migrations and a separate empty schema database."
+        f"Prepared pipeline database with {count} migrations and separate empty "
+        "schema and easy-text databases."
     )
     return 0
 
