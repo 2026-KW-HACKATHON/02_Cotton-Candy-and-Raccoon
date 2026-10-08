@@ -36,7 +36,9 @@ from pipeline.sources.seoul_api import SeoulSourceError
 from pipeline.sources.seoul_api import collect_one as collect_one_seoul
 from pipeline.sources.wolgye1_board import WolgyeSourceError
 from pipeline.storage.notice_bundle import save_notice_with_files
+from pipeline.summary_run import summarize_one
 from pipeline.transform.dong import DongTransformError
+from pipeline.transform.gemini_prompt import GeminiConfigurationError, load_gemini_api_key
 from pipeline.transform.nowon import TransformError, transform_nowon_notice
 from pipeline.transform.seoul import SeoulTransformError
 
@@ -98,6 +100,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="convert each saved body to easy text after saving",
     )
+    summarize = subparsers.add_parser(
+        "summarize-one",
+        help="summarize one stored notice with Gemini and save the result to DB",
+    )
+    summarize.add_argument("--notice-id", type=int, required=True, help="notices.id")
     return parser
 
 
@@ -121,6 +128,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+
+    if args.command == "summarize-one":
+        return _summarize_one(args)
 
     if args.command == "check-config":
         try:
@@ -574,3 +584,20 @@ def _collect_seoul(args: argparse.Namespace) -> int:
         )
     )
     return 0 if result.complete else 1
+
+
+def _summarize_one(args: argparse.Namespace) -> int:
+    """Exit codes: 0 summarized/needs_review, 1 failed, 2 arguments or configuration,
+    3 not_found, 4 superseded, 5 storage_failed. See README "공지 ID로 요약 실행"."""
+    if not 0 < args.notice_id <= 2**63 - 1:
+        print("설정 오류: --notice-id는 1 이상의 정수여야 합니다.", file=sys.stderr)
+        return 2
+    try:
+        database = DatabaseSettings.from_env()
+        api_key = load_gemini_api_key()
+    except (ConfigError, GeminiConfigurationError) as error:
+        print(f"설정 오류: {error}", file=sys.stderr)
+        return 2
+    result = summarize_one(database, args.notice_id, api_key=api_key)
+    print(json.dumps(result.report(), ensure_ascii=True))
+    return result.exit_code

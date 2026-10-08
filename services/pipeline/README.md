@@ -626,6 +626,133 @@ PDF·이미지 좌표는 제공하지 않습니다. 준비 결과에 연결 정�
 있습니다. 수집·파일 준비에서 이 job으로 이어지는 자동 연결과 모바일 표시·강조는
 별도 구현이 필요합니다.
 
+## 공지 ID로 요약 실행
+
+`pipeline summarize-one --notice-id <id>`는 DB에 저장된 공지 하나를 요약해 저장하고, 커밋된 행에서
+앱이 읽을 공개 결과를 다시 만들어 JSON 한 줄로 출력합니다. 기존 준비, 검증, 저장 함수를 순서대로
+연결할 뿐 새 판정 로직은 없습니다. 쉬운말 변환은 별도 기능(`collect --easy-text`)이며 이 명령의
+보고에 섞지 않습니다.
+
+```powershell
+python -m uv run pipeline summarize-one --notice-id 123
+```
+
+필요한 설정은 `DATABASE_URL`과 `GEMINI_API_KEY`입니다. `GEMINI_API_KEY`가 환경변수에 없으면
+`services/pipeline/.env`에서 읽습니다. 둘 중 하나라도 없으면 DB에 아무것도 쓰지 않고 exit code 2로
+끝납니다.
+
+### 실행 단계와 트랜잭션 책임
+
+| 순서 | 단계 | DB 연결 |
+| --- | --- | --- |
+| 1 | `load_summary_source`: 본문, 파일, `content_revision`을 한 문장으로 읽음 | 짧은 autocommit 연결, 읽고 바로 닫음 |
+| 2 | `prepare_summary_source`: 첨부 다운로드와 입력 준비 | 연결 없음 |
+| 3 | `build_summary_metadata_from_manifest` | 연결 없음 |
+| 4 | `summarize_and_save_prepared_notice`: 실행 토큰 등록, Gemini, 결과 또는 실패 저장 | autocommit 연결. 토큰 등록은 즉시 커밋되어 Gemini 호출 중 열린 트랜잭션이 없고, 결과 저장은 저장 함수가 자체 트랜잭션으로 커밋 |
+| 5 | `load_stored_summary` → `build_notice_summary_view` | 새 연결로 커밋된 행만 읽음 |
+
+1단계에서 읽은 `content_revision`을 그대로 `expected_source_revision`으로 넘기므로, 준비 중이나
+Gemini 호출 중 원문, 파일 목록이 바뀌거나 같은 공지의 더 최신 실행이 시작되면 결과를 저장하지 않고
+`superseded`로 끝납니다. 준비 기준 시각(`reference_datetime`)과 저장 시각(`generated_at`)은 모두
+`pipeline.clock.now()`에서 얻습니다.
+
+### Gemini 호출 횟수와 비용
+
+- 한 번 실행에 요약 요청은 최대 2회입니다(응답 형식 교정 재요청 1회 포함). SDK 설정상 요청 1회는
+  HTTP 시도 최대 2회이므로, 실행 1회의 HTTP 요청은 최대 4회입니다.
+- 출력의 `gemini_requests`가 이번 실행에서 실제로 보낸 요약 요청 수입니다. 0이면 비용이 발생하지
+  않았습니다.
+- 공지 없음, 비공개 공지, 읽을 본문과 첨부가 없음, 설정 오류, 이미 오래된 입력이면 Gemini를 호출하지
+  않습니다.
+- 첨부 PDF와 이미지는 입력 토큰에 포함되어 본문만 있는 공지보다 비용이 큽니다.
+
+### 출력 JSON
+
+| 필드 | 의미 |
+| --- | --- |
+| `notice_id` | 처리한 공지 ID |
+| `execution_status` | 이번 실행 결과: `summarized`, `needs_review`, `failed`, `superseded`, `not_found`, `storage_failed` |
+| `stored_status` | 실행 후 새 연결로 다시 읽은 `notice_summaries.status`. 행이 없거나 확인하지 못했으면 `null` |
+| `public_result` | 앱이 읽을 요약 내용(`view.content`)이 있는지 |
+| `attachment_status` | 이번 실행이 읽은 첨부 범위: `none`, `all_read`, `partial`, `unread`. 공지를 찾지 못했으면 `null` |
+| `reason_code` | 실패나 검토 사유 코드. 없으면 `null` |
+| `gemini_called` | 이번 실행에서 Gemini 요약 요청을 보냈는지 |
+| `gemini_requests` | 보낸 요약 요청 수 |
+| `view` | 커밋된 행으로 만든 공개 응답(`build_notice_summary_view`). 행이 없으면 `null` |
+
+이번 실행이 실패해도 기존 정상 결과가 남아 있으면 `stored_status`, `public_result`, `view`는 그 행을
+기준으로 보고합니다. 예를 들어 Gemini 타임아웃이면 `execution_status`는 `failed`, `stored_status`는
+`summarized`, `public_result`는 `true`입니다.
+
+| `execution_status` | `reason_code` |
+| --- | --- |
+| `summarized` | `null` |
+| `needs_review` | `attachments_partial`, `attachments_unread`(첨부를 다 읽지 못함), `summary_review_required`(근거, 불확실성 등 요약 판정) |
+| `failed` | 저장된 `last_error_code`와 같음. 예: `api_timeout`, `api_error`, `response_validation_failed`, `input_preparation_failed` |
+| `superseded` | `summary_execution_superseded` |
+| `not_found` | `notice_not_found_or_hidden` |
+| `storage_failed` | `db_unavailable`(시작 전 연결 실패), `summary_storage_failed` 등 저장 오류 코드, `summary_read_failed`(저장 후 재조회 실패) |
+
+읽을 본문과 첨부가 모두 없는 공지는 입력 준비 단계에서 `no_content` 실패로 처리되어 Gemini 호출 없이
+`failed`, `input_preparation_failed`로 기록됩니다.
+
+### exit code
+
+| exit code | 경우 |
+| --- | --- |
+| 0 | `summarized` 또는 `needs_review`로 저장 완료 |
+| 1 | `failed`: 준비 실패, Gemini 실패, 응답 검증 실패가 기록됨 |
+| 2 | 인자 또는 설정 오류. DB에 쓰지 않음 |
+| 3 | `not_found`: 공지가 없거나 `is_visible = false` |
+| 4 | `superseded`: 처리 중 원문 변경 또는 더 최신 실행 시작. 결과를 저장하지 않음 |
+| 5 | `storage_failed`: DB 연결, 저장, 재조회 실패. 성공으로 보지 않음 |
+
+### 실패 후 확인할 상태
+
+```sql
+select status, last_error_code, attempt_count, attachment_status, generated_at, updated_at
+from notice_summaries where notice_id = 123;
+```
+
+- `failed`: 기존 정상 결과가 있으면 `status`와 `result`는 그대로이고 `last_error_code`,
+  `attempt_count`만 바뀝니다. 일시적인 오류(`api_timeout`, `api_error`)면 다시 실행합니다.
+- `superseded`: 원문이 바뀐 경우 기존 요약은 DB 트리거가 이미 무효화했습니다. 다시 실행하면 새 원문으로
+  요약합니다.
+- `storage_failed`: 결과가 커밋됐는지 확인할 수 없거나 커밋되지 않았습니다. DB 상태를 확인한 뒤 다시
+  실행합니다. 같은 원문이면 다시 실행해도 안전합니다.
+
+### 앱이 읽는 결과 (#34)
+
+앱(anon)은 `notice_summaries`에서 `notice_id`, `status`, `category`, `category_code`, `deadline_on`,
+`result`, `attachment_status`, `generated_at`, `card_summaries`, `file_references`,
+`preparation_omissions`만 읽을 수 있습니다. `source_hash`, `model`, `prompt_version`,
+`attempt_count`, `last_error_code`, `file_manifest`는 공개하지 않습니다. 이 명령의 `view`는 같은
+행으로 만든 화면용 응답이며 다음 필드를 가집니다.
+
+| 필드 | 내용 | 값이 없을 때 |
+| --- | --- | --- |
+| `status` | `summarized`, `needs_review`, `pending`, `failed`. 읽지 못한 자료가 있으면 `needs_review` | 항상 있음 |
+| `message` | 상태 안내 문구. 예: "원문 확인 요함", "읽지 못한 자료가 있어요. 원문을 확인하세요." | `summarized`면 `null` |
+| `content` | `headline`(한 줄 요약), `cards`(`audience`, `deadline`, `action`, `notes`), `metadata` | `pending`, `failed`, 내용 없는 검토 행이면 `null` |
+| `text_highlights` | 카드 문장의 원문 근거 위치 | 저장된 행이 이번 실행과 다른 원문에서 만들어졌으면 키가 없음. 내용이 없으면 `null` |
+| `file_references` | 근거로 쓴 첨부의 공개 링크 | 행의 값이 NULL이면 키가 없음. 빈 배열 가능 |
+| `preparation_omissions` | 읽지 못한 첨부(`notice_file_id`, `url`, `reason_code`) | 행의 값이 NULL이면 키가 없음. 빈 배열 가능 |
+
+이 응답을 읽는 쪽은 위 세 필드의 키가 없는 경우를 빈 값과 같게 처리해야 합니다.
+
+### 재사용 계약
+
+재처리나 예약 실행은 공지마다 `pipeline.summary_run.summarize_one(database, notice_id, *, api_key,
+model=DEFAULT_MODEL)`을 호출합니다.
+
+- 반환값 `SummaryRunResult`는 위 출력 필드를 가지며 `report()`가 JSON용 dict, `exit_code`가 위 표의
+  값을 돌려줍니다.
+- 함수가 자체 연결을 열고 닫으므로 호출자는 트랜잭션을 갖지 않습니다. 환경변수는 읽지 않으니 설정은
+  호출자가 확인해 넘깁니다.
+- DB 오류는 예외 대신 `storage_failed`로 돌려줍니다. 잘못된 `notice_id`는 `ValueError`, 잘못 저장된
+  데이터(검증을 통과하지 못하는 원문 URL 등)와 프로그래밍 오류는 예외를 그대로 올립니다.
+- 대상 선택, 예약 실행, 자동 재시도는 이 함수 밖의 별도 작업입니다.
+
 ## 실행과 검증
 
 ```powershell
@@ -638,6 +765,7 @@ python -m uv run pipeline collect-one --source wolgye1
 python -m uv run pipeline collect --source wolgye1 --limit 26
 python -m uv run pipeline collect --source wolgye1
 python -m uv run pipeline collect --source nowon --limit 3
+python -m uv run pipeline summarize-one --notice-id 123
 python -m uv run ruff check
 python -m uv run pytest
 ```

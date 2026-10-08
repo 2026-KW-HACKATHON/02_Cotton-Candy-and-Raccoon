@@ -2,11 +2,12 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import date
 from typing import Literal
 
 from psycopg import Connection
 
+from pipeline import clock
 from pipeline.storage.summaries import (
     StoredPreparedSummary,
     SummaryExecutionSuperseded,
@@ -184,7 +185,7 @@ def summarize_and_save_prepared_notice(
         raise SummaryRecordError("summary_notice_id_mismatch")
     if result.file_manifest != manifest:
         raise SummaryRecordError("summary_file_manifest_mismatch")
-    generated_at = datetime.now(UTC)
+    generated_at = clock.now()
     record = build_summary_record(
         result, checked.metadata, deadline_on=None, generated_at=generated_at
     )

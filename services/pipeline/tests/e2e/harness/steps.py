@@ -15,6 +15,7 @@ import pytest
 from e2e.harness import gemini_replay, http_replay
 from e2e.harness.http_replay import API_KEY, CaseDefinitionError
 from e2e.harness.snapshot import normalize, read_anon, read_database
+from support.db import database_uri
 
 STEP_TYPES = ("collect", "collect-one", "sql")
 # Values in the CLI JSON report that change between runs; none are known today.
@@ -55,15 +56,6 @@ def load_case(path: Path) -> Case:
         now=data.get("now"),
     )
 
-
-def database_uri(info: dict[str, str]) -> str:
-    """The URI form that pipeline.config accepts for DATABASE_URL."""
-    user = quote(info.get("user", ""), safe="")
-    password = info.get("password")
-    auth = f"{user}:{quote(password, safe='')}@" if password else (f"{user}@" if user else "")
-    host = info.get("host", "127.0.0.1")
-    port = f":{info['port']}" if info.get("port") else ""
-    return f"postgresql://{auth}{host}{port}/{quote(info['dbname'], safe='')}"
 
 
 def configure_environment(monkeypatch: pytest.MonkeyPatch, info: dict[str, str]) -> None:
