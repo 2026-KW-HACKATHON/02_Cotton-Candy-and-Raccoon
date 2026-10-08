@@ -1,4 +1,4 @@
-"""Source-version constraints and app privileges after the incremental migration."""
+"""Source-version constraints and app privileges."""
 
 import psycopg
 import pytest
@@ -18,7 +18,7 @@ def test_revision_registry_and_trigger_functions_remain_private(db, role):
     ).fetchone() == (True, False)
 
 
-def test_source_revision_backfill_and_constraints(db):
+def test_source_revision_defaults_and_constraints(db):
     assert db.execute(
         "select count(*) from notices where content_revision is null or content_revision<=0"
     ).fetchone() == (0,)

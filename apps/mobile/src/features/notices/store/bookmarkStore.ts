@@ -1,16 +1,45 @@
 import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
+import { preferenceStorage } from "../../../shared/accessibility/preferenceStorage";
 
 type BookmarkState = {
   savedIds: string[];
   toggleBookmark: (id: string) => void;
 };
-// 목록·상세·보관함이 ID만 공유한다. 저장 전에는 비어 있으며 재실행 시 초기화된다.
-export const useBookmarkStore = create<BookmarkState>((set) => ({
-  savedIds: [],
-  toggleBookmark: (id) =>
-    set((state) => ({
-      savedIds: state.savedIds.includes(id)
-        ? state.savedIds.filter((value) => value !== id)
-        : [...state.savedIds, id],
-    })),
-}));
+export const useBookmarkStore = create<BookmarkState>()(
+  persist(
+    (set) => ({
+      savedIds: [],
+      toggleBookmark: (id) =>
+        set((state) => ({
+          savedIds: state.savedIds.includes(id)
+            ? state.savedIds.filter((value) => value !== id)
+            : [...state.savedIds, id],
+        })),
+    }),
+    {
+      name: "wolgyenotice-bookmarks",
+      storage: createJSONStorage(() => preferenceStorage),
+      partialize: ({ savedIds }) => ({ savedIds }),
+      merge: (persisted, current) => {
+        const ids =
+          persisted && typeof persisted === "object" && "savedIds" in persisted
+            ? persisted.savedIds
+            : [];
+        return {
+          ...current,
+          savedIds: Array.isArray(ids)
+            ? [
+                ...new Set(
+                  ids.filter(
+                    (id): id is string =>
+                      typeof id === "string" && /^[1-9]\d*$/.test(id),
+                  ),
+                ),
+              ]
+            : [],
+        };
+      },
+    },
+  ),
+);

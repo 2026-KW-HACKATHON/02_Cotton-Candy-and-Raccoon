@@ -1,0 +1,381 @@
+{
+  "exit_code": 1,
+  "report": {
+    "mode": "new",
+    "total_count": 3,
+    "selected_count": 3,
+    "saved_count": 2,
+    "pages_read": 1,
+    "initial_baseline": true,
+    "listing_complete": true,
+    "failed_pages": [],
+    "complete": false,
+    "failures": [
+      {
+        "post_sn": "20261008090000603",
+        "stage": "storage",
+        "reason_code": "db_save_failed"
+      }
+    ],
+    "easy_text": {
+      "status": "failed",
+      "complete": false,
+      "attempted_count": 2,
+      "successful_count": 1,
+      "gemini_requests": 2,
+      "gemini_http_attempts": 3,
+      "skipped_count": 0,
+      "failed_count": 1,
+      "skipped": [],
+      "failures": [
+        {
+          "notice_id": 2,
+          "reason_code": "api_failed",
+          "execution_failure": {
+            "reason_code": "api_error",
+            "failure_kind": "deferred",
+            "retryable": true,
+            "retry_at": "<retry-at>",
+            "status_code": 500
+          }
+        }
+      ],
+      "dictionary": {
+        "attempted_count": 1,
+        "complete_count": 1,
+        "partial_count": 0,
+        "pending_count": 0,
+        "failures": []
+      }
+    }
+  },
+  "stderr": [],
+  "http_calls": [
+    "wolgye1_list 1",
+    "wolgye1_detail 20261008090000603",
+    "wolgye1_detail 20261007090000602",
+    "wolgye1_detail 20261006090000601"
+  ],
+  "gemini_calls": {
+    "easy_text": [
+      {
+        "model": "gemini-3.5-flash-lite",
+        "input": [
+          {
+            "type": "text",
+            "sha256": "2bd8a88d8d3a6244",
+            "length": 22
+          }
+        ]
+      },
+      {
+        "model": "gemini-3.5-flash-lite",
+        "input": [
+          {
+            "type": "text",
+            "sha256": "2bd8a88d8d3a6244",
+            "length": 22
+          }
+        ]
+      },
+      {
+        "model": "gemini-3.5-flash-lite",
+        "input": [
+          {
+            "type": "text",
+            "sha256": "ea326b9772fd77ea",
+            "length": 22
+          }
+        ]
+      }
+    ]
+  },
+  "db": {
+    "notices": {
+      "dong/1042/20261006090000601": {
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 공예 교실 참가자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-06",
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261006090000601&q_deptCode=1047",
+        "body_html": "<p>월계1동 공예 교실 참가자를 모집합니다.</p>",
+        "license_type": "KOGL-1",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1,
+        "body_text": "월계1동 공예 교실 참가자를 모집합니다."
+      },
+      "dong/1042/20261007090000602": {
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 노래 교실 참가자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-07",
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261007090000602&q_deptCode=1047",
+        "body_html": "<p>월계1동 노래 교실 참가자를 모집합니다.</p>",
+        "license_type": "KOGL-1",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1,
+        "body_text": "월계1동 노래 교실 참가자를 모집합니다."
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {
+      "dong/1042/20261006090000601": {
+        "notice_revision": "48fa8d33e865a0d128c897547bd29a518eaab72781ce6fd893b5db2d326007ef",
+        "source_hash": "8ce2d4ba44c9f08f583e6b655aa6851cc43efb9799a5db6885c5d1868e9ff0c6",
+        "original_text": "월계1동 공예 교실 참가자 모집\n월계1동 공예 교실 참가자를 모집합니다.",
+        "easy_text": "월계1동 공예 교실 참가자 모집\n월계1동 공예 교실 참여할 사람을 모집합니다.",
+        "changes": [
+          {
+            "context": "참가자를 모집합니다",
+            "end": 33,
+            "original": "참가자를",
+            "replacement": "참여할 사람을",
+            "start": 29
+          }
+        ],
+        "model": "gemini-3.5-flash-lite",
+        "prompt_version": "easy-language-v8",
+        "attempt_count": 1,
+        "generated_at": "<set>",
+        "body_text_present": true,
+        "attachment_content_included": false,
+        "dictionary_candidates": []
+      }
+    },
+    "notice_dictionary_links": {
+      "dong/1042/20261006090000601": {
+        "easy_text_token": "<set>",
+        "candidates": [],
+        "generated_at": "<set>"
+      }
+    },
+    "standard_dictionary_cache": {},
+    "notice_summary_executions": {},
+    "notice_processing_jobs": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_dictionary_links": 1,
+    "notice_easy_texts": 1,
+    "notice_files": 0,
+    "notice_processing_jobs": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 2,
+    "standard_dictionary_cache": 0
+  },
+  "anon": {
+    "notices": {
+      "dong/1042/20261006090000601": {
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 공예 교실 참가자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-06",
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261006090000601&q_deptCode=1047",
+        "body_html": "<p>월계1동 공예 교실 참가자를 모집합니다.</p>",
+        "license_type": "KOGL-1",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1,
+        "body_text": "월계1동 공예 교실 참가자를 모집합니다."
+      },
+      "dong/1042/20261007090000602": {
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 노래 교실 참가자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-07",
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261007090000602&q_deptCode=1047",
+        "body_html": "<p>월계1동 노래 교실 참가자를 모집합니다.</p>",
+        "license_type": "KOGL-1",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1,
+        "body_text": "월계1동 노래 교실 참가자를 모집합니다."
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {
+      "dong/1042/20261006090000601": {
+        "original_text": "월계1동 공예 교실 참가자 모집\n월계1동 공예 교실 참가자를 모집합니다.",
+        "easy_text": "월계1동 공예 교실 참가자 모집\n월계1동 공예 교실 참여할 사람을 모집합니다.",
+        "changes": [
+          {
+            "context": "참가자를 모집합니다",
+            "end": 33,
+            "original": "참가자를",
+            "replacement": "참여할 사람을",
+            "start": 29
+          }
+        ],
+        "generated_at": "<set>",
+        "body_text_present": true,
+        "attachment_content_included": false
+      }
+    },
+    "app_notice_list": {
+      "dong/1042/20261006090000601": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 공예 교실 참가자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-06",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true
+      },
+      "dong/1042/20261007090000602": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 노래 교실 참가자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false
+      }
+    },
+    "app_notice_detail": {
+      "dong/1042/20261006090000601": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 공예 교실 참가자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-06",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true,
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261006090000601&q_deptCode=1047",
+        "license_type": "KOGL-1",
+        "body_text": "월계1동 공예 교실 참가자를 모집합니다.",
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [],
+        "easy_original_text": "월계1동 공예 교실 참가자 모집\n월계1동 공예 교실 참가자를 모집합니다.",
+        "easy_text": "월계1동 공예 교실 참가자 모집\n월계1동 공예 교실 참여할 사람을 모집합니다.",
+        "easy_changes": [
+          {
+            "context": "참가자를 모집합니다",
+            "end": 33,
+            "original": "참가자를",
+            "replacement": "참여할 사람을",
+            "start": 29
+          }
+        ],
+        "easy_body_text_present": true,
+        "easy_attachment_content_included": false,
+        "easy_generated_at": "<set>"
+      },
+      "dong/1042/20261007090000602": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 노래 교실 참가자 모집",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false,
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261007090000602&q_deptCode=1047",
+        "license_type": "KOGL-1",
+        "body_text": "월계1동 노래 교실 참가자를 모집합니다.",
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [],
+        "easy_original_text": null,
+        "easy_text": null,
+        "easy_changes": null,
+        "easy_body_text_present": null,
+        "easy_attachment_content_included": null,
+        "easy_generated_at": null
+      }
+    },
+    "get_notice_dictionary": {
+      "dong/1042/20261006090000601": {
+        "result": {
+          "attachment_content_included": false,
+          "body_text_present": true,
+          "changes": [
+            {
+              "context": "참가자를 모집합니다",
+              "end": 33,
+              "original": "참가자를",
+              "replacement": "참여할 사람을",
+              "start": 29
+            }
+          ],
+          "dictionary_candidates": [],
+          "dictionary_status": "complete",
+          "easy_text": "월계1동 공예 교실 참가자 모집\n월계1동 공예 교실 참여할 사람을 모집합니다.",
+          "generated_at": "<set>",
+          "model": "gemini-3.5-flash-lite",
+          "notice_id": 3,
+          "notice_revision": "48fa8d33e865a0d128c897547bd29a518eaab72781ce6fd893b5db2d326007ef",
+          "original_text": "월계1동 공예 교실 참가자 모집\n월계1동 공예 교실 참가자를 모집합니다.",
+          "prompt_version": "easy-language-v8"
+        }
+      },
+      "dong/1042/20261007090000602": {
+        "result": null
+      }
+    }
+  }
+}

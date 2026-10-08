@@ -1,1 +1,1 @@
-"""Extract file metadata from notice content without downloading files."""
+"""Extract notice file metadata and prepare downloaded attachments and images."""

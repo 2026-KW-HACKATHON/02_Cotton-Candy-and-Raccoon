@@ -1,5 +1,6 @@
 """Per-board initial 25 / regular 10 collection, without visibility sweeps."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from time import sleep
 from typing import Literal
@@ -83,6 +84,7 @@ def _board(
     settings: SeoulNewsSettings,
     board: str,
     mode: Literal["new", "refresh"],
+    after_save: Callable[[int], None] | None = None,
 ) -> BoardResult:
     initial = not conn.execute(
         "select exists(select 1 from notices where category='seoul' and source_board=%s)",
@@ -184,11 +186,13 @@ def _board(
             failures.append(SeoulFailure(row.post_sn, "transform", "invalid_notice"))
             continue
         try:
-            save_notice_with_files(conn, record, files)
+            notice_id = save_notice_with_files(conn, record, files)
         except (psycopg.Error, ValueError):
             failures.append(SeoulFailure(row.post_sn, "storage", "db_save_failed"))
             continue
         saved += 1
+        if after_save is not None:
+            after_save(notice_id)
     return BoardResult(
         board,
         first.total_count,
@@ -207,7 +211,13 @@ def collect_scheduled(
     *,
     mode: Literal["new", "refresh"],
     source_board: str | None = None,
+    after_save: Callable[[int], None] | None = None,
 ) -> ScheduledSeoulResult:
+    """Pass only committed IDs to a lightweight registration callback.
+
+    ``after_save`` must not perform AI work; finish postprocessing only after this
+    function returns and the collector's connection has closed.
+    """
     if mode not in ("new", "refresh"):
         raise ValueError("mode must be 'new' or 'refresh'")
     if settings.seoul_news_api_key == "sample":
@@ -235,7 +245,7 @@ def collect_scheduled(
                     )
                     continue
                 try:
-                    result = _board(conn, settings, board, mode)
+                    result = _board(conn, settings, board, mode, after_save)
                 except SeoulSourceError as error:
                     reason = "rate_limited" if error.rate_limited else "api_page_failed"
                     result = BoardResult(

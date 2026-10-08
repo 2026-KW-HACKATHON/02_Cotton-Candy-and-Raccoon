@@ -1,0 +1,62 @@
+{
+  "title": "쉬운말 캐시: 내용이 같은 공지를 다시 수집하면 Gemini를 다시 부르지 않고 저장된 쉬운말을 쓴다",
+  "steps": [
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "nowon",
+        "--mode",
+        "new",
+        "--easy-text"
+      ],
+      "gemini": {
+        "easy_text": [
+          "input/easy_900491.json"
+        ]
+      },
+      "http": [
+        {
+          "route": "nowon_api",
+          "start": 1,
+          "end": 50,
+          "body": "input/nowon_list.xml"
+        },
+        {
+          "route": "nowon_page",
+          "post_sn": "900491",
+          "body": "input/nowon_page_900491.html"
+        }
+      ],
+      "expect_exit": 0
+    },
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "nowon",
+        "--mode",
+        "refresh",
+        "--easy-text"
+      ],
+      "gemini": {
+        "easy_text": []
+      },
+      "http": [
+        {
+          "route": "nowon_api",
+          "start": 1,
+          "end": 50,
+          "body": "input/nowon_list.xml"
+        },
+        {
+          "route": "nowon_page",
+          "post_sn": "900491",
+          "body": "input/nowon_page_900491.html"
+        }
+      ],
+      "expect_exit": 0
+    }
+  ],
+  "strict_unused": true
+}

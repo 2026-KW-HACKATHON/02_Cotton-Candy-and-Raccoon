@@ -1,0 +1,139 @@
+{
+  "title": "서울시 저장 후 쉬운말: 단건·정기 실행, 캐시, 부분 실패·복구, 이미지 전용 건너뜀, 커밋 실패 미호출",
+  "steps": [
+    {
+      "type": "collect-one",
+      "args": [
+        "--source",
+        "seoul",
+        "--source-board",
+        "25",
+        "--easy-text"
+      ],
+      "http": [
+        {
+          "route": "seoul_api",
+          "board": "25",
+          "start": 1,
+          "end": 1,
+          "body": "input/seoul_one.xml"
+        }
+      ],
+      "gemini": {
+        "easy_text": [
+          "input/easy.json"
+        ]
+      },
+      "expect_exit": 0
+    },
+    {
+      "type": "collect-one",
+      "args": [
+        "--source",
+        "seoul",
+        "--source-board",
+        "25",
+        "--easy-text"
+      ],
+      "http": [
+        {
+          "route": "seoul_api",
+          "board": "25",
+          "start": 1,
+          "end": 1,
+          "body": "input/seoul_one.xml"
+        }
+      ],
+      "gemini": {
+        "easy_text": []
+      },
+      "expect_exit": 0
+    },
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "seoul",
+        "--source-board",
+        "25",
+        "--easy-text",
+        "--mode",
+        "refresh"
+      ],
+      "http": [
+        {
+          "route": "seoul_api",
+          "board": "25",
+          "start": 1,
+          "end": 10,
+          "body": "input/seoul_three.xml"
+        }
+      ],
+      "gemini": {
+        "easy_text": [
+          "input/timeout.json",
+          "input/timeout.json"
+        ]
+      },
+      "expect_exit": 1
+    },
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "seoul",
+        "--source-board",
+        "25",
+        "--easy-text",
+        "--mode",
+        "refresh"
+      ],
+      "http": [
+        {
+          "route": "seoul_api",
+          "board": "25",
+          "start": 1,
+          "end": 10,
+          "body": "input/seoul_three.xml"
+        }
+      ],
+      "gemini": {
+        "easy_text": [
+          "input/easy.json"
+        ]
+      },
+      "expect_exit": 0
+    },
+    {
+      "type": "sql",
+      "reason": "커밋 시점 실패한 공지는 후처리 등록되지 않는지 확인한다",
+      "sql": "create function e2e_reject_commit() returns trigger language plpgsql as $$ begin if new.post_sn = '000777' then raise exception 'e2e commit failure'; end if; return new; end $$; create constraint trigger e2e_reject_commit after insert or update on public.notices deferrable initially deferred for each row execute function e2e_reject_commit();"
+    },
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "seoul",
+        "--source-board",
+        "25",
+        "--easy-text",
+        "--mode",
+        "refresh"
+      ],
+      "http": [
+        {
+          "route": "seoul_api",
+          "board": "25",
+          "start": 1,
+          "end": 10,
+          "body": "input/seoul_three.xml"
+        }
+      ],
+      "gemini": {
+        "easy_text": []
+      },
+      "expect_exit": 1
+    }
+  ],
+  "strict_unused": true
+}

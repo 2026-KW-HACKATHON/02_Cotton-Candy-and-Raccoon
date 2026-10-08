@@ -4,15 +4,24 @@ Python·uv 기반 공지 수집 파이프라인입니다. 노원구 `NowonNewsNo
 
 ## #18 현재 구현 범위와 새 저장 계약
 
-노원구·월계1동·서울시 수집 모델·변환·저장은 #16의 통합 초기 스키마를 사용합니다. 비어 있는 DB에 아래 3개 SQL을 파일명 순서대로 적용해야 합니다. 별도의 identity 후속 SQL은 init에 통합되어 더 이상 적용하지 않습니다.
+노원구·월계1동·서울시 수집 모델·변환·저장은 `supabase/migrations`의 스키마를 사용합니다. 비어 있는 DB에는 `supabase/migrations`의 SQL 전체를 파일명 순서대로 적용하고, 기존 DB에는 아직 적용하지 않은 새 마이그레이션을 추가합니다.
 
-1. `20260922053900_init.sql`: 공지·파일의 최종 컬럼과 제약 생성
-2. `20260922053901_rls.sql`: 앱의 공개 데이터 읽기 권한 설정
-3. `20260923044500_holidays.sql`: 기존 공휴일 테이블·접근 제한 설정
+1. `20260922053900_notices.sql`: 공지·파일의 컬럼과 제약, 앱 읽기 권한
+2. `20260922053901_holidays.sql`: 공휴일 테이블과 앱 접근 차단
+3. `20260922053902_notice_summaries.sql`: 요약, 요약 실행, 원문 변경 trigger
+4. `20260922053903_notice_easy_texts.sql`: 쉬운말 결과
+5. `20261008150000_app_notice_views.sql`: develop의 앱 목록·상세 공개 조회 계약
+6. `20261008160000_standard_dictionary_cache.sql`: 표준국어대사전 공유 캐시와 조회 권한
+7. `20261008170000_notice_dictionary_candidates.sql`: 쉬운말 사전 후보
+8. `20261008190000_notice_dictionary_links.sql`: 공지별 사전 뜻풀이 연결과 조회
+9. `20261008210000_notice_processing_jobs.sql`: 기능별 재처리 상태와 점유 기한
+10. `20261008220000_app_notice_views.sql`: backend 앱 조회 계약 호환 재적용
+
+재구성 전 마이그레이션 14개를 적용한 로컬 DB는 다시 만들어야 합니다(`npx supabase db reset`).
 
 파일별 역할과 제약은 [공지 DB README](../../supabase/README.md)를 참고하세요. 이 초기 구조는 이미 생성된 DB를 자동 변경하는 업그레이드 SQL이 아닙니다. CLI도 스키마를 생성하거나 마이그레이션을 자동 적용하지 않습니다.
 
-공지 식별은 `(category, source_board, post_sn)`이고 source_board는 노원구 `1001`, 월계1동 게시판 `1042`입니다. 같은 게시판에 표시되는 다른 동 고정 공지도 source_board는 `1042`입니다. 서울시는 BLOG_ID를 사용합니다. SQL 구성은 5개에서 3개로 통합됐지만 BE의 최종 저장 계약은 같습니다.
+공지 식별은 `(category, source_board, post_sn)`이고 source_board는 노원구 `1001`, 월계1동 게시판 `1042`입니다. 같은 게시판에 표시되는 다른 동 고정 공지도 source_board는 `1042`입니다. 서울시는 BLOG_ID를 사용합니다. SQL 파일 구성이 바뀌어도 BE의 저장 계약은 같습니다.
 
 파일 식별은 `(notice_id, file_key, kind)`입니다. `FileRecord.file_key`는 읽기 전용 계산 속성으로, 실제 ID가 있으면 `id:<file_id>`, 없으면 `url:<저장할 정규화 URL의 UTF-8 SHA256>`을 반환합니다. `file_sn`·`file_id`는 출처에 없을 때 None/SQL NULL이며, 빈 값이나 가짜 UUID를 넣지 않습니다. URL 해시는 파일 내용 해시가 아닙니다.
 
@@ -91,7 +100,7 @@ API에 공지별 공공누리 필드가 없어 `license_type=None`으로 저장�
 
 `attachments/seoul_html.py`의 `CULTURE_DECORATIVE_IMAGE_PATHS`는 실제 관측한 문화사이트 로고·SNS 경로4개입니다. 호스트가 `culture.seoul.go.kr`이고 경로가 `/_ui/images/main/cnl-common/` 아래의 `nLc-logo-culture.png`, `nLc-top-facebook.png`, `nLc-top-instargram.png`, `nLc-top-blog.png`와 정확히 일치하는 **img만** 파일 목록에서 제외합니다. 쿼리/fragment가 붙어도 적용합니다. 기존 공식 WordPress theme 이미지 제외는 유지합니다.
 
-디렉터리 전체·logo라는 이름·alt·작은 크기만으로 이미지를 버리지 않습니다. 알 수 없는 배너·포스터·다른 호스트/경로의 파일·명시적 첨부 링크는 유지합니다. 본문 HTML 자체는 수정하지 않습니다. #13에서 HTML을 직접 파싱해 Gemini 입력 이미지를 다운로드한다면 같은 필터 연동이 별도로 필요합니다.
+디렉터리 전체·logo라는 이름·alt·작은 크기만으로 이미지를 버리지 않습니다. 알 수 없는 배너·포스터·다른 호스트/경로의 파일·명시적 첨부 링크는 유지합니다. 본문 HTML 자체는 수정하지 않습니다. #13 입력 준비도 같은 장식 필터를 재사용합니다. 수집된 파일이라도 다운로드 허용 주소·지원 형식을 벗어나면 입력 준비는 실패할 수 있습니다.
 
 필터 추가 후 새 임시 PostgreSQL에서 전체 pytest **690 passed, 0 skipped**, Ruff 통과. 기존 장식 파일행이 있는 공지를 refresh하면 파일집합 변경으로 is_modified=true가 될 수 있으며, 실제DB 테스트에서 본문·ID 유지와 장식행 제거·반복저장을 확인했습니다. 위 발급 키 공지200·파일611행은 필터 추가 전 검증 결과입니다. 필터 적용 후 전체200건 재수집·장식후보24행 전부제거를 확인했다고 해석하지 마세요. SQL·환경 변수·Actions·공식 DB는 변경하지 않았습니다.
 
@@ -156,6 +165,7 @@ python -m uv run pipeline check-config
 | `DATABASE_URL` | 예 (저장 명령) | `psycopg`가 사용할 PostgreSQL 연결 문자열 |
 | `SEOUL_API_KEY` | 기존 `check-config`에서만 필수 | 기존 설정값. 현재 노원구 한 건 조회에는 사용하지 않음 |
 | `NOWON_NOTICE_API_KEY` | `--source nowon` 명령에서 필수 | 발급받은 노원구 공지 API 키 |
+| `STDICT_API_KEY` | 사전 캐시 미스·명시적 갱신 때 필수 | 서버 전용 표준국어대사전 API 인증키 |
 | `HTTP_CONNECT_TIMEOUT_SECONDS` | 아니오 | 연결 타임아웃, 기본값 5초 |
 | `HTTP_READ_TIMEOUT_SECONDS` | 아니오 | 응답 읽기 타임아웃, 기본값 20초 |
 
@@ -281,6 +291,29 @@ DB에 노원구 공지가 하나도 없으면 **어느 모드든** API 최신 50
 
 `storage/notices.py`의 `save_notice(conn, record)`는 변환된 `NoticeRecord`를 `notices`에 `(category, source_board, post_sn)` 기준으로 한 SQL 문에서 저장·갱신하고 DB `id`를 반환합니다. 새 공지는 공개 상태로 저장하고 다시 확인된 공지를 `is_visible=True`로 복원합니다. 기존 공지는 제목·본문 HTML·등록일·원문 URL·공공누리 유형 중 하나라도 이전 값과 다르면 `is_modified=True`가 되고, 이후 원래 값으로 돌아와도 `True`를 유지합니다. 부서만 변경되면 수정됨으로 표시하지 않습니다. `updated_at`은 갱신하며 `created_at`은 유지합니다. 동일값 비교에는 SQL의 `IS DISTINCT FROM`을 사용해 `NULL` 변경도 감지합니다.
 
+저장할 때마다 `body_text`에 `notice_body_text(body_html)`(= `html_to_notice_text`, 요약 입력과 같은 평문)를 함께 씁니다. 평문이 비면 NULL입니다. 앱은 HTML 대신 이 평문을 표시합니다. 파생 값이라 수정됨 판단과 원문 변경 trigger의 비교 대상이 아닙니다.
+
+`body_text` 컬럼이 생기기 전에 저장한 행은 다시 수집하면 채워집니다(내용이 같아도 upsert가 `body_text`를 씁니다). 목록에서 사라져 다시 수집되지 않는 행은 아래처럼 채웁니다. `body_text`만 바꾸므로 `content_revision`과 기존 요약은 그대로입니다.
+
+```python
+import psycopg
+from pipeline.config import DatabaseSettings
+from pipeline.storage.notices import notice_body_text
+
+with psycopg.connect(DatabaseSettings.from_env().database_url) as conn:
+    rows = conn.execute(
+        "select id, body_html from notices where body_text is null and body_html is not null"
+    ).fetchall()
+    for notice_id, body_html in rows:
+        conn.execute(
+            "update notices set body_text = %s where id = %s "
+            "and body_html is not distinct from %s and body_text is null",
+            (notice_body_text(body_html), notice_id, body_html),
+        )
+```
+
+조회 후 본문 HTML이 바뀌었거나 다른 작업이 평문을 채운 행은 갱신하지 않습니다. 건너뛴 행은 다음 실행에서 최신 원문을 다시 읽어 처리합니다.
+
 함수는 `commit`, `rollback`, 연결 종료를 하지 않습니다. `DatabaseSettings.from_env()`는 DB 연결에 필요한 `DATABASE_URL`만 읽어 검증하므로 API 키 없이도 사용할 수 있습니다. `psycopg.connect(settings.database_url)`로 연결한 뒤 변환된 레코드를 함수에 전달합니다. `collect-one`은 아래의 공지·파일 묶음 저장 함수를 사용합니다.
 
 ## 공지와 파일 함께 저장
@@ -289,7 +322,7 @@ DB에 노원구 공지가 하나도 없으면 **어느 모드든** API 최신 50
 
 `files=[]`는 **본문과 원문 페이지를 정상적으로 수집했는데 파일이 없는 경우**에만 전달해야 합니다. 페이지 요청·파싱이 실패하면 저장 함수를 호출하지 않습니다. 파일 저장 오류가 나면 공지 변경까지 롤백합니다. 함수가 독립 트랜잭션으로 실행되면 정상 종료 시 확정되며, 호출자가 이미 트랜잭션을 열었다면 내부 작업은 savepoint로 묶여 바깥 트랜잭션에 남습니다. `collect-one`도 완전 수집에 성공한 뒤에만 저장합니다.
 
-실제 PostgreSQL 통합 테스트는 현재 **SQL 4개**가 적용된 테스트용 DB에 `PIPELINE_TEST_DATABASE_URL`을 설정한 뒤 실행할 수 있습니다. 테스트는 고유한 게시물 번호를 사용합니다. 저장 계층 테스트는 종료 시 트랜잭션을 롤백하고 CLI·다건 통합 테스트는 확정된 해당 테스트 행만 삭제합니다. 이 변수를 설정하지 않으면 DB 통합 테스트가 건너뛰어지므로, 건너뛴 상태를 저장 검증 완료로 해석하면 안 됩니다.
+실제 PostgreSQL 통합 테스트는 `supabase/migrations`의 **SQL 전체**가 적용된 테스트용 DB에 `PIPELINE_TEST_DATABASE_URL`을 설정한 뒤 실행할 수 있습니다. 테스트는 고유한 게시물 번호를 사용합니다. 저장 계층 테스트는 종료 시 트랜잭션을 롤백하고 CLI·다건 통합 테스트는 확정된 해당 테스트 행만 삭제합니다. 이 변수를 설정하지 않으면 DB 통합 테스트가 건너뛰어지므로, 건너뛴 상태를 저장 검증 완료로 해석하면 안 됩니다.
 
 검증 이력을 구분합니다. SQL 통합 전 최종 구조(당시 5개 SQL)에서 전체 pipeline 테스트 `699 passed, 0 skipped`를 확인했습니다. 통합 후에는 별도 DB 테스트 `39 passed, 0 skipped`와 기존 최종 구조 대비 컬럼·제약·인덱스·RLS 동등성을 확인했습니다. 이번 문서 정리에서 전체 pipeline 테스트를 다시 실행한 것은 아닙니다. 과거 노원구 정책 검증의 `370 passed`와 부분 저장 실험 수치는 당시 이력으로 보존하며 현재 최신 검사 결과와 혼동하지 않습니다.
 
@@ -313,9 +346,168 @@ GitHub 저장소의 Settings → Secrets and variables → Actions에서 아래�
 
 기존 `SUPABASE_URL`·`SUPABASE_SECRET_KEY`는 이 Python 코드의 `psycopg` 연결에 사용되지 않습니다. DB 접속용 계정은 현재 `notices`·`notice_files` 쓰기 권한이 필요하며, 연결 문자열과 비밀번호를 코드·PR·채팅·로그에 붙여 넣지 마세요. 공식 DB 스키마에 필요한 마이그레이션이 이미 적용되었는지도 활성화 전에 확인해야 합니다.
 
-예약 시각은 한국 시간 **09:00·13:00 `new`, 17:00 `refresh`**입니다. GitHub 예약 워크플로는 기본 브랜치의 파일을 기준으로 실행됩니다. `workflow_dispatch`로 `new`/`refresh`를 수동 선택할 수도 있지만, 활성화 변수가 `true`이면 **수동 실행도 공식 DB에 실제 저장**합니다. 실행 전에 Secret 대상 DB를 다시 확인하세요. 두 출처는 각각 실행되며, 한 출처가 부분 실패해도 다른 출처를 시도합니다. 둘 중 하나라도 실패하거나 `complete=false`면 최종 Action은 실패로 표시되고, 각 출처의 결과 JSON에서 이유 코드를 확인할 수 있습니다. 이미 성공한 다른 공지의 DB 저장은 되돌리지 않습니다.
+예약 시각은 한국 시간 **09:00·13:00 `new`, 17:00 `refresh`**입니다. GitHub 예약 워크플로는 기본 브랜치의 파일을 기준으로 실행됩니다. `workflow_dispatch`로 `new`/`refresh`를 수동 선택할 수도 있지만, 활성화 변수가 `true`이면 **수동 실행도 공식 DB에 실제 저장**합니다. 실행 전에 Secret 대상 DB를 다시 확인하세요. 노원·월계1동 및 선택적으로 활성화한 서울시 출처는 각각 실행되며, 한 출처가 부분 실패해도 다른 출처를 시도합니다. 활성화한 출처 중 하나라도 실패하거나 `complete=false`면 최종 Action은 실패로 표시되고, 각 출처의 결과 JSON에서 이유 코드를 확인할 수 있습니다. 이미 성공한 다른 공지의 DB 저장은 되돌리지 않습니다.
 
 현재 워크플로와 Secret은 **코드 연결만 준비한 상태**입니다. 이 작업에서는 `PIPELINE_PRODUCTION_ENABLED`를 켜거나 공식 DB에 접속·저장하지 않았습니다.
+
+## HWP 첨부 본문 텍스트 추출
+
+`attachments/hwp_text.py`의 `extract_hwp_text(file)`은 다운로드 계층의
+`DownloadedAttachment`를 받아 `HwpTextResult`를 반환합니다. `result.attachment`는
+기존 요약기의 `AttachmentText(name, text)` 계약에 맞으며 `NoticeInput.attachments`에
+전달할 수 있습니다. 이 함수 자체는 다운로드·DB 저장·Gemini 호출을 하지 않습니다.
+
+```python
+from pipeline.attachments.download import download_attachment
+from pipeline.attachments.hwp_text import extract_hwp_text
+
+downloaded = download_attachment(file_url, file_name)
+result = extract_hwp_text(downloaded)
+attachment_text = result.attachment
+extraction_warnings = result.warnings
+```
+
+일반 HWP 5.0/5.1의 압축·비압축 본문과 모든 구역의 문단·표 셀 텍스트를 읽습니다.
+미리보기 `PrvText`로 대체하거나 임의로 본문을 자르지 않습니다. 입력 파일은 최대
+50 MiB, DocInfo와 모든 본문 구역을 합친 압축 해제 결과는 기본 20 MiB로 제한합니다.
+제한을 넘거나 파일이 손상되면 `HwpExtractionError.reason_code`로 실패를 구분합니다.
+HWPX·구형 HWP·암호/배포용/변경 추적 문서는 현재 지원하지 않습니다.
+
+표의 행·열 배치는 보존하지 않으며 `table_layout_not_preserved` 경고를 반환합니다.
+문서 안 그림·수식 등의 비텍스트 객체는 추출하지 않고 발견 시
+`nontext_content_not_extracted`로 표시합니다. 특수 사설 영역 문자는 원문 그대로
+남기고 `private_use_characters`로 표시합니다. 따라서 텍스트 추출 성공을 문서 전체의
+시각 정보 확보로 해석하면 안 됩니다. 경고의 최종 요약 정책과 자동 처리 연동은 후속 작업입니다.
+
+실제 노원구 HWP 샘플에서 2,102자를 추출했습니다. 샘플은 표를 포함하므로 배치 손실
+경고가 있었습니다. 자동 검증은 원본 파일을 저장소에 넣지 않고 합성 OLE/HWP 파일로
+정상·손상·압축·구역 누락·용량 제한과 기존 입력 계약 연결을 확인합니다.
+
+본 제품은 한글과컴퓨터의 한글 문서 파일(.hwp) 공개 문서를 참고하여 개발하였습니다.
+
+## DB 원본에서 요약 입력 준비
+
+`storage/summary_source.py`의 `load_summary_source(conn, notice_id)`는 공개 공지 한 건과
+연결된 파일 목록을 한 SELECT로 읽습니다. 없는 공지·숨긴 공지는 `None`을 반환합니다.
+DB 내부 notice_id로 연결하므로 게시판별 post_sn 충돌 없이 조회합니다. 반환 모델에는
+category/source_board/post_sn, file_key와 nullable file_id/file_sn, 조회 당시의
+`content_revision`을 보존합니다. 이 버전을 저장 job에 그대로 전달해야 합니다.
+파일 순서는 file_key/kind/id이며, file_key는 DB 값을 사용하고 가짜 식별자를 만들지 않습니다.
+조회 함수는 저장·commit·연결 종료를 하지 않습니다. 읽기 트랜잭션은 다운로드 전에
+호출자가 종료하고, Gemini 준비에는 연결 없이 반환된 데이터를 사용하세요.
+
+```python
+from datetime import datetime, timezone
+
+import psycopg
+
+from pipeline.attachments.summary_bundle import prepare_summary_source
+from pipeline.storage.summary_source import load_summary_source
+
+# database_url과 notice_id는 호출자가 지정합니다. 공식 DB 쓰기는 없습니다.
+with psycopg.connect(database_url) as conn:
+    source = load_summary_source(conn, notice_id)
+if source is None:
+    raise ValueError("공개 공지를 찾을 수 없습니다.")
+prepared = prepare_summary_source(source, reference_datetime=datetime.now(timezone.utc))
+if prepared.failures:
+    # stage/item_id/reason_code를 기록하고 재처리. 원문·URL·비밀값은 로그에 넣지 않습니다.
+    raise ValueError("요약 가능한 입력 준비 실패")
+# 경고가 있으면 표 배치/내부 그림 등의 정보 손실 정책을 먼저 확인합니다.
+warnings = prepared.warnings
+input_blocks = prepared.to_gemini_input()  # 입력 생성만 함. 실제 API 호출 아님.
+```
+
+`attachments/summary_bundle.py`는 본문 HTML을 텍스트로 바꾸고 HTML의 이미지를
+다운로드하며, DB 파일 목록의 PDF는 원본 바이트, HWP는 `AttachmentText`, PNG/JPEG/WebP는
+이미지 바이트로 준비합니다. 식별자가 없는 서울시 URL 기반 파일도 처리하며, HTML에만
+있는 월계1동 이미지는 기존 허용 주소 규칙 안에서 처리합니다. 노원구 주소에 더해
+HTTPS news.seoul.go.kr·culture.seoul.go.kr의 직접 PDF/HWP/PNG/JPEG/WebP를 허용합니다.
+파일명이 없으면 URL의 명확한 파일명을 사용하고 확장자 없는 endpoint는 추정하지 않습니다.
+news.seoul.go.kr의 HTTP 주소는 수집기와 동일하게 HTTPS로 정규화합니다.
+외부 호스트·그 밖의 서울시 HTTP 주소·리다이렉트·지원하지 않는 형식은 누락으로 보고합니다.
+이는 파일 다운로드이며 서울시 원문 페이지 크롤링이 아닙니다.
+
+본문과 DB 목록의 동일한 정규화 이미지 URL은 준비 실행 내 캐시로 한 번만 요청합니다.
+실패한 URL도 같은 실행에서 재요청하지 않고 각 참조에 실패 코드를 남깁니다.
+다른 URL에서 내려받은 같은 이미지는 캐시에서도 하나의 바이트 객체를 공유합니다. 서울시 장식
+필터를 재사용하며 원본 HTML·DB 파일 목록은 수정하지 않습니다.
+
+`prepared.file_manifest`에는 원문 버전과 원본 파일 행별 처리 결과를 함께 보존합니다.
+같은 URL이나 바이트를 입력 하나로 합쳐도 원본 파일 ID·종류·URL은 모두 남기며,
+PDF·이미지는 실제 `media_N` 블록, HWP는 추출 텍스트 위치와 해시로 연결합니다.
+DB 목록에 없는 본문 이미지는 가짜 파일 ID 대신 원문 공지 링크로 안내합니다.
+과거 DB에 남아 있는 장식 이미지는 다운로드하지 않고 `unread` 및
+`decorative_image_ignored` 경고를 남겨 읽기 성공으로 집계하지 않습니다.
+
+준비 결과를 실제 요약·저장으로 연결할 때는 다음 계약을 사용합니다. 아래 코드는
+Gemini를 호출하고 지정한 DB에 저장하므로 테스트 환경에서 먼저 확인하세요.
+입력 전체를 사용할 수 없는 준비 실패도 job에 전달하면 API 호출 없이 실패를 기록하고
+같은 원문 버전의 기존 요약은 보존합니다. 일부 파일만 읽지 못하면 아래 부분 요약 계약을 따릅니다.
+
+```python
+from pipeline.storage.summary_metadata import build_summary_metadata_from_manifest
+from pipeline.summary_job import summarize_and_save_prepared_notice
+from pipeline.transform.gemini_client import DEFAULT_MODEL
+
+metadata = build_summary_metadata_from_manifest(
+    notice=prepared.notice, file_manifest=prepared.file_manifest, model=DEFAULT_MODEL,
+)
+with psycopg.connect(database_url, autocommit=True) as conn:
+    outcome = summarize_and_save_prepared_notice(
+        conn, prepared, metadata, expected_source_revision=source.content_revision,
+    )
+```
+
+준비 후 원문이나 파일 목록이 변경되면 `superseded`로 종료하며 Gemini를 호출하지 않습니다.
+저장 직전 변경도 버전 검사로 차단합니다. 자동 실행·예약·재시도는 별도 실행 계층의 책임입니다.
+
+지원하지 않는 파일·이름을 판단할 수 없는 일반 첨부·다운로드/추출 실패는 `warnings`와
+`file_manifest.omissions`에 남깁니다. 읽은 본문·첨부가 있으면 해당 범위만 요약하고
+`needs_review`, `deadline_on=NULL`로 저장합니다. 첨부를 하나도 못 읽었으면 `unread`,
+일부 읽었으면 `partial`입니다. DB 행이 없는 본문 이미지 누락도 별도로 검토 상태를 강제합니다.
+Gemini에는 누락 내용을 추측하지 말라는 처리 범위를 전달하고, 결과에는 미확인 안내를 추가합니다.
+제목만 있고 읽은 자료가 없거나 최종 입력 크기가 초과되면 `failures`로 차단합니다.
+원문 버전·파일 연결 정보 검증 오류도 부분 요약으로 우회하지 않습니다.
+`complete=True`는 전송 가능한 입력이 있다는 뜻이며, 전체 자료 읽기 성공을 뜻하지 않습니다.
+
+같은 원문 버전에 기존 결과가 있으면 새 부분 요약으로 교체하지 않는 보수적 정책을 사용합니다.
+최초 부분 요약은 공개할 수 있고, 이후 전체 첨부 준비가 성공하면 갱신할 수 있습니다.
+기존 부분 요약보다 더 많은 자료를 읽은 경우에도 일부 누락이 남아 있으면 기존 결과를 유지합니다.
+재시도 가능 여부와 예약은 별도 실행 계층에서 `reason_code`를 사용해 판단합니다.
+
+이미지 한 장은 10 MiB, 본문 이미지 합계는 `max_body_image_bytes`(기본 50 MiB)로 분리합니다.
+파일별 `max_seconds`는 기본 60초, 공지별 `max_preparation_seconds`는 기본 180초입니다.
+기본 다운로드는 내부 비동기 I/O와 전체 timeout으로 응답 헤더·본문 대기를 취소하고 연결을 닫습니다.
+시간 초과 파일은 `time_limit` 누락으로 남고, 공지 예산을 소진하면 다음 파일을 요청하지 않습니다.
+호출 API는 동기 방식이며, 이미 실행 중인 이벤트 루프 안에서는 별도 스레드에서 요청을 완료합니다.
+외부 `httpx.Client`를 직접 주입한 호환 경로는 호출자의 연결을 강제로 닫지 않으며 요청·청크 경계에서
+단조 시계로 시간을 검사하고 요청 timeout을 남은 시간 이하로 제한합니다. 이 경로의 실행 중 I/O
+취소는 클라이언트 소유자의 책임입니다. 운영 시 전체 대기 취소가 필요하면 기본 경로를 사용하세요.
+
+`max_input_bytes`는 기본 50 MiB의 로컬 안전 한도로, 다운로드 보관량과 최종 JSON 입력의
+텍스트·Base64 크기를 제한합니다. Gemini 모델별 실제 한도와 호출 비용을 보장하는 값은
+아닙니다. 반환 블록은 기존 `media_input.py` 계약을 사용합니다. 최신 develop에는
+PDF·이미지 입력을 받는 요약 경로가 추가됐습니다. #13 준비 계층에서 조원의
+입력 검증 함수까지 실제 자료로 확인했으며, Gemini 전송·응답은 별도입니다. 추출 텍스트·파일을 DB에 다시
+저장하거나 새 테이블·환경 변수·예약 실행을 추가하지 않았습니다.
+
+현재 호환 회귀는 `tests/unit/attachments/test_summary_bundle_manifest.py`에서 중복 파일 연결, HWP 텍스트 해시,
+본문 이미지 원문 링크, 준비 실패와 원문 버전 변경을 검증합니다. 전용 로컬 PostgreSQL에서
+실제 원본 조회→입력 준비→요약 job→결과·파일 연결 저장도 검증하며,
+이 테스트의 다운로드와 Gemini 응답은 대역을 사용합니다.
+추가 회귀는 `tests/unit/attachments/test_attachment_recovery.py`에서 URL 오류 격리, 캐시 공유, 이미지 합계 예산,
+시간 예산, 부분 요약 저장·재조회·복구·기존 결과 보존을 검증합니다.
+2026-10-08 검증: develop `edc975b` 통합 상태에서 pipeline **3559 passed**, DB 스키마
+**506 passed**, 모두 **0 skipped**. 공유 URL 정규화 변경 후 관련 회귀도 통과했습니다.
+기본 다운로드의 헤더·본문 대기 취소는 비동기 HTTP 대역으로, 저장·권한은 로컬 PostgreSQL로
+확인했으며 실제 Gemini 유료 호출이나 운영 DB 변경은 수행하지 않았습니다.
+
+실제 추가 검증(2026-10-06): 전용 DB 저장·조회·롤백 후 월계1동 PDF, 복구된 노원구 PNG,
+서울시 JPEG를 다운로드해 `prepare_gemini_request()`까지 통과했습니다. 별도로 월계1동
+공지 `20260102161718470`의 HWP 2개에서 1,466자·1,212자를 추출했고 이미지 5개·PDF 1개도
+입력 준비에 포함했습니다. HWP 표 배치 손실 경고는 유지했고 모든 DB 변경은 롤백했습니다.
+이는 실제 Gemini 호출·요약 정확도·결과 저장 검증이 아닙니다.
 
 ## Gemini 요약 저장 계약
 
@@ -368,6 +560,37 @@ API 호출 중 DB 잠금을 유지하지 않도록 autocommit 연결을 권장�
 `attempt_count`는 저장이 적용된 요약 실행의 누적 횟수이며 성공 후 초기화하지 않습니다.
 내부 재요청·HTTP 전송 횟수와 다르며 기본 job의 `superseded` 종료는 세지 않습니다.
 외부에서 같은 실행의 `pending`을 `attempt_increment=1`로 기록했다면 job에는 `attempt_increment=0`을 전달합니다.
+
+### 같은 원문의 재요약에서 정보 보존 (#40)
+
+응답이 형식 검사를 통과해도 같은 원문의 기존 정보를 지우는 후보는 자동 교체하지 않습니다.
+DB의 UPSERT 행 잠금 안에서 기존 행과 후보를 비교하며 다음 중 하나라도 해당하면 보존합니다.
+
+- 기존 대상·행동·장소·발행처·지역·분류 등 채워진 값이 빈 값이나 `unknown`으로 바뀜
+- 기존 대상·기한·행동·유의사항 카드가 비어짐
+- 일정 종류별 항목 수나 시작일·종료일·시각의 채워진 값 수가 줄어듦
+- 유의사항·주제 수, 근거가 연결된 필드 집합이 줄어듦(해소된 불확실성의 근거 제외)
+- 기존 정렬 마감일 또는 파일 연결 manifest가 사라짐
+
+보존할 때는 기존 결과·카드·상태·마감일·근거·파일 연결·생성 메타데이터를 **통째로** 유지합니다.
+새 후보의 일부 필드를 기존 결과와 섞지 않습니다. `attempt_count`, `updated_at`과 비공개
+`last_error_code='summary_information_loss'`만 갱신하며, 이 코드는 자동 재시도 지시가 아닙니다.
+반환값의 `information_loss_prevented=True`로 이 결정을 구분할 수 있습니다. 반환값의 `result`는
+생성된 후보이므로, 앱은 commit 이후 DB를 다시 조회해야 합니다. 반환되는 `status`,
+`deadline_on`, `generated_at`은 실제 저장된 행의 값입니다. 보정·첨부 준비 실패에 따른
+기존 결과 보존은 별도 처리이며 이 플래그로 표시하지 않습니다.
+
+기존 결과가 없는 최초 부분 요약은 저장할 수 있고, 정보가 줄지 않는 문구·날짜 수정이나
+정보 보완도 허용합니다. 원문이 바뀌면 기존 버전 무효화 규칙을 따릅니다. 실행 토큰이 있는
+경로는 원문 버전을 기준으로 판단하므로 입력 해시만 달라져도 보호합니다. 토큰 없는 기존
+저수준 호출은 해시가 같은 경우만 보호하므로 실제 연동은 위 job 경로를 사용하세요.
+
+이 정책은 정보가 채워진 범위를 비교하며 문장의 의미·정확도까지 판정하지는 않습니다.
+같은 개수의 항목을 다른 내용으로 바꾸거나 기존 오류를 삭제해야 하는 상황은 별도 검토가
+필요합니다. 검토자용 강제 교체 기능은 포함하지 않습니다.
+
+코드가 DB 함수 `summary_information_loss`를 호출하므로, 이 함수를 만드는
+`supabase/migrations/20260922053902_notice_summaries.sql`을 코드보다 먼저 적용합니다. 자동 검증에서는 임시 PostgreSQL에만 적용하며 공식 DB 적용은 별도입니다.
 
 ### 분야 코드
 
@@ -437,7 +660,8 @@ payload = view.model_dump(mode="json")
 
 ### 파일 근거 링크
 
-#13 파일 준비 결과에 선택적 `file_manifest: PrivateSummaryFileManifest`를 제공합니다.
+#13의 `prepare_summary_source()`는 항상 `file_manifest: PrivateSummaryFileManifest`를 제공합니다.
+기존 외부 준비기와의 호환을 위해 요약 job 자체에서는 이 필드가 선택적입니다.
 `transform.summary_files`의 계약은 원문 URL·조회 당시 `content_revision`, 원본 파일
 행별 ID·`file_key`·종류·URL·처리 결과, 실제 전송 블록의 위치·`media_N`·SHA-256을
 묶습니다. 추출 텍스트는 `NoticeInput.attachments`의 위치와 텍스트 SHA-256으로 연결합니다.
@@ -448,16 +672,537 @@ payload = view.model_dump(mode="json")
 
 저장 시 현재 원문 버전과 전체 파일 목록을 대조하며 요약과 연결 정보를 함께 씁니다.
 `file_manifest`는 비공개이고 앱은 자동 생성된 `file_references`만 조회합니다.
+앱은 `preparation_omissions`도 조회할 수 있습니다. 항목은 `notice_file_id`(본문 이미지는 null),
+`url`(등록 파일의 원본 URL 또는 원문 공지 URL), 안전한 `reason_code`만 포함합니다.
+모델이 만든 필드가 아니며 해시·파일 키·상세 예외는 노출하지 않습니다.
+`build_notice_summary_view(..., preparation_omissions=row["preparation_omissions"])`로
+전달하면 미확인 자료 안내와 링크가 응답에 포함됩니다. 화면은 reason code를 사용자 문구로
+변환해 표시해야 합니다. 기존 결과를 유지하면 누락 안내도 기존 결과 기준으로 유지하며,
+원문 변경으로 결과가 무효화되면 공개 누락 정보도 NULL이 됩니다.
 처리 실패나 기존 요약을 유지하는 보정 실패는 기존 링크도 유지합니다.
 파일 목록에 없는 본문 이미지는 **“원문에서 확인”**과 원문 공지 링크를 제공합니다.
 PDF·이미지 좌표는 제공하지 않습니다. 준비 결과에 연결 정보가 없는 기존 호출은
-요약을 유지하며 파일 링크를 만들어내지 않습니다. 실제 #13 준비기의 계약 제공은
-별도 연결 작업이 필요합니다.
+요약을 유지하며 파일 링크를 만들어내지 않습니다.
 
 현재 한계: 카드의 조건 검사는 모든 의미 오류를 잡아내지 못합니다. `source_hash`에는
 제목과 PDF·이미지 바이트가 포함되지 않아 같은 파일 URL의 내용 변경을 감지하지 못할 수
 있습니다. 수집·파일 준비에서 이 job으로 이어지는 자동 연결과 모바일 표시·강조는
 별도 구현이 필요합니다.
+
+## 공지 ID로 요약 실행
+
+`pipeline summarize-one --notice-id <id>`는 DB에 저장된 공지 하나를 요약해 저장하고, 커밋된 행에서
+앱이 읽을 공개 결과를 다시 만들어 JSON 한 줄로 출력합니다. 기존 준비, 검증, 저장 함수를 순서대로
+연결할 뿐 새 판정 로직은 없습니다. 쉬운말 변환은 별도 기능(`collect --easy-text`)이며 이 명령의
+보고에 섞지 않습니다.
+
+```powershell
+python -m uv run pipeline summarize-one --notice-id 123
+```
+
+필요한 설정은 `DATABASE_URL`과 `GEMINI_API_KEY`입니다. `GEMINI_API_KEY`가 환경변수에 없으면
+`services/pipeline/.env`에서 읽습니다. 둘 중 하나라도 없으면 DB에 아무것도 쓰지 않고 exit code 2로
+끝납니다.
+
+### 실행 단계와 트랜잭션 책임
+
+| 순서 | 단계 | DB 연결 |
+| --- | --- | --- |
+| 1 | `load_summary_source`: 본문, 파일, `content_revision`을 한 문장으로 읽음 | 짧은 autocommit 연결, 읽고 바로 닫음 |
+| 2 | `prepare_summary_source`: 첨부 다운로드와 입력 준비 | 연결 없음 |
+| 3 | `build_summary_metadata_from_manifest` | 연결 없음 |
+| 4 | `summarize_and_save_prepared_notice`: 실행 토큰 등록, Gemini, 결과 또는 실패 저장 | autocommit 연결. 토큰 등록은 즉시 커밋되어 Gemini 호출 중 열린 트랜잭션이 없고, 결과 저장은 저장 함수가 자체 트랜잭션으로 커밋 |
+| 5 | `load_stored_summary` → `build_notice_summary_view` | 새 연결로 커밋된 행만 읽음 |
+
+1단계에서 읽은 `content_revision`을 그대로 `expected_source_revision`으로 넘기므로, 준비 중이나
+Gemini 호출 중 원문, 파일 목록이 바뀌거나 같은 공지의 더 최신 실행이 시작되면 결과를 저장하지 않고
+`superseded`로 끝납니다. 준비 기준 시각(`reference_datetime`)과 저장 시각(`generated_at`)은 모두
+`pipeline.clock.now()`에서 얻습니다.
+
+### Gemini 호출 횟수와 비용
+
+- 한 작업의 논리 호출은 최대 2회이며, 형식·내용 보정은 최대 1회입니다. 실제 HTTP 시도도 최대
+  2회이고 통신 재시도와 보정이 이 한도를 함께 사용합니다. 첫 호출에서 일시 오류로 HTTP 시도를
+  두 번 사용했다면 추가 보정은 보내지 않고 이미 확보한 유효 후보를 기존 보존 규칙으로 처리합니다.
+- `gemini_requests`는 논리 호출 수, `gemini_http_attempts`는 HTTP 전송 시도 수입니다.
+  `gemini_called`는 HTTP 시도 수가 0보다 큰지 나타냅니다. 전송 전 시간 초과라면 논리 호출이
+  있어도 HTTP 시도는 0일 수 있으며, 이 수치는 제공자의 실제 과금 내역을 대신하지 않습니다.
+- 공지 없음, 비공개 공지, 읽을 본문과 첨부가 없음, 설정 오류, 이미 오래된 입력이면 Gemini를 호출하지
+  않습니다.
+- 첨부 PDF와 이미지는 입력 토큰에 포함되어 본문만 있는 공지보다 비용이 큽니다.
+
+### Gemini 전체 시간 예산과 재시도
+
+`GEMINI_EXECUTION_TIMEOUT_SECONDS`는 공지 한 건의 요약 또는 쉬운말 작업에 적용하는 AI 처리
+예산이며 기본값은 **120초**입니다. 유한한 양수만 허용하고 빈 값, 0, 음수, `nan`, `inf`는 설정
+오류입니다. 두 기능을 독립 작업으로 순서대로 실행하면 기본 AI 처리 예산의 합계는 **240초**입니다.
+현재 수집 후 자동 처리는 쉬운말만 실행하며, 요약 자동 실행·재처리 예약은 추가하지 않습니다.
+
+요약의 첨부 준비가 끝난 뒤 예산을 시작합니다. 최초 요청, SDK 시작과 입력 전달, 통신 재시도 대기,
+응답 검증과 보정은 같은 monotonic 종료 시각을 사용합니다. 요청마다 120초로 초기화하지 않습니다.
+시간 설정은 프로세스 환경 변수를 우선하고, 없으면 로컬 `.env`에서 읽습니다.
+기본 AI 예산은 요약 실행 토큰의 DB 등록 이후 시작합니다. 호출자가 전달하거나
+이미 활성화된 예산의 종료 시각은 재설정하지 않습니다.
+DB 조회·저장과 첨부 다운로드는 이 AI 예산으로 강제 종료하지 않으므로 전체 명령의 실행 시간과는
+구분합니다. Python 호출자는 `ExecutionBudget(timeout_seconds=...)`를 전달하거나 같은 작업의
+여러 호출을 `execution_budget(...)`로 감싸 예산을 공유할 수 있습니다. 공유한 예산의 HTTP·논리
+호출 한도도 누적되므로 요약과 쉬운말을 하나의 기본 예산에 묶으면 두 기능에 각각 2회가 주어지지
+않습니다.
+
+Gemini 통신은 DB를 소유하지 않는 자식 프로세스에서 실행합니다. 부모는 종료 정리 시간을 먼저
+확보하고 시간 소진 시 프로세스를 종료·회수합니다. Windows의 큰 stdin 전달 중 멈춤도 별도
+watchdog가 끊으며, 함수가 반환될 때 이 로컬 통신 작업이 남지 않습니다. 종료 시각 이후 응답은
+새 성공 결과로 채택하지 않습니다. 원격 제공자가 이미 접수한 추론의 취소까지 보장하는 것은 아닙니다.
+자식이 부모로 전달하는 응답 프로토콜은 UTF-8 기준 4 MiB로 제한합니다. 초과 응답은
+`response_incomplete` 실패로 처리하고 기존 결과를 보존합니다.
+
+SDK 자동 재시도는 두 API 모두 끕니다. Interactions의 `attempts=1`은 현재 잠긴 SDK에서
+"HTTP 1회"를 뜻하지 않으므로 `gemini_sdk_adapter`에 호환 처리를 격리했습니다. SDK를 올릴 때는
+실제 HTTP 횟수를 검증하는 계약 테스트를 함께 실행해야 합니다.
+
+재시도 가능한 오류는 남은 시간과 HTTP 한도가 모두 허용할 때만 재호출합니다.
+`Retry-After`의 초·HTTP 날짜와 `retry-after-ms`를 읽으며 여러 값이 있으면 더 늦은 시각을
+따릅니다. 서버가 요구한 대기를 줄이지 않습니다. 이번 예산 안에 기다릴 수 없으면 즉시 종료하고
+`execution_failure.retry_at`에 UTC 재시도 가능 시각을 전달합니다.
+
+`execution_failure`는 `reason_code`, `failure_kind`(`deadline`, `transient`, `permanent`,
+`deferred`), `retryable`, `retry_at`, `status_code`만 담습니다. 원문, 키, HTTP 헤더나 제공자
+오류 본문은 포함하지 않습니다. DB에는 기존 오류 코드만 저장하므로 이번 변경에 마이그레이션은
+없습니다. 상세 실행 정보·재시도 시각은 실행 결과이며, 재시작 이후에도 예약을 유지할 작업 저장소와
+스케줄러는 후속 범위입니다.
+
+보정이 실패해도 같은 원문의 기존 정상 결과를 보존합니다. 기존 결과가 없고 이미 검증한 요약
+후보가 있으면 `needs_review`로 보존합니다. 유효하지 않은 쉬운말 응답은 성공으로 저장하지
+않습니다. 보존한 결과와 이번 실패를 구분하므로 요약은 `execution_status=failed`와
+`stored_status=summarized` 또는 `needs_review`를 함께 반환할 수 있습니다.
+
+수집 결과의 `easy_text`에도 두 요청 카운터와 API 실패별 `execution_failure`가 포함됩니다.
+`notice-glossary`는 성공 결과 JSON 형식을 유지하고 실행 카운터를 stderr의 JSON으로 출력합니다.
+API 실패 시 stdout에 성공 결과를 출력하거나 기존 결과 파일을 덮어쓰지 않고 stderr에 안전한
+실행 실패 정보를 출력합니다.
+
+### 출력 JSON
+
+| 필드 | 의미 |
+| --- | --- |
+| `notice_id` | 처리한 공지 ID |
+| `execution_status` | 이번 실행 결과: `summarized`, `needs_review`, `failed`, `superseded`, `not_found`, `storage_failed` |
+| `stored_status` | 실행 후 새 연결로 다시 읽은 `notice_summaries.status`. 행이 없거나 확인하지 못했으면 `null` |
+| `public_result` | 앱이 읽을 요약 내용(`view.content`)이 있는지 |
+| `attachment_status` | 이번 실행이 읽은 첨부 범위: `none`, `all_read`, `partial`, `unread`. 공지를 찾지 못했으면 `null` |
+| `reason_code` | 실패나 검토 사유 코드. 없으면 `null` |
+| `gemini_called` | 이번 실행에서 Gemini 요약 요청을 보냈는지 |
+| `gemini_requests` | 논리 요약 호출 수 |
+| `gemini_http_attempts` | 실제 HTTP 전송 시도 수. 재시도 포함 |
+| `execution_failure` | 이번 실행의 안전한 실패·재시도 정보. 없으면 `null` |
+| `view` | 커밋된 행으로 만든 공개 응답(`build_notice_summary_view`). 행이 없으면 `null` |
+
+이번 실행이 실패해도 기존 정상 결과가 남아 있으면 `stored_status`, `public_result`, `view`는 그 행을
+기준으로 보고합니다. 예를 들어 Gemini 타임아웃이면 `execution_status`는 `failed`, `stored_status`는
+`summarized`, `public_result`는 `true`입니다.
+
+| `execution_status` | `reason_code` |
+| --- | --- |
+| `summarized` | `null` |
+| `needs_review` | `attachments_partial`, `attachments_unread`(첨부를 다 읽지 못함), `summary_review_required`(근거, 불확실성 등 요약 판정) |
+| `failed` | 이번 실행의 실패 코드. 예: `api_timeout`, `api_error`, `response_validation_failed`, `input_preparation_failed`. 기존 결과를 보존하면 저장된 `last_error_code`와 다를 수 있음 |
+| `superseded` | `summary_execution_superseded` |
+| `not_found` | `notice_not_found_or_hidden` |
+| `storage_failed` | `db_unavailable`(시작 전 연결 실패), `summary_storage_failed` 등 저장 오류 코드, `summary_read_failed`(저장 후 재조회 실패) |
+
+읽을 본문과 첨부가 모두 없는 공지는 입력 준비 단계에서 `no_content` 실패로 처리되어 Gemini 호출 없이
+`failed`, `input_preparation_failed`로 기록됩니다.
+
+### exit code
+
+| exit code | 경우 |
+| --- | --- |
+| 0 | `summarized` 또는 `needs_review`로 저장 완료 |
+| 1 | `failed`: 준비 실패, Gemini 실패, 응답 검증 실패가 기록됨 |
+| 2 | 인자 또는 설정 오류. DB에 쓰지 않음 |
+| 3 | `not_found`: 공지가 없거나 `is_visible = false` |
+| 4 | `superseded`: 처리 중 원문 변경 또는 더 최신 실행 시작. 결과를 저장하지 않음 |
+| 5 | `storage_failed`: DB 연결, 저장, 재조회 실패. 성공으로 보지 않음 |
+
+### 실패 후 확인할 상태
+
+```sql
+select status, last_error_code, attempt_count, attachment_status, generated_at, updated_at
+from notice_summaries where notice_id = 123;
+```
+
+- `failed`: 기존 정상 결과가 있으면 `status`와 `result`는 그대로이고 `last_error_code`,
+  `attempt_count`만 바뀝니다. 일시적인 오류(`api_timeout`, `api_error`)면 다시 실행합니다.
+- `superseded`: 원문이 바뀐 경우 기존 요약은 DB 트리거가 이미 무효화했습니다. 다시 실행하면 새 원문으로
+  요약합니다.
+- `storage_failed`: 결과가 커밋됐는지 확인할 수 없거나 커밋되지 않았습니다. DB 상태를 확인한 뒤 다시
+  실행합니다. 같은 원문이면 다시 실행해도 안전합니다.
+
+### 앱이 읽는 결과 (#34)
+
+앱(anon)은 `notice_summaries`에서 `notice_id`, `status`, `category`, `category_code`, `deadline_on`,
+`result`, `attachment_status`, `generated_at`, `card_summaries`, `file_references`,
+`preparation_omissions`만 읽을 수 있습니다. `source_hash`, `model`, `prompt_version`,
+`attempt_count`, `last_error_code`, `file_manifest`는 공개하지 않습니다. 이 명령의 `view`는 같은
+행으로 만든 화면용 응답이며 다음 필드를 가집니다.
+
+| 필드 | 내용 | 값이 없을 때 |
+| --- | --- | --- |
+| `status` | `summarized`, `needs_review`, `pending`, `failed`. 읽지 못한 자료가 있으면 `needs_review` | 항상 있음 |
+| `message` | 상태 안내 문구. 예: "원문 확인 요함", "읽지 못한 자료가 있어요. 원문을 확인하세요." | `summarized`면 `null` |
+| `content` | `headline`(한 줄 요약), `cards`(`audience`, `deadline`, `action`, `notes`), `metadata` | `pending`, `failed`, 내용 없는 검토 행이면 `null` |
+| `text_highlights` | 카드 문장의 원문 근거 위치 | 저장된 행이 이번 실행과 다른 원문에서 만들어졌으면 키가 없음. 내용이 없으면 `null` |
+| `file_references` | 근거로 쓴 첨부의 공개 링크 | 행의 값이 NULL이면 키가 없음. 빈 배열 가능 |
+| `preparation_omissions` | 읽지 못한 첨부(`notice_file_id`, `url`, `reason_code`) | 행의 값이 NULL이면 키가 없음. 빈 배열 가능 |
+
+이 응답을 읽는 쪽은 위 세 필드의 키가 없는 경우를 빈 값과 같게 처리해야 합니다.
+
+### 재사용 계약
+
+재처리나 예약 실행은 공지마다 `pipeline.summary_run.summarize_one(database, notice_id, *, api_key,
+model=DEFAULT_MODEL)`을 호출합니다.
+
+- 반환값 `SummaryRunResult`는 위 출력 필드를 가지며 `report()`가 JSON용 dict, `exit_code`가 위 표의
+  값을 돌려줍니다.
+- 함수가 자체 연결을 열고 닫으므로 호출자는 트랜잭션을 갖지 않습니다. 환경변수는 읽지 않으니 설정은
+  호출자가 확인해 넘깁니다.
+- DB 오류는 예외 대신 `storage_failed`로 돌려줍니다. 잘못된 `notice_id`는 `ValueError`, 잘못 저장된
+  데이터(검증을 통과하지 못하는 원문 URL 등)와 프로그래밍 오류는 예외를 그대로 올립니다.
+- 대상 선택, 예약 실행, 자동 재시도는 이 함수 밖의 별도 작업입니다.
+
+## 수집 후 4카드·쉬운말 자동 처리 (#62)
+
+기본 `collect` / `collect-one`은 **원문만 저장**합니다. `--process-ai`를 주면 원문 수집과
+커밋을 모두 끝내고 수집 연결을 닫은 뒤, #61 실행기가 #41 `summarize_one`과 쉬운말 서비스를
+독립 실행합니다. 특정 공지의 AI 지연이 같은 수집 호출의 다른 원문 저장을 막지 않습니다.
+`--easy-text`는 기존 쉬운말·사전만 실행하는 호환 옵션이며 `--process-ai`와 함께 쓸 수 없습니다.
+
+```bash
+# 원문만 수집 (기본)
+pipeline collect --source nowon --mode new
+# 수집 + 두 AI 자동 처리, 기능별 최대 100건 (기본)
+pipeline collect --source nowon --mode new --process-ai
+pipeline collect --source wolgye1 --mode refresh --process-ai
+pipeline collect --source seoul --source-board 25 --mode new --process-ai
+pipeline collect-one --source seoul --source-board 25 --process-ai
+# 기능별 처리 상한 조정 (1~10000)
+pipeline collect --source nowon --mode refresh --process-ai --processing-limit 20
+# 원문을 다시 수집하지 않고 저장된 공지의 누락·실패 후처리 복구
+pipeline process-stored --source nowon --limit 20
+pipeline process-stored --source nowon --feature easy_text --limit 20
+```
+
+DB와 해당 출처 API 설정 외에 `GEMINI_API_KEY`가 필요합니다. 설정 오류는 수집 전에 exit 2로
+종료합니다. 사전 후보가 있는 쉬운말에는 기존 #54의 `STDICT_API_KEY`도 사용합니다. 쉬운말 저장이
+성공한 뒤 사전 연결을 시도하며 사전 실패가 저장된 AI 결과를 취소하지 않습니다.
+
+새 공지가 0건이어도 **같은 출처의 전체 공개 공지** 중 누락·원문 변경·재시도 시각이 지난 작업을
+찾습니다. `collect-one`의 ID도 처리 대상 전체를 제한하지 않습니다. 출처는 nowon / dong(월계1동) /
+seoul 단위이며 서울시의 선택한 게시판 외 기존 서울 공지도 재처리 대상입니다. 현재 버전의 정상
+캐시는 API를 호출하지 않습니다. 재시도 시각·점유·횟수 제한·늦은 저장 방지는 #61에 맡깁니다.
+`blocked`/`exhausted` 수동 복구는 아래 `process-pending --retry` 절차를 사용하세요.
+
+본문 없는 쉬운말은 `skipped/no_body_text`, 요약할 본문·지원 파일이 없는 4카드는 기존 입력
+준비기의 `blocked/input_preparation_failed`로 기록하며 성공 생성 건수에 포함하지 않습니다.
+파일 전용 요약은 기존 입력 준비기가 판단합니다. 미지원/읽기 실패 파일은 기존 사유 코드와
+`preparation_omissions` 또는 실패 상태를 유지합니다. 모든 경우 원문과 파일을 삭제하지 않습니다.
+
+출력의 최상위 `complete`·`saved_count`는 **원문 수집 결과**입니다. `summary`와 `easy_text`는
+각각 실제 실행한 `attempted_count`, `succeeded_count`, `skipped_count`, 실패 `records`를 제공합니다.
+`readiness`는 해당 출처 전체의 현재 결과/작업 상태 집계입니다. 유효 캐시는 `ready`, 입력 없음은
+`skipped`, 처리 상한 초과·재시도 대기·실패는 `pending/retry_wait/blocked/...`로 구분합니다.
+남은 작업이 있으면 그 기능의 `complete=false`이므로 API 호출 0회가 생성 완료를 뜻하지 않습니다.
+원문 또는 기능·사전 처리가 불완전하면 exit 1, 모두 완료(이유 있는 건너뜀 포함)면 exit 0입니다.
+사전은 Gemini 작업과 별도로 현재 쉬운말의 미완료 연결을 조회합니다. 조회 대기 시간이 끝난
+재시도 가능 단어와 누락 연결을 최대 `limit`건 처리하며, 영구 실패·대기 중 작업은 호출하지
+않습니다. `dictionary_remaining_count`에는 상한 밖·대기·영구 실패도 포함하므로 남아 있으면
+완료로 보고하지 않습니다. 완료된 사전 연결은 재작성하지 않습니다.
+
+예를 들어 요약 시간 초과 후 쉬운말만 성공한 경우의 출력 발췌:
+
+```json
+{
+  "saved_count": 1,
+  "complete": true,
+  "summary": {
+    "complete": false,
+    "attempted_count": 1,
+    "succeeded_count": 0,
+    "retry_wait_count": 1
+  },
+  "easy_text": {
+    "complete": true,
+    "attempted_count": 1,
+    "succeeded_count": 1
+  }
+}
+```
+
+두 보고서의 `published`는 처리 종료 후 **별도 연결에서 anon 역할로** #58의
+`app_notice_detail`을 다시 읽은 최종 `id/display_status/has_easy_text/url`입니다. 프론트 #34는
+`app_notice_list` / `app_notice_detail` 계약을 그대로 사용합니다. 결과가 없는 공지도 목록·원문
+링크로 접근하며, private 작업 큐나 모델 메타데이터를 공개 view에 추가하지 않습니다.
+최종 조회 실패 시 `published=null`, `published_error_code=published_read_failed`와 exit 1을
+반환하되, 이미 저장된 결과 및 기능별 실행 건수·기록은 보존합니다.
+
+### backend 적용 순서
+
+이 통합은 #60·#61·#54와 #58 공개 조회 계약을 함께 반영합니다. 서로 다른 브랜치에서
+사용한 `20261008150000` 번호 충돌을 해소하기 위해 앱 view의 기존 번호를 유지하고,
+사전 캐시 SQL은 내용 변경 없이 `20261008160000_standard_dictionary_cache.sql`로 옮겼습니다.
+기존 backend DB에는 이력 조정이 필요할 수 있으므로 [DB 전환 절차](../../supabase/README.md#pr-74-기존-db-전환)를 먼저 확인합니다.
+**필요한 migration을 먼저 적용하고 pipeline을 배포**하세요. 기존 공지 `body_text`는
+아래 백필 절차 또는 재수집으로 채웁니다. 원격 DB에는 자동 적용하지 않습니다.
+
+GitHub Actions는 기존 `PIPELINE_PRODUCTION_ENABLED=true`일 때만 작동합니다.
+활성화된 모든 출처의 원문 수집을 먼저 마친 뒤 `process-stored`를 출처별로 실행합니다.
+`PIPELINE_AI_PROCESSING_ENABLED=true`이면 두 AI 기능을, 그렇지 않고
+`PIPELINE_EASY_TEXT_ENABLED=true`이면 쉬운말·사전만 처리하며, 둘 다 없으면 원문만 수집합니다.
+출처별 요약과 쉬운말·사전은 별도 단계로 실행하며 각각 최대 5건, 20분입니다.
+원문 수집은 출처별 10분, 전체 job은 180분으로 제한합니다. 요약의 지연·실패가
+쉬운말 단계의 실행 시간을 소진하지 않습니다. 같은 운영 workflow는 동시 실행하지 않고,
+진행 중인 실행을 새 실행으로 취소하지 않습니다. 중단된 작업은 #61의 점유 만료 후 복구합니다.
+배치 상한 이후 남은 작업·재시도 대기·중단 상태가 있으면 완료로 표시하지 않습니다.
+따라서 정상 배치가 일부를 처리했어도 backlog가 남으면 Actions가 실패로 표시될 수 있습니다.
+
+필수 Secrets는 원문 수집용 `PIPELINE_DATABASE_URL`, 노원용 `NOWON_NOTICE_API_KEY`입니다.
+서울 수집은 `PIPELINE_SEOUL_ENABLED=true`와 `SEOUL_NEWS_API_KEY`가 필요하며 게시판 25를
+처리합니다. 요약 단계에는 `GEMINI_API_KEY`, 쉬운말·사전 단계에는 여기에 `STDICT_API_KEY`가
+추가로 필요합니다. 각 단계가 필요한 설정을 검사하므로 AI 키 누락은 원문 수집을 막지 않고,
+사전 키 누락은 요약을 막지 않습니다. 실패한 단계 뒤에도 다른 단계는 실행합니다.
+두 AI 옵션을 켜도 각 기능은 한 번씩 실행됩니다. 실행 요약 표는 활성화된 단계의
+성공·실패·미실행을 집계하며, 비활성화된 기능은 처리 성공을 의미하지 않습니다.
+키 값은 출력하지 않습니다. 이 변경은 Repository Variable이나 운영 DB를 변경하지 않습니다.
+
+### 예약 실행 배포·복구 (#63)
+
+- 예약 시간은 UTC 00·04·08시, KST 09·13·17시입니다. 17시는 `refresh`, 나머지는 `new`입니다.
+  수동 실행도 같은 workflow에서 `mode`만 선택합니다.
+- 기본 브랜치 `main`에 반영되어야 예약 실행이 바뀝니다. 이 작업 브랜치는 #62가 통합된
+  `backend`에서 시작했습니다. 통합 시 최신 `develop`과의 차이를 검토하고, 선행 코드·migration을
+  함께 포함한 `develop` → `main` 배포 PR로 진행합니다. workflow만 옮기지 않습니다.
+- 최신 migration 적용 후 `PIPELINE_PRODUCTION_ENABLED=true`로 원문 수집을 활성화합니다.
+  `PIPELINE_AI_PROCESSING_ENABLED=true`는 요약·쉬운말·사전, `PIPELINE_EASY_TEXT_ENABLED=true`는
+  AI 통합 옵션이 꺼졌을 때 쉬운말·사전만 활성화합니다. 없는 옵션은 비활성으로 취급합니다.
+- 전체 중지는 `PIPELINE_PRODUCTION_ENABLED=false`, AI만 중지는 두 AI 옵션을 `false`로 합니다.
+  설정 변경은 진행 중 실행을 중지하지 않으므로 긴급 중지 시 Actions 실행도 취소합니다.
+  재활성화는 키·DB 상태를 확인한 후 원래 옵션을 복원하고 수동 실행합니다.
+- 일시 실패나 시간 초과 후에는 retry 시각·점유 만료 이후 다시 실행합니다. 신규 공지가 없어도
+  저장된 공지에서 처리 대상을 찾습니다. 영구 오류·재시도 소진은 아래 #61 절차로 원인을
+  해결한 뒤 명시적으로 재시도합니다. 기존 정상 결과를 지워서 재시도하지 않습니다.
+- 배포 증거는 수동 실행과 실제 예약 실행 각각의 커밋 SHA·Actions URL·공지 ID·요약/쉬운말
+  상태·`anon` 역할의 `app_notice_detail` 조회 결과로 남깁니다. 신규 0건 복구도 확인합니다.
+  로컬 테스트나 수동 실행만으로 #63을 완료 처리하지 않습니다.
+
+검증: `tests/e2e/cases/collect_ai_{nowon,wolgye1,seoul}`은 실제 PostgreSQL과 API 대역으로
+신규 생성→캐시 재사용→원문 변경·요약 시간 초과→대기→복구→쉬운말 실패→복구 및 anon 조회를
+검사합니다. unit/storage는 출처별 점유, 빈 수집, 입력 없음, 기능별 실패 격리와 #60·#61의
+시간 제한·경쟁·취소 보호를 검사합니다.
+
+## 누락·실패·원문 변경 후처리 재실행 (#61)
+
+`process-pending`은 이미 저장된 전체 공개 공지에서 현재 4카드 요약 또는 쉬운말 결과가 없는 작업을
+선택합니다. 최근 수집 목록이나 신규 수집 건수에 의존하지 않습니다. 기존 `DATABASE_URL`과
+`GEMINI_API_KEY`를 사용하며, 위 재처리 마이그레이션을 먼저 적용해야 합니다.
+
+```bash
+# API 호출과 DB 변경 없이 대상 확인. GEMINI_API_KEY 불필요
+uv run pipeline process-pending --limit 20 --dry-run
+
+# 최대 20개 기능 작업 실행. 공지 하나의 두 기능은 각각 1개로 계산
+uv run pipeline process-pending --limit 20
+uv run pipeline process-pending --feature easy_text --notice-id 123
+
+# 원인을 해결한 뒤 중단된 특정 작업만 다시 허용
+uv run pipeline process-pending --feature summary --notice-id 123 --retry-stopped
+```
+
+요약은 `content_revision`, 쉬운말은 제목·본문의 `notice_easy_text_revision`을 사용하며,
+모델과 프롬프트 버전도 캐시 계약에 포함합니다. 첨부만 바뀌면 쉬운말 정상 캐시는 유지합니다.
+현재 원문의 정상 요약과 내용이 있는 `needs_review`는 재사용하고, 요약과 쉬운말은 독립적으로
+선택합니다. 쉬운말은 사전 후보 배열까지 있어야 완료된 캐시입니다. 사전 뜻풀이 조회는 #54 범위입니다.
+`process-pending`은 사전 뜻풀이 후처리를 호출하지 않으므로, 이 명령으로 생성한 쉬운말의
+사전 조회 RPC는 별도 후처리 전까지 `dictionary_status=pending`을 반환합니다.
+
+비공개 `notice_processing_jobs`의 `(notice_id, feature)` 한 행이 작업 상태를 관리합니다.
+앱 역할 `anon`·`authenticated`에는 접근 권한이 없으며 기존 결과 테이블과 공개 형식을 유지합니다.
+
+| 상태 | 의미와 다음 처리 |
+| --- | --- |
+| `pending` | 아직 실행하지 않은 대상 |
+| `running` | 유효한 점유 토큰과 기한이 있는 실행 |
+| `retry_wait` | `next_attempt_at` 이후 자동 재시도 가능 |
+| `succeeded` | 저장된 결과 확인 완료; 결과가 삭제되면 다시 탐색 |
+| `skipped` | 본문 없음 등 처리할 입력이 없어 같은 버전에서는 종료 |
+| `blocked` | 응답 검증 실패·정보 손실 정책·확인되지 않은 오류; 원인 확인 필요 |
+| `exhausted` | 이번 원문·모델·프롬프트에서 시도 상한 도달 |
+
+`attempts`는 점유한 작업 실행 횟수입니다. Gemini HTTP 요청 횟수와 다르며 실행 도중 프로세스가
+사라진 경우도 포함합니다. `--max-attempts` 기본값은 3입니다. 일시 오류는 지수 백오프와 임의 지연을
+적용하고, 제공된 `retry_at`이 더 늦으면 그 시각까지 기다립니다. 배치 프로세스가 잠들어 기다리는
+방식이 아니라 다음 명령 실행에서 기한이 지난 작업을 회수합니다. 같은 입력의 `blocked`·`exhausted`는
+위 수동 재개 명령으로 풀고, 원문 또는 처리 계약이 바뀌면 별도 수동 초기화 없이 다시 평가합니다.
+수동 재개도 정상 캐시나 `summary_information_loss` 보호 정책을 우회하지 않습니다.
+
+실행 중에는 DB 트랜잭션을 열어두지 않습니다. 짧은 DB 점유와 만료 회수로 같은 작업을 동시에
+점유하지 않으며, 저장 직전에 원문·공개 여부·점유 토큰·기한을 다시 확인합니다. 늦게 끝난 이전
+작업은 결과와 최신 작업 상태를 덮어쓸 수 없습니다. 결과 저장 직후 작업 상태를 남기지 못하고
+중단돼도 회수 시 정상 캐시를 확인하여 중복 Gemini 호출을 피합니다.
+
+기본 `--job-timeout-seconds 180`, `--lease-seconds 240`입니다. #60의 기본 Gemini 제한 120초보다
+길게 두어 구조화된 실패를 반환하고 저장할 시간을 확보합니다. Gemini 제한을 늘리는 경우에도
+전체 작업 제한 안에 첨부 준비·저장 여유를 남겨야 합니다. 점유 기한은 작업 제한 시간보다
+30초를 초과하여 길어야 합니다. 별도 프로세스에서 첨부 준비부터 저장까지 실행하고, 시간 초과에는
+자식 프로세스를 정리합니다. 강제로 끊긴 작업은 서버의 Retry-After를 확인할 수 없으므로
+`blocked/job_timeout`으로 남깁니다. 원인을 확인한 후 수동 재개합니다.
+
+**선행 작업과 운용 범위:** #60의 구조화된 실패 정보(`reason_code`, `retryable`, `retry_at`)를
+전달받으면 해당 시각과 분류로 재시도합니다. 그 계약이 없는 기존 코드의 불명확한 `api_error`는
+자동 재시도하지 않습니다. #26의 원문 변경 후 이전 정상 결과 보존은 별도 저장 계약입니다.
+현재 기반 브랜치의 원문 변경 trigger는 이전 결과를 무효화하므로, 원문 변경 중에도 이전 결과를
+계속 표시한다는 요구까지 충족하려면 #26을 통합해야 합니다. 동일 원문 재처리 실패는 기존 정상
+결과를 보존합니다. 수집 직후 자동 연결(#62)은 같은 실행기를 사용합니다. 별도 예약 복구(#63)는 이 명령을 사용할 수 있습니다.
+
+출력 JSON은 선택·점유·성공·보류·실패 건수와 작업별 상태, 안전한 실패 코드, 다음 시도 시각을
+제공합니다. 종료 코드 0은 이번 실행의 정상 완료, 1은 미완료 작업/실행 실패, 2는 잘못된 설정입니다.
+종료 코드 0만으로 아직 대기 중인 전체 DB 작업이 모두 끝났다고 해석하지 않습니다.
+`--dry-run`은 조회만 하며 `--retry-stopped`와 함께 사용할 수 없습니다.
+
+짧은 공지에서 `action=null`이어도 `location`이 있으면 행동 카드에는 장소 안내를 작성합니다.
+보정 요청은 이 관계를 명시하며, 방문·신청 행동을 새로 만들지 않습니다. 첫 응답의 다른
+형식 오류를 고친 뒤 두 번째 응답에 카드 문구 누락만 남으면, 근거 검증을 거친 추출 정보와
+나머지 카드를 검토 필요 결과로 보존합니다. 누락 문구는 합성하지 않고 기존 추출 항목으로
+표시합니다. 이 경우 보정 실패 기록은 유지하며 정상 처리 성공으로 위장하지 않습니다.
+카드 객체 누락·잘못된 문체·필수 필드 누락은 이 복구 대상이 아닙니다.
+
+#77의 공개 공지 재현 자료는 `tests/fixtures/short_notice_action_card.json`입니다. 첫 응답은
+유의사항 길이 초과, 두 번째는 장소가 있는데 행동 카드가 null인 응답입니다. 이미
+`response_validation_failed`로 `blocked`인 공지는 수정 배포 후 원인을 확인하고 위의
+공지별 `--retry-stopped` 명령으로 재처리합니다. 검증 실패 전체를 자동 재시도하지 않습니다.
+
+
+첨부만 있는 공지에서 다운로드 타임아웃·연결 오류·429·5xx로 입력을 얻지 못하면
+`attachment_download_failed`로 `retry_wait`에 기록합니다. 기존 대기 간격과 최대 시도 횟수를
+따르며, 반복 실패는 `exhausted`로 끝납니다. 실제 빈 입력·미지원 형식·404 등 영구 오류는
+자동 재시도하지 않습니다. 본문이 있으면 기존처럼 누락 안내를 포함한 부분 요약을 생성합니다.
+
+#75 수정 전에 `blocked`로 저장된 작업은 자동으로 풀리지 않습니다. 해당 공지의 다운로드
+실패 원인과 파일 서버 복구를 확인한 후, 위의 `--notice-id 123 --retry-stopped` 예시처럼
+해당 공지만 재실행합니다. 이 옵션은 중단 상태의
+시도 횟수를 초기화하므로 전체 공지에 반복 실행하지 않습니다. 기존 요약이나 원문을 삭제할
+필요는 없습니다.
+
+운영자는 서버 권한으로 중단 사유와 다음 실행 시각을 조회할 수 있습니다.
+
+```sql
+select notice_id, feature, state, attempts, last_error_code, next_attempt_at, lease_expires_at
+from public.notice_processing_jobs
+order by updated_at, notice_id, feature;
+```
+
+## 표준국어대사전 조회와 공유 캐시 (#53)
+
+`pipeline.glossary.dictionary_service.lookup_dictionary()`는 검색용 표제형인
+`query_word`를 받는 독립적인 백엔드 함수다. #52의 후보 추출 결과를 입력으로 연결할 수 있다.
+공지별 자동 실행·저장, 모바일 조회 API는 후속 연결 작업이며 현재 CLI에서는 호출하지 않는다.
+먼저 `20261008160000_standard_dictionary_cache.sql`까지 새 마이그레이션을 적용하고,
+서버 환경에 `DATABASE_URL`과 `STDICT_API_KEY`를 설정한다. `.env`는 자동 로드하지 않는다.
+
+```python
+from pipeline.config import DatabaseSettings
+from pipeline.glossary.dictionary import DictionaryBusy, DictionaryError
+from pipeline.glossary.dictionary_service import lookup_dictionary
+
+database = DatabaseSettings.from_env()
+try:
+    lookup = lookup_dictionary(database, query_word="신청")
+except DictionaryBusy as error:
+    # 다른 작업의 조회 권한 또는 오류 후 대기 시간이 남아 있다.
+    # error.retry_after_seconds 이후 재시도할 수 있다.
+    raise
+except DictionaryError as error:
+    # 오류는 error.code로 구분한다. 요청 URL이나 API 키를 기록하지 않는다.
+    raise
+else:
+    result = lookup.result.model_dump(mode="json")
+    # lookup.cache_hit: 기존 DB 결과를 사용했는지 여부
+
+# 명시적인 갱신. 기존 결과가 있어도 새 요청을 수행한다.
+# lookup_dictionary(database, query_word="신청", refresh=True)
+```
+
+반환 결과는 다음 구조다. 아래 식별자·뜻풀이는 구조 설명용 예시이며 실제 응답을 인용한 것이 아니다.
+
+```json
+{
+  "query_word": "예시",
+  "contract_version": "stdict-v1",
+  "status": "found",
+  "entries": [{
+    "target_code": "100",
+    "headword": "예시",
+    "homonym_number": "1",
+    "source_url": "https://stdict.korean.go.kr/search/searchView.do?word_no=100",
+    "senses": [{
+      "sense_code": "1001",
+      "pos_code": "1",
+      "part_of_speech": "명사",
+      "definition": "사전에서 제공한 뜻풀이가 들어가는 자리."
+    }]
+  }]
+}
+```
+
+- 검색은 `advanced=y`, `target=1`, `method=exact`, `pos=0`으로 표제어 일치를 요청한다.
+  검색의 모든 표제어에 상세 조회를 수행해 실제 `sense_code`를 확보한다. 여러 표제어·품사·뜻을
+  모두 보존하며 첫 결과를 해당 공지 문맥의 정답으로 선택하지 않는다. `not_found`는 `entries=[]`다.
+- 검색어는 Unicode NFC와 앞뒤 공백만 정규화한다. 내부 공백·어미·대소문자는 바꾸지 않는다.
+  정규화 검색어·검색 조건·계약 버전의 SHA-256이 공유 캐시 키이며 공지 ID는 포함하지 않는다.
+- 검증된 `found`와 `not_found`는 TTL 없이 재사용한다. `refresh=True`로 성공한 경우만 교체한다.
+  갱신 중이거나 갱신에 실패해도 일반 조회는 마지막 정상 캐시를 반환한다. 캐시 적중에는 API 키가 필요 없다.
+- 짧게 커밋한 DB 트랜잭션에서 180초짜리 조회 권한을 얻고 **연결을 닫은 뒤** HTTP를 호출한다.
+  다른 작업은 HTTP를 보내지 않고 `DictionaryBusy`를 받는다. 작업 중단 후에는 권한 만료 시 재처리할 수 있다.
+  저장·실패 기록 모두 토큰과 DB 시각의 만료 여부를 다시 검사하므로 이전 작업은 새 결과·권한을 바꿀 수 없다.
+  이 180초는 작업 권한의 만료 시간이며 결과 캐시의 유효기간이 아니다.
+- HTTP 요청 제한은 10초, 전체 조회 성공 기한은 120초다. 응답당 2 MiB·조회당 16 MiB,
+  최대 1,000개 표제어·표제어당 1,000개 뜻을 허용한다. 일부 페이지·뜻을 못 읽거나 상한을 넘으면
+  불완전한 결과를 캐시하지 않는다. 리다이렉트는 따라가지 않는다.
+  동기 HTTP 클라이언트의 읽기 제한은 수신 간격 기준이다. 서버가 헤더를 계속 조금씩 보내면
+  반환 시점이 120초를 넘을 수 있으며, 성공 기한 검사는 다음 응답 처리 시점에 수행한다.
+  초과한 결과와 만료된 권한의 결과는 저장하지 않는다. 프로세스 자체의 강제 종료 상한은 아니다.
+
+| 오류 코드 | 자동 HTTP 재시도 | 서비스에서 다음 조회까지 대기 |
+| --- | --- | --- |
+| `dictionary_timeout`, `dictionary_connection_error`, `dictionary_upstream_error` | 요청별 최대 1회, 전체 기한 안에서 | 5초 |
+| `dictionary_rate_limited` | 없음 | 60초 |
+| `dictionary_authentication_failed`, `dictionary_missing_api_key`, `dictionary_invalid_request` | 없음; 키·입력 확인 필요 | 60초 |
+| `dictionary_invalid_response`, `dictionary_result_limit`, `dictionary_lookup_failed` | 없음; 응답·상한·구현 확인 필요 | 60초 |
+| `dictionary_storage_error`, `dictionary_lease_lost` | HTTP 자동 재시도 없음 | DB 복구·권한 만료 후 재호출 |
+
+대기 시간은 실패한 새 조회의 연속 호출을 줄이는 장치다. 정상 캐시가 있으면 즉시 재사용한다.
+오류는 `not_found`로 저장하지 않고 고정 코드만 기록한다. API 키는 서버 설정에서 읽고,
+반환 객체·DB에는 넣지 않으며 요청 중 현재 스레드의 HTTP 진단 로그를 차단한다.
+호출자가 주입하는 HTTP 클라이언트의 임의 이벤트 훅·트레이싱에도 키가 기록되지 않도록 설정해야 한다.
+
+[공식 API 안내](https://stdict.korean.go.kr/openapi/openApiInfo.do)와 실제 응답을 함께 확인했다.
+2026-10-08 실제 `신청` 조회에서 표제어 4개·뜻 7개와 항목·뜻 식별자를 확보했다.
+같은 날 실제 API와 임시 PostgreSQL을 연결한 서비스 검증에서 `신청`은 최초 HTTP 5회,
+미등록 단어는 최초 2회가 발생했으며 둘 다 두 번째 조회에서는 추가 요청 없이 DB 캐시를 반환했다.
+상세 API는 `type_search=view` 없이 HTTP 200 빈 본문을 반환하여 해당 값을 명시한다.
+미등록 단어는 JSON이 `{}`여서, 같은 조건의 XML 응답에 `total=0`이 명시된 경우에만
+`not_found`로 확정한다. 빈 본문·손상 응답을 검색 결과 없음으로 취급하지 않는다.
+
+검증 위치: 클라이언트의 입력·응답 경계는 `tests/unit/easy_text/test_dictionary*.py`,
+독립 DB 연결을 사용하는 경합·복구·서비스 연결은 `tests/unit/storage/test_dictionary*.py`,
+테이블 제약·앱 접근 차단은 `supabase/tests/test_dictionary_cache_schema.py`다.
+서비스의 DB 검증은 `PIPELINE_TEST_DATABASE_URL`로 지정한 로컬 테스트 서버에서 고유 DB를 생성해 수행한다.
+자동 테스트는 외부 API와 운영 DB를 사용하지 않는다. 기존 CI가 새 파일을 포함해 실행한다.
+
+2026-10-08 최신 `backend` (`d469c71`) 통합 후, 빈 DB에 초기 스키마 4개와 사전 캐시 1개를
+적용해 검증했다. 단위·저장소 3,658개, E2E 41개, 스키마·권한 603개로 **총 4,302개 통과,
+0 skipped**. 각 JUnit 결과를 기존 `check_test_report.py`로 확인했고 Ruff도 통과했다.
+기존 E2E의 48개 단계 기대값에는 새 테이블의 행 수 `standard_dictionary_cache: 0`만 추가했다.
+사전 조회가 연결되기 전 기존 CLI 흐름에서 캐시를 쓰지 않는 상태를 계속 검사한다.
 
 ## 실행과 검증
 
@@ -471,6 +1216,7 @@ python -m uv run pipeline collect-one --source wolgye1
 python -m uv run pipeline collect --source wolgye1 --limit 26
 python -m uv run pipeline collect --source wolgye1
 python -m uv run pipeline collect --source nowon --limit 3
+python -m uv run pipeline summarize-one --notice-id 123
 python -m uv run ruff check
 python -m uv run pytest
 ```
@@ -478,7 +1224,157 @@ python -m uv run pytest
 공식 설치 프로그램으로 `uv` 실행 파일이 `PATH`에 등록된 환경에서는 위 명령의
 `python -m uv`를 `uv`로 줄여 실행할 수 있습니다.
 
+테스트는 `tests/unit/` 아래 영역별 폴더(`attachments`, `collect`, `easy_text`, `storage`,
+`summary`, `tooling`)에 있습니다. 개발 중에는 `python -m uv run pytest tests/unit/collect`처럼
+해당 영역만 실행할 수 있습니다. 여러 테스트 파일이 함께 쓰는 helper와 fixture는
+`tests/support/`에 두고, 테스트 파일끼리는 서로 import하지 않습니다. 경로는
+`support.paths`의 `TESTS_DIR`, `FIXTURES_DIR`, `PIPELINE_DIR`, `REPO_ROOT`를 사용합니다.
+`tests/unit/legacy_flow/`는 수집에서 저장까지의 흐름을 확인하는 테스트의 임시 위치이며,
+같은 내용을 e2e 케이스로 대체한 뒤 삭제합니다. 남길 테스트의 기준은 CONTRIBUTING.md를 따릅니다.
+
+`tests/unit/storage/test_summary_field_preservation.py`는 #40의 대상·기한 누락 조합,
+첨부 링크 보존, 최초 부분 결과와 정상 교체, 동시 실행을 검증합니다. 실제 PostgreSQL에
+commit한 뒤 별도의 익명 연결에서 공개 결과를 읽습니다. Gemini와 다운로드 HTTP 응답만
+대체하며 실제 외부 서비스의 요약 품질은 검증하지 않습니다. 전체 마이그레이션이 적용된
+임시 로컬 DB를 `PIPELINE_TEST_DATABASE_URL` 또는 `AUDIT_TEST_DATABASE_URL`로 지정해야 합니다.
+
 CI는 임시 PostgreSQL에 전체 마이그레이션을 적용해 파이프라인의 DB 검사를 실행하고,
 별도의 빈 DB에서 스키마·권한을 검증합니다. 검사 결과가 없거나 건너뛴 검사가 있으면
 실패 처리합니다. `scripts/prepare_test_databases.py`는 CI 전용 DB 이름과 로컬 연결을
-사용하며, 이미 있는 DB를 초기화하지 않습니다.
+사용하며, 이미 있는 DB를 초기화하지 않습니다. CI는 `tests/unit`, `tests/e2e`,
+`supabase/tests`를 각각 실행해 세 보고서 모두 skip이 없는지 확인합니다. 이 세 폴더 밖에 있는
+`test_*.py`는 CI에서 실행되지 않으므로, `tests/unit/tooling/test_ci_database_checks.py`가 `ci.yml`의
+`pytest` 대상과 `tests/` 아래 테스트 파일을 비교해 빠진 파일이 있으면 실패합니다. 새 테스트 폴더를
+만들 때는 `ci.yml`에 실행 단계를 함께 추가합니다.
+
+## e2e 검증
+
+`tests/e2e/`는 API 응답 예시 파일을 넣고 실제 CLI(`pipeline.cli.main`)를 그대로 실행해,
+DB에 저장된 결과와 앱(anon)이 조회하는 결과를 기대값과 비교합니다. 외부 HTTP 요청과
+Gemini 호출만 pytest monkeypatch로 녹화 응답에 연결하고, 운영 코드(`src/`)에는 테스트용
+분기가 없습니다. 실제 네트워크, 실제 Gemini, 운영 DB는 쓰지 않습니다.
+
+### 로컬 실행
+
+로컬 PostgreSQL 서버 주소를 `E2E_TEST_DATABASE_URL`로 지정합니다. DB 이름은
+`pipeline_e2e_test_`로 시작해야 하며, 그 DB 자체는 없어도 됩니다. 케이스마다 같은 서버에
+`pipeline_e2e_test_auto_<uuid>` DB를 새로 만들어 마이그레이션을 적용하고, 끝나면 지웁니다.
+설정이 없으면 건너뛰지 않고 실패합니다.
+
+```powershell
+$env:E2E_TEST_DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:5432/pipeline_e2e_test_local"
+python -m uv run pytest tests/e2e                     # 전체 케이스와 하네스 검사
+python -m uv run pytest tests/e2e -k nowon_api_error  # 케이스 하나
+```
+
+실행할 때마다 케이스별 결과가 `artifacts/e2e/<케이스명>.md`에 남습니다(Git 제외). step별 CLI 인자,
+exit code, 외부 요청 순서, Gemini 호출 수, 테이블별 행 수, 저장된 공지, anon에 보이는 공지,
+기대값과의 차이를 적고, 통과하지 못한 실행에서도 씁니다. CI에서는 `e2e-reports` artifact로 올립니다.
+
+### 케이스 추가 절차
+
+1. `tests/e2e/cases/<케이스명>/input/`에 API 응답 원본(XML, HTML), 첨부 파일, Gemini 응답 JSON을
+   넣습니다. 실제 공지를 쓸 때는 첨부 파일명과 본문의 개인 이름, 연락처를 가짜 값으로 바꿉니다.
+2. `case.json`에 실행 단계를 적습니다. 노원구 응답은 scaffold로 초안을 만들 수 있습니다.
+   ```powershell
+   python -m uv run python tests/e2e/harness/scaffold.py --name <케이스명> --source nowon `
+       --api <목록.xml> --page <원문.html>
+   ```
+   scaffold는 수집기가 요청할 URL을 라우트로 채우고, 남은 할 일을 `TODO:`로 출력합니다.
+   마스킹된 이름(`이0진` 등)이나 휴대전화 번호가 보이면 경고합니다.
+3. 기대값을 생성합니다.
+   ```powershell
+   $env:E2E_UPDATE = "1"; python -m uv run pytest tests/e2e -k <케이스명>; Remove-Item Env:E2E_UPDATE
+   ```
+4. 생성된 `expected/step-<n>.json`이 의도와 맞는지 읽고 확인합니다.
+5. 커밋합니다. 이후 실행은 기대값과 다르면 테이블, 행 키, 컬럼 단위로 차이를 보여 주며 실패합니다.
+
+`E2E_UPDATE`는 `CI` 환경변수가 있으면 거부됩니다. 실패한 케이스는 동작이 바뀐 이유를 설명할 수
+있을 때만 기대값을 갱신하고, PR 본문에 `expected/` 차이를 요약합니다.
+
+### case.json
+
+```json
+{
+  "title": "이 케이스가 확인하는 것",
+  "strict_unused": true,
+  "steps": [
+    {
+      "type": "collect",
+      "args": ["--source", "nowon", "--mode", "new"],
+      "http": [
+        {"route": "nowon_api", "start": 1, "end": 50, "body": "input/nowon_list.xml"},
+        {"route": "nowon_page", "post_sn": "900101", "body": "input/nowon_page_900101.html"}
+      ],
+      "gemini": {"easy_text": [], "summary": []},
+      "expect_exit": 0
+    }
+  ]
+}
+```
+
+| step `type` | 실행 |
+| --- | --- |
+| `collect`, `collect-one` | `pipeline <type> <args>`. stdout의 JSON 보고서와 stderr를 스냅샷에 넣습니다 |
+| `sql` | 테스트 DB에 `sql`을 직접 실행합니다. 운영자 숨김처럼 코드 경로가 없는 상황에만 쓰고 `reason`을 적습니다 |
+
+| `route` | 필요한 값 | 요청 |
+| --- | --- | --- |
+| `nowon_api` | `start`, `end` | 서울 열린데이터 `NowonNewsNoticeList/<start>/<end>/` |
+| `nowon_page` | `post_sn` | 노원구 공지 원문 `BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=<post_sn>` |
+| `wolgye1_list` | `page`(기본 1) | 월계1동 게시판 목록 |
+| `wolgye1_detail` | `post_sn` | 월계1동 게시글 |
+| `seoul_api` | `start`, `end`, `board`(선택) | 서울시 `SeoulNewsList` |
+| `file` | `url` | 첨부, 본문 이미지의 정확한 URL |
+
+- 응답은 `body`(케이스 폴더 기준 파일 경로) 또는 `text`로 주고, `status`(기본 200)와 `headers`를
+  덧붙일 수 있습니다. `Content-Type`은 파일 확장자로 정합니다.
+- 같은 요청에 라우트를 여러 개 등록하면 등록 순서대로 하나씩 응답하고, 마지막 라우트는 이후 요청에도
+  계속 응답합니다. 예를 들어 503과 200을 차례로 등록하면 첫 요청은 503, 재시도부터는 200을 받습니다.
+  라우트를 하나만 등록하면 모든 요청에 같은 응답을 돌려줍니다. 재시도 횟수는 스냅샷의 `http_calls`로
+  확인합니다.
+- 등록하지 않은 요청은 `Unexpected external URL`로 실패합니다. 등록했지만 요청되지 않은 라우트는
+  보고서에 경고로 남고, `strict_unused`가 `true`면 실패합니다.
+- API 키는 `test-only-key`로 고정되며 보고서에는 `<key>`로 표시합니다. stdout과 stderr에서는 DB URI,
+  `:비밀번호@`, `password=비밀번호` 형태와 API 키를 `[REDACTED]`로 가립니다. 비밀번호 문자열 자체는
+  가리지 않아, 로컬과 CI의 비밀번호가 달라도 기대값이 같습니다.
+- Gemini 응답은 종류별(`easy_text`, `summary`) 파일 목록을 순서대로 소비합니다. 응답이 모자라거나
+  남으면 실패합니다. 쉬운말 처리는 Gemini 예외를 모두 자체 실패로 바꾸지만, 하네스가 응답이 모자란
+  호출을 따로 기록하므로 케이스는 실패합니다. 오류를 재현하려면 `{"__error__": "timeout"}`처럼
+  적습니다(`timeout`, `connection`, `api_error`, `too_large`).
+- 재시도와 요청 간격의 대기(`sleep`)는 실제로 기다리지 않고 보고서에 기록만 합니다.
+- `now`(요약 기준 시각)는 요약 step과 함께 Phase B에서 사용합니다.
+
+### 기대값 정규화
+
+- 행은 `category/source_board/post_sn` 공지 키로 묶습니다. `notice_files`는 `공지 키|kind|file_key`입니다.
+  `id`, `notice_id`는 기록하지 않습니다.
+- 시각 컬럼은 처음 나타나면 `"<set>"`, 이전 step에도 있던 행이면 `"<changed>"` 또는
+  `"<unchanged>"`로 적습니다. UUID와 `execution_token`은 `"<set>"`입니다.
+- 300자를 넘는 텍스트는 길이와 sha256 앞 16자로 적습니다. 원문은 보고서의 스냅샷 전체에서 볼 수
+  있습니다.
+- `row_counts`에 공개 스키마 모든 테이블의 행 수를 적어, 스냅샷 대상이 아닌 테이블의 변화도 잡습니다.
+- `anon`은 같은 DB에서 `set local role anon`으로 앱 권한과 같은 컬럼만 조회합니다. 앱이 실제로 읽는
+  `app_notice_list`, `app_notice_detail` view의 결과도 같은 공지 키로 기록합니다. 마이그레이션이
+  anon의 컬럼 권한을 바꾸면 하네스(`harness/snapshot.py`의 `ANON_COLUMNS`, `APP_VIEWS`)가 실패하므로,
+  목록과 기대값을 함께 확인합니다.
+
+
+### 원문이 없는 노원구 공지 (#71)
+
+노원구가 명시적으로 게시물 없음 응답을 반환하면 `source_page_missing`을
+`skipped`에 기록합니다. `skipped_count`는 건너뜀 건수이고 `failed_count`는
+공지별 실제 실패 건수입니다. `collect-one`, 전체 수집, `new`/`refresh`에 적용합니다.
+본문이 비어 있거나 첨부만 있다는 이유로 건너뛰지는 않습니다.
+
+예약 수집은 `selected_count = saved_count + skipped_count + failed_count`입니다.
+전체 수집에서는 제한 적용 후 선택한 공지 수가 같은 합계이며, `listed_count`는
+제한 적용 전 목록 수입니다. 기존 `attempted_count`는 목록 충돌과 이전 오류로
+시도하지 못한 항목을 제외하며, 원문 없음 응답을 받은 항목은 포함합니다.
+목록 조회 실패는 `failed_pages`/`failed_ranges`에 별도로 남습니다.
+
+목록 수집이 완료되고 실제 실패나 수동 제한이 없으면, 모두 건너뛴 경우에도
+완료로 보고하며 종료 코드 0을 반환합니다. AI 후처리 실패가 있으면 기존처럼
+종료 코드 1입니다. 원문 없음 건은 저장·후처리하지 않으며 기존 DB 행의 내용과
+공개 상태도 바꾸지 않습니다. 삭제 또는 비공개라고 확정하는 상태는 아닙니다.
+기존 Actions는 CLI 종료 코드를 사용하므로 워크플로 변경 없이 적용됩니다.
