@@ -87,7 +87,8 @@
         "dictionary_candidates": []
       }
     },
-    "notice_summary_executions": {}
+    "notice_summary_executions": {},
+    "notice_processing_jobs": {}
   },
   "row_counts": {
     "holidays": 0,
@@ -96,7 +97,8 @@
     "notice_summaries": 0,
     "notice_summary_executions": 0,
     "notices": 1,
-    "standard_dictionary_cache": 0
+    "standard_dictionary_cache": 0,
+    "notice_processing_jobs": 0
   },
   "anon": {
     "notices": {

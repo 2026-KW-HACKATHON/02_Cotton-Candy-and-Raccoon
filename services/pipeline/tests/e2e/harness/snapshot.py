@@ -17,6 +17,7 @@ SNAPSHOT_TABLES = (
     "notice_summaries",
     "notice_easy_texts",
     "notice_summary_executions",
+    "notice_processing_jobs",
 )
 
 # What the app can read. Kept explicit (no "select *"): check_anon_grants() fails when
@@ -98,6 +99,8 @@ def _key_rows(table: str, rows: list[dict[str, Any]], notice_keys: dict[int, str
             if table == "notice_files":
                 row.pop("id", None)
                 key = f"{notice}|{row.get('kind')}|{row.get('file_key', row.get('url'))}"
+            elif table == "notice_processing_jobs":
+                key = f"{notice}|{row['feature']}"
             else:
                 key = notice
         if key in keyed:

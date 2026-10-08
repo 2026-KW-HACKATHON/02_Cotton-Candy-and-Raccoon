@@ -9,6 +9,7 @@ from psycopg.types.json import Jsonb
 
 from pipeline.glossary.easy_language import EasyLanguageResult
 from pipeline.glossary.source import notice_content_revision
+from pipeline.storage.processing_context import guard_processing_write
 from pipeline.transform.html_text import html_to_notice_text
 
 _SELECT = """
@@ -157,6 +158,7 @@ def fill_notice_easy_text_scope(
             "select title, body_html from public.notices where id = %s for share", (notice_id,)
         )
         parent = cursor.fetchone()
+        guard_processing_write(conn, notice_id, "easy_text")
         if parent is None or notice_content_revision(*parent) != result.notice_revision:
             raise EasyTextStorageError("공지 원문이 바뀌어 처리 범위를 보충하지 않았습니다.")
         title, body_html = parent
@@ -227,6 +229,7 @@ def save_notice_easy_text(
             (notice_id,),
         )
         parent = cursor.fetchone()
+        guard_processing_write(conn, notice_id, "easy_text")
         if parent is None or notice_content_revision(*parent) != result.notice_revision:
             raise EasyTextStorageError("공지 원문이 바뀌어 이전 쉬운말 결과를 저장하지 않았습니다.")
         title, body_html = parent
