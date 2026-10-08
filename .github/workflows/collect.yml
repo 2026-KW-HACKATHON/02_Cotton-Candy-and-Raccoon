@@ -265,18 +265,23 @@ jobs:
       DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
       MIGRATION_BACKUP_KEY: ${{ secrets.PIPELINE_MIGRATION_BACKUP_KEY }}
       RESTORE_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/pipeline_schema_test_restore
-      PG_DUMP: /usr/lib/postgresql/17/bin/pg_dump
-      PG_RESTORE: /usr/lib/postgresql/17/bin/pg_restore
+      PG_DUMP: /tmp/issue76-pg_dump
+      PG_RESTORE: /tmp/issue76-pg_restore
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.1.0
       - run: uv sync --no-dev --frozen
-      - name: Ensure PostgreSQL 17 backup tools
+      - name: Use PostgreSQL 17 backup tools from the service container
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
         run: |
-          if [ ! -x "$PG_DUMP" ]; then
-            sudo apt-get update
-            sudo apt-get install -y postgresql-client-17
-          fi
+          for tool in pg_dump pg_restore; do
+            cat > "/tmp/issue76-$tool" <<EOF
+          #!/bin/bash
+          exec docker exec -i -e PGHOST -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE -e PGSSLMODE "$POSTGRES_CONTAINER" "$tool" "\$@"
+          EOF
+            chmod 700 "/tmp/issue76-$tool"
+          done
       - name: Snapshot and encrypt before any schema writes
         run: uv run --no-dev --frozen python scripts/production_ai_migrations.py prepare --backup "$RUNNER_TEMP/issue76-backup.enc"
       - name: Verify backup can restore into disposable PostgreSQL

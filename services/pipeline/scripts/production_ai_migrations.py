@@ -11,7 +11,6 @@ import hashlib
 import json
 import os
 import subprocess
-import tempfile
 from pathlib import Path
 
 import psycopg
@@ -243,16 +242,14 @@ def restore_check(saved):
         for role in ("anon", "authenticated", "service_role"):
             if not conn.execute("select 1 from pg_roles where rolname=%s", (role,)).fetchone():
                 conn.execute(SQL("create role {} nologin").format(Identifier(role)))
-    with tempfile.TemporaryDirectory() as directory:
-        dump = Path(directory) / "restore.dump"
-        dump.write_bytes(base64.b64decode(saved["dump"], validate=True))
-        result = subprocess.run(
-            [os.environ.get("PG_RESTORE", "pg_restore"), "--no-owner", "--no-privileges",
-             "--exit-on-error", "--clean", "--if-exists", "--dbname", params["dbname"],
-             str(dump)], env=pg_environment(dsn), capture_output=True, timeout=120, check=False,
-        )
-        if result.returncode:
-            raise UpgradeError("backup_restore_failed")
+    result = subprocess.run(
+        [os.environ.get("PG_RESTORE", "pg_restore"), "--no-owner", "--no-privileges",
+         "--exit-on-error", "--clean", "--if-exists", "--dbname", params["dbname"]],
+        input=base64.b64decode(saved["dump"], validate=True),
+        env=pg_environment(dsn), capture_output=True, timeout=120, check=False,
+    )
+    if result.returncode:
+        raise UpgradeError("backup_restore_failed")
     with psycopg.connect(dsn) as conn:
         if snapshot(conn, saved["columns"]) != saved["rows"]:
             raise UpgradeError("restored_backup_data_mismatch")
