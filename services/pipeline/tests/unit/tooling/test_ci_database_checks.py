@@ -180,7 +180,7 @@ def test_raw_collection_is_independent_of_ai_credentials():
     before_processing = workflow.split("      - name: Process nowon summary")[0]
     assert "GEMINI_API_KEY" not in before_processing
     assert "STDICT_API_KEY" not in before_processing
-    assert "timeout-minutes: 180" in before_processing
+    assert "timeout-minutes: 360" in before_processing
     assert "cancel-in-progress: false" in before_processing
 
 
@@ -198,10 +198,10 @@ def test_all_raw_sources_precede_independently_bounded_features():
         assert "timeout-minutes: 10" in steps[i]
     for i in processing:
         step = steps[i]
-        assert "timeout-minutes: 20" in step
+        assert "timeout-minutes: 330" in step
         assert "continue-on-error: true" in step
         assert "!cancelled()" in step
-        assert '--limit "$PROCESSING_LIMIT"' in step
+        assert "--all" in step
         assert '[ -z "$GEMINI_API_KEY" ]' in step
         if "--feature easy_text" in step:
             assert '[ -z "$STDICT_API_KEY" ]' in step

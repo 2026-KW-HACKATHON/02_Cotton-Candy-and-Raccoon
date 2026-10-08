@@ -135,7 +135,7 @@ def select_candidates(
     features: Sequence[Feature] = FEATURES,
     notice_id: int | None = None,
     source: str | None = None,
-    limit: int = 100,
+    limit: int | None = 100,
     summary_model: str = SUMMARY_MODEL,
     summary_prompt_version: str = SUMMARY_PROMPT_VERSION,
     easy_text_model: str = EASY_TEXT_MODEL,
@@ -148,7 +148,7 @@ def select_candidates(
     A succeeded job whose result has disappeared is rediscovered. Blocked and
     exhausted work stays stopped until its input/contract changes or manual retry.
     """
-    if type(limit) is not int or not 1 <= limit <= 10000:
+    if limit is not None and (type(limit) is not int or not 1 <= limit <= 10000):
         raise ValueError("invalid_processing_limit")
     params = {
         "features": _features(features), "notice_id": notice_id, "limit": limit,

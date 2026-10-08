@@ -267,3 +267,13 @@ def test_deadline_kills_the_owned_worker_and_descendant_without_credentials_in_a
     assert processes[0].poll() is not None
     time.sleep(2.3)
     assert not marker.exists(), "a descendant outlived the timed-out worker"
+
+
+def test_all_mode_attempts_entire_selected_snapshot(queue):
+    queue.selected.return_value = [object()] * 125
+    queue.claimed.return_value = claim_for()
+    result = run_processing(
+        DATABASE, api_key=KEY, limit=None,
+        executor=lambda *args: ProcessingOutcome("succeeded"),
+    )
+    assert len(result.records) == queue.claimed.call_count == 125
