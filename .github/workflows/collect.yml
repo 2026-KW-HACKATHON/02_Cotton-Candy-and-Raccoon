@@ -15,6 +15,14 @@ on:
         options:
           - new
           - refresh
+      processing_limit:
+        description: "Maximum AI jobs per source and feature (first verification: 1)"
+        required: true
+        default: "1"
+        type: choice
+        options:
+          - "1"
+          - "5"
 
 permissions:
   contents: read
@@ -29,6 +37,8 @@ jobs:
     if: vars.PIPELINE_PRODUCTION_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    env:
+      PROCESSING_LIMIT: ${{ github.event_name == 'workflow_dispatch' && inputs.processing_limit || '5' }}
     defaults:
       run:
         working-directory: services/pipeline
@@ -98,7 +108,7 @@ jobs:
             echo "GEMINI_API_KEY is required for summary." >&2
             exit 1
           fi
-          uv run --no-dev --frozen pipeline process-stored --source nowon --feature summary --limit 5
+          uv run --no-dev --frozen pipeline process-stored --source nowon --feature summary --limit "$PROCESSING_LIMIT"
       - name: Process nowon easy_text
         if: ${{ !cancelled() && (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') }}
         id: easy_text_nowon
@@ -121,7 +131,7 @@ jobs:
             echo "STDICT_API_KEY is required for easy_text." >&2
             exit 1
           fi
-          uv run --no-dev --frozen pipeline process-stored --source nowon --feature easy_text --limit 5
+          uv run --no-dev --frozen pipeline process-stored --source nowon --feature easy_text --limit "$PROCESSING_LIMIT"
       - name: Process wolgye1 summary
         if: ${{ !cancelled() && vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' }}
         id: summary_wolgye1
@@ -139,7 +149,7 @@ jobs:
             echo "GEMINI_API_KEY is required for summary." >&2
             exit 1
           fi
-          uv run --no-dev --frozen pipeline process-stored --source wolgye1 --feature summary --limit 5
+          uv run --no-dev --frozen pipeline process-stored --source wolgye1 --feature summary --limit "$PROCESSING_LIMIT"
       - name: Process wolgye1 easy_text
         if: ${{ !cancelled() && (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') }}
         id: easy_text_wolgye1
@@ -162,7 +172,7 @@ jobs:
             echo "STDICT_API_KEY is required for easy_text." >&2
             exit 1
           fi
-          uv run --no-dev --frozen pipeline process-stored --source wolgye1 --feature easy_text --limit 5
+          uv run --no-dev --frozen pipeline process-stored --source wolgye1 --feature easy_text --limit "$PROCESSING_LIMIT"
       - name: Process seoul summary
         if: ${{ !cancelled() && vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' && vars.PIPELINE_SEOUL_ENABLED == 'true' }}
         id: summary_seoul
@@ -180,7 +190,7 @@ jobs:
             echo "GEMINI_API_KEY is required for summary." >&2
             exit 1
           fi
-          uv run --no-dev --frozen pipeline process-stored --source seoul --feature summary --limit 5
+          uv run --no-dev --frozen pipeline process-stored --source seoul --feature summary --limit "$PROCESSING_LIMIT"
       - name: Process seoul easy_text
         if: ${{ !cancelled() && (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') && vars.PIPELINE_SEOUL_ENABLED == 'true' }}
         id: easy_text_seoul
@@ -203,10 +213,13 @@ jobs:
             echo "STDICT_API_KEY is required for easy_text." >&2
             exit 1
           fi
-          uv run --no-dev --frozen pipeline process-stored --source seoul --feature easy_text --limit 5
+          uv run --no-dev --frozen pipeline process-stored --source seoul --feature easy_text --limit "$PROCESSING_LIMIT"
       - name: Report collection and processing outcomes
         if: always()
         env:
+          RUN_SHA: ${{ github.sha }}
+          RUN_REF: ${{ github.ref_name }}
+          RUN_EVENT: ${{ github.event_name }}
           STEP_RESULTS: ${{ toJSON(steps) }}
           SEOUL_ENABLED: ${{ vars.PIPELINE_SEOUL_ENABLED }}
           AI_ENABLED: ${{ vars.PIPELINE_AI_PROCESSING_ENABLED }}
@@ -228,6 +241,13 @@ jobs:
               required.extend(f"easy_text_{source}" for source in sources)
           outcomes = {name: steps.get(name, {}).get("outcome", "not_run") for name in required}
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as report:
+              report.write(f"Commit: `{os.environ.get('RUN_SHA', 'unknown')}`\n\n")
+              report.write(f"Ref: `{os.environ.get('RUN_REF', 'unknown')}`; "
+                           f"event: `{os.environ.get('RUN_EVENT', 'unknown')}`\n\n")
+              report.write(f"AI enabled: {os.environ['AI_ENABLED'] == 'true'}; "
+                           f"easy-text enabled: {os.environ['EASY_ENABLED'] == 'true'}; "
+                           f"Seoul enabled: {os.environ['SEOUL_ENABLED'] == 'true'}; "
+                           f"AI jobs per source/feature: {os.environ.get('PROCESSING_LIMIT', '5')}\n\n")
               report.write("| Stage | Outcome |\n| --- | --- |\n")
               for name, outcome in outcomes.items():
                   report.write(f"| {name} | {outcome} |\n")

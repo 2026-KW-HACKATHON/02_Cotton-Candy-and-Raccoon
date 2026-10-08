@@ -199,7 +199,7 @@ def test_all_raw_sources_precede_independently_bounded_features():
         assert "timeout-minutes: 20" in step
         assert "continue-on-error: true" in step
         assert "!cancelled()" in step
-        assert "--limit 5" in step
+        assert '--limit "$PROCESSING_LIMIT"' in step
         assert '[ -z "$GEMINI_API_KEY" ]' in step
         if "--feature easy_text" in step:
             assert '[ -z "$STDICT_API_KEY" ]' in step
