@@ -139,13 +139,19 @@ class HttpReplay:
     def respond(self, request: httpx.Request) -> httpx.Response:
         url = str(request.url)
         key = _canonical(url)
-        for route in self.routes:
-            if route.method == request.method and _canonical(route.url) == key:
-                route.calls += 1
-                self.calls.append(route.label)
-                return httpx.Response(
-                    route.status, headers=route.headers, content=route.body, request=request
-                )
+        matches = [
+            route for route in self.routes
+            if route.method == request.method and _canonical(route.url) == key
+        ]
+        if matches:
+            # Routes for the same request answer once each in registration order; the
+            # last one keeps answering (e.g. 503 then 200, or a changed second listing).
+            route = next((route for route in matches if route.calls == 0), matches[-1])
+            route.calls += 1
+            self.calls.append(route.label)
+            return httpx.Response(
+                route.status, headers=route.headers, content=route.body, request=request
+            )
         message = f"Unexpected external URL: {request.method} {redact(url)}"
         self.unexpected.append(message)
         # Raised inside httpx; pipeline code may convert it into its own error, so the

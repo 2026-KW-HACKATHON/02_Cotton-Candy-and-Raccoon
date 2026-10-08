@@ -4,11 +4,12 @@ import json
 import shutil
 from pathlib import Path
 
+import httpx
 import pytest
-from e2e.harness import gemini_replay, scaffold
+from e2e.harness import gemini_replay, http_replay, scaffold
 from e2e.harness.http_replay import API_KEY
 from e2e.harness.runner import CASES_DIR, run_case, update_requested
-from e2e.harness.steps import database_uri
+from e2e.harness.steps import credential_patterns, database_uri, redact
 from support.db import owned_migrated_database
 
 from pipeline.glossary.easy_language import EasyLanguageAPIError
@@ -163,3 +164,52 @@ def test_scaffold_warns_about_masked_names_and_phone_numbers(tmp_path, capsys):
                        "--api", str(api)])
     err = capsys.readouterr().err
     assert "이0진" in err and "010-1234-5678" in err
+
+
+def test_missing_easy_text_response_fails_even_though_the_pipeline_absorbs_it(
+    tmp_path, e2e_database, monkeypatch
+):
+    # The easy-text client turns every exception into EasyLanguageAPIError, so the
+    # harness must record the exhausted queue itself instead of relying on the raise.
+    case_dir = _copy_case(tmp_path)
+    definition = json.loads((case_dir / "case.json").read_text(encoding="utf-8"))
+    definition["steps"][0]["args"].append("--easy-text")
+    definition["steps"][0].pop("gemini", None)
+    (case_dir / "case.json").write_text(json.dumps(definition), encoding="utf-8")
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.setenv("E2E_UPDATE", "1")
+    with pytest.raises(pytest.fail.Exception, match="Unexpected Gemini easy_text call"):
+        run_case(case_dir, e2e_database, monkeypatch, reports_dir=tmp_path / "reports")
+
+
+def test_routes_for_the_same_url_are_used_in_order_and_the_last_one_repeats(tmp_path):
+    (tmp_path / "ok.xml").write_text("<ok/>", encoding="utf-8")
+    replay = http_replay.HttpReplay([
+        http_replay.Route.from_spec(spec, tmp_path)
+        for spec in (
+            {"route": "nowon_api", "start": 1, "end": 50, "status": 503, "text": "busy"},
+            {"route": "nowon_api", "start": 1, "end": 50, "body": "ok.xml"},
+        )
+    ])
+    url = f"{http_replay.SEOUL_OPENAPI}/{API_KEY}/xml/NowonNewsNoticeList/1/50/"
+    statuses = [replay.respond(httpx.Request("GET", url)).status_code for _ in range(3)]
+    assert statuses == [503, 200, 200]
+    assert replay.calls == ["nowon_api 1-50"] * 3
+    assert replay.unused() == []
+
+
+def test_redaction_hides_credentials_but_keeps_ordinary_words():
+    database = {
+        "host": "127.0.0.1", "port": "5432", "user": "postgres", "password": "postgres",
+        "dbname": "pipeline_e2e_test_auto_x",
+    }
+    secrets = credential_patterns(database)
+    text = (
+        f"postgres connection failed for {database_uri(database)} "
+        f"host=127.0.0.1 password=postgres key={API_KEY}"
+    )
+    redacted = redact(text, secrets)
+    assert redacted.startswith("postgres connection failed for [REDACTED]")
+    assert "password=[REDACTED]" in redacted
+    assert API_KEY not in redacted
+    assert "postgresql://" not in redacted

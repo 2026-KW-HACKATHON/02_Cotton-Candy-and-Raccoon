@@ -11,7 +11,7 @@ from e2e.harness.snapshot import diff
 from e2e.harness.steps import (
     StepResult,
     configure_environment,
-    database_uri,
+    credential_patterns,
     load_case,
     run_step,
 )
@@ -44,7 +44,7 @@ def run_case(
     case = load_case(case_dir)
     update = update_requested()
     configure_environment(monkeypatch, database)
-    secrets = (database_uri(database), database.get("password") or "")
+    secrets = credential_patterns(database)
     results: list[StepResult] = []
     failures: list[str] = []
     status = "실행 중단"

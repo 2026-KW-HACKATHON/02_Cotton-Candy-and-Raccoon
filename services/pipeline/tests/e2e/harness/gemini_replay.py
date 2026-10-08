@@ -64,6 +64,9 @@ class GeminiReplay:
     calls: dict[Kind, list[dict[str, object]]] = field(
         default_factory=lambda: {kind: [] for kind in KINDS}
     )
+    # Calls made after a queue ran out. Recorded before raising because the easy-text
+    # client converts every exception into its own API error, which would hide it.
+    exhausted: list[str] = field(default_factory=list)
 
     @classmethod
     def from_spec(cls, spec: dict[str, Any] | None, case_dir: Path) -> "GeminiReplay":
@@ -85,7 +88,9 @@ class GeminiReplay:
     def next(self, kind: Kind, request: dict[str, object]) -> Any:
         self.calls[kind].append(request)
         if not self.queues[kind]:
-            raise GeminiQueueError(f"Unexpected Gemini {kind} call: no response left in the case")
+            message = f"Unexpected Gemini {kind} call: no response left in the case"
+            self.exhausted.append(message)
+            raise GeminiQueueError(message)
         reply = self.queues[kind].popleft()
         payload = reply.payload
         if isinstance(payload, dict) and "__error__" in payload:

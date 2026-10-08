@@ -171,6 +171,7 @@ def run_step(
     if result.error:
         result.problems.append(f"step raised {result.error}")
     result.problems.extend(result.http.unexpected)
+    result.problems.extend(result.gemini.exhausted)
     unused = result.http.unused()
     if unused:
         message = f"registered but not requested: {', '.join(unused)}"
@@ -201,7 +202,31 @@ def run_step(
     return result
 
 
+def _mask(secret: str) -> str:
+    """Keep the shape of a credential so a reader can tell what was hidden."""
+    if secret.startswith("password="):
+        return "password=[REDACTED]"
+    if secret.startswith(":") and secret.endswith("@"):
+        return ":[REDACTED]@"
+    return "[REDACTED]"
+
+
 def redact(text: str, secrets: tuple[str, ...]) -> str:
     for secret in sorted({s for s in secrets if s}, key=len, reverse=True):
-        text = text.replace(secret, "[REDACTED]")
+        text = text.replace(secret, _mask(secret))
     return text
+
+
+def credential_patterns(info: dict[str, str]) -> tuple[str, ...]:
+    """Credential-shaped strings to hide from reports.
+
+    Only connection-string forms are hidden, never the bare password: a common
+    password such as "postgres" would otherwise rewrite ordinary words and make
+    expectations depend on the machine that generated them.
+    """
+    patterns = [database_uri(info), API_KEY]
+    password = info.get("password")
+    if password:
+        for form in {password, quote(password, safe="")}:
+            patterns += [f":{form}@", f"password={form}"]
+    return tuple(patterns)
