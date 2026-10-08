@@ -158,7 +158,8 @@ def test_file_only_prepared_summary_preserves_content_through_database_and_publi
 ) -> None:
     if replace_success:
         save_notice_summary(summary_db, _record())
-        assert _stored(summary_db)["result"] is not None
+        before = _stored(summary_db)
+        assert before["result"] is not None
     data = _summary().model_dump(mode="json")
     for evidence in data["evidence"]:
         evidence.update(
@@ -181,9 +182,21 @@ def test_file_only_prepared_summary_preserves_content_through_database_and_publi
         generated_at=GENERATED_AT,
     )
     row = _stored(summary_db)
-    assert stored.status == row["status"] == "needs_review"
-    assert stored.deadline_on is row["deadline_on"] is None
-    assert row["result"] == result.summary.model_dump(mode="json")
+    expected_summary = _record().result if replace_success else result.summary
+    assert stored.status == row["status"] == ("summarized" if replace_success else "needs_review")
+    assert stored.deadline_on == row["deadline_on"] == (
+        date(2026, 10, 20) if replace_success else None
+    )
+    assert stored.information_loss_prevented is replace_success
+    assert row["result"] == expected_summary.model_dump(mode="json")
+    if replace_success:
+        # A new file-only review must not erase the existing sorting deadline
+        # or replace its text-verified evidence with a different candidate.
+        changed = {"attempt_count", "last_error_code", "updated_at"}
+        assert {k: v for k, v in row.items() if k not in changed} == {
+            k: v for k, v in before.items() if k not in changed
+        }
+    assert row["last_error_code"] == ("summary_information_loss" if replace_success else None)
     assert row["category"] == "application"
     assert row["category_code"] == 27
     assert row["generated_at"] == GENERATED_AT
@@ -193,8 +206,8 @@ def test_file_only_prepared_summary_preserves_content_through_database_and_publi
     view = build_notice_summary_view(
         status=row["status"], result=row["result"], attachment_status=row["attachment_status"]
     )
-    expected = build_summary_cards(result.summary)
-    assert view.message == "원문 확인 요함"
+    expected = build_summary_cards(expected_summary)
+    assert view.message == (None if replace_success else "원문 확인 요함")
     assert view.content.headline.text == expected.headline.text
     assert view.content.headline.value == expected.headline.value
     assert view.content.cards == expected.cards

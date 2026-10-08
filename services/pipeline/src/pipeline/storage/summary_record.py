@@ -38,6 +38,7 @@ FAILURE_CODES = frozenset(
         "response_validation_failed",
         "configuration_error",
         "summary_processing_failed",
+        "summary_information_loss",
     }
 )
 

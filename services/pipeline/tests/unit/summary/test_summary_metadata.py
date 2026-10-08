@@ -123,7 +123,9 @@ def test_job_uses_default_deadline_rule_for_verified_results(
     result = PreparedSummaryResult(notice_id=17, summary=_summary(), warnings=(), media_sources=())
     monkeypatch.setattr(summary_job, "summarize_prepared_notice", lambda *_args, **_kwargs: result)
     conn = MagicMock()
-    conn.cursor.return_value.__enter__.return_value.fetchone.return_value = (17,)
+    conn.cursor.return_value.__enter__.return_value.fetchone.side_effect = [
+        (17,), (17, "summarized", date(2026, 10, 20), GENERATED_AT, None),
+    ]
     metadata = replace(_metadata(), prompt_version=SUMMARY_PROMPT_VERSION)
     stored = summary_job.summarize_and_save_prepared_notice(
         conn, _prepared("본문"), metadata, expected_source_revision=1,

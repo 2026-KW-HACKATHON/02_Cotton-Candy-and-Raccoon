@@ -3,6 +3,7 @@
 import os
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import date
 from threading import Event
 from time import monotonic
@@ -34,6 +35,7 @@ from pipeline.summary_job import StoredSummarySuperseded, summarize_and_save_pre
 from pipeline.transform.gemini_client import GeminiRequestError
 from pipeline.transform.gemini_prompt import SUMMARY_PROMPT_VERSION
 from pipeline.transform.prepared_summary import PreparedSummaryResult
+from pipeline.transform.summary_schema import NoticeSummary
 
 
 @pytest.fixture
@@ -98,6 +100,44 @@ def test_changed_source_failure_clears_cards_and_sorting_deadline_for_app(
     )
     assert view.status == "needs_review" and view.message == "원문 확인 요함"
     assert view.content is None
+
+
+@pytest.mark.parametrize("guarded", [False, True])
+@pytest.mark.parametrize("same_hash", [False, True])
+def test_direct_write_uses_revision_or_legacy_hash_to_preserve_information(
+    audit_db: psycopg.Connection, guarded: bool, same_hash: bool,
+) -> None:
+    notice_id = _notice(audit_db)
+    save_notice_summary(audit_db, _completed(notice_id, OLD_BODY, "2026-10-20"))
+    before = _row(audit_db, notice_id)
+    token = begin_summary_execution(audit_db, notice_id) if guarded else None
+    candidate = _summary("2026-10-20").model_dump(mode="json")
+    candidate["dates"] = []
+    candidate["card_summaries"]["deadline"] = None
+    candidate["evidence"] = [item for item in candidate["evidence"] if item["field"] != "dates"]
+    summary = NoticeSummary.model_validate(candidate)
+    record = replace(
+        _completed(
+            notice_id, OLD_BODY if same_hash else NEW_BODY, "2026-10-20",
+            generation="v5", execution_token=token,
+        ),
+        result=summary, deadline_on=None,
+    )
+    assert save_notice_summary(audit_db, record) == notice_id
+    after = _row(audit_db, notice_id)
+    # Reading fewer files can change the input hash without changing the revision.
+    # Untokened legacy callers only have the input hash as an identity guarantee.
+    if guarded or same_hash:
+        changed = {"attempt_count", "last_error_code", "updated_at"}
+        assert {k: v for k, v in after.items() if k not in changed} == {
+            k: v for k, v in before.items() if k not in changed
+        }
+        assert after["last_error_code"] == "summary_information_loss"
+    else:
+        assert after["result"] == candidate
+        assert after["deadline_on"] is None
+        assert after["last_error_code"] is None
+    assert after["attempt_count"] == before["attempt_count"] + 1
 
 
 @pytest.mark.parametrize("late_outcome", ["success", "failure"])
