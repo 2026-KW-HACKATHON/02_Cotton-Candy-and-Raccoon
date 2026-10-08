@@ -17,7 +17,7 @@ import { EasyNoticeDetailScreen } from "./EasyNoticeDetailScreen";
 import { DetailCharacter } from "@/shared/ui/character/AnimatedCharacter";
 import { NoticeDocumentText } from "../components/NoticeDocumentText";
 import { NoticeTermOverlay } from "../components/NoticeTermOverlay";
-import { NoticeEvidence } from "../components/NoticeEvidence";
+import { NoticeOmissions } from "../components/NoticeOmissions";
 import { NoticeFiles } from "../components/NoticeFiles";
 import { NoticeSummaryStatus } from "../components/NoticeSummaryStatus";
 import { type GlossaryTerm } from "../types/notice";
@@ -255,7 +255,7 @@ function StandardNoticeContent({
               onTermPress={setTerm}
             />
           </View>
-          <NoticeEvidence notice={notice} />
+          <NoticeOmissions notice={notice} />
           <NoticeFiles files={notice.files} sourceUrl={notice.sourceUrl} />
           <View style={{ gap: 4, paddingTop: 12 }}>
             <AppText secondary size={12} lineHeight={18}>

@@ -202,82 +202,31 @@ test("카테고리와 오래된순은 서버 전체 범위에 적용하고 다�
   assert.equal(urls[2].searchParams.get("category_code"), "is.null");
 });
 
-test("상세는 근거와 누락을 조회하고 순서와 무관하게 파일 근거를 연결한다", async () => {
+test("상세는 근거 원본을 조회하지 않고 누락 첨부 안내는 유지한다", async () => {
   let url;
-  global.fetch = async (value) => {
-    url = new URL(value);
-    return new Response("[]");
-  };
+  global.fetch = async (value) => { url = new URL(value); return new Response("[]"); };
   await api.fetchNotice("1");
-  for (const field of ["result", "file_references", "preparation_omissions"])
-    assert.ok(url.searchParams.get("select").split(",").includes(field));
-  const notice = parseNotice(
-    row(1, {
-      display_status: "needs_review",
-      url: "https://example.test/notice",
-      result: {
-        evidence: [
-          {
-            excerpt: "신청은 10월까지",
-            source_id: "media_2",
-            source_type: "document",
-            page: 2,
-          },
-        ],
-      },
-      file_references: [
-        {
-          source_id: "media_1",
-          source_type: "document",
-          files: [{ url: "https://example.test/wrong" }],
-        },
-        {
-          source_id: "media_2",
-          source_type: "document",
-          files: [
-            { url: "javascript:alert(1)" },
-            { url: "https://example.test/right" },
-          ],
-        },
-      ],
-      preparation_omissions: [
-        {
-          reason_code: "unsupported_type",
-          url: "https://example.test/file.xlsx",
-        },
-      ],
-    }),
-  );
-  assert.deepEqual(notice.evidence, [
-    {
-      quote: "신청은 10월까지",
-      label: "첨부 근거 · 2쪽",
-      url: "https://example.test/right",
-    },
-  ]);
+  const fields = url.searchParams.get("select").split(",");
+  assert.ok(fields.includes("preparation_omissions"));
+  assert.ok(!fields.includes("result"));
+  assert.ok(!fields.includes("file_references"));
+  const notice = parseNotice(row(1, {
+    display_status: "needs_review",
+    result: { evidence: [{ excerpt: "원문 근거" }] },
+    preparation_omissions: [{ reason_code: "unsupported_type", url: "https://example.test/file.xlsx" }],
+  }));
+  assert.equal("evidence" in notice, false);
   assert.match(notice.omissions[0].message, /지원하지 않는 파일/);
   assert.equal(notice.omissions[0].url, "https://example.test/file.xlsx");
 });
 
-test("불완전한 근거 메타데이터는 안전한 원문으로 안내하고 요약 없는 공지는 근거를 숨긴다", () => {
-  const data = {
+test("누락 첨부의 잘못된 주소는 공식 원문으로 안내한다", () => {
+  const notice = parseNotice(row(1, {
     url: "https://example.test/notice",
-    result: {
-      evidence: [
-        null,
-        { excerpt: "근거", source_id: "media_1", source_type: "image" },
-      ],
-    },
-    file_references: [null],
     preparation_omissions: [null, { url: "javascript:bad" }],
-  };
-  assert.equal(
-    parseNotice(row(1, { ...data, display_status: "summarized" })).evidence[0]
-      .url,
-    data.url,
-  );
-  assert.deepEqual(parseNotice(row(1, data)).evidence, []);
-  assert.equal(parseNotice(row(1, data)).omissions[0].url, data.url);
+  }));
+  assert.equal(notice.omissions.length, 1);
+  assert.equal(notice.omissions[0].url, "https://example.test/notice");
 });
 
 test("전체·기타·카테고리·정렬은 서로 다른 Query 캐시를 사용한다", () => {
