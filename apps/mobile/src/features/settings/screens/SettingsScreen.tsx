@@ -1,3 +1,4 @@
+import { router } from "expo-router";
 import { useState } from "react";
 import { Modal, Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
@@ -162,6 +163,11 @@ function StandardSettingsScreen() {
           <ChevronRight color={COLORS.secondary} size={18} strokeWidth={1.5} />
         </Pressable>
       </View>
+      <Pressable accessibilityRole="button" onPress={() => router.push("/keyword-notifications")}
+        style={styles.panel}>
+        <AppText variant="bold" size={16.62}>관심 키워드 알림</AppText>
+        <AppText secondary>제목·본문에 관심 키워드가 있는 새 공문을 알려드려요.</AppText>
+      </Pressable>
       <Modal
         visible={infoOpen}
         transparent

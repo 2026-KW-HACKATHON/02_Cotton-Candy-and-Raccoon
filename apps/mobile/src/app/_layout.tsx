@@ -1,3 +1,4 @@
+import { useKeywordNotifications } from "@/features/keyword-notifications/useKeywordNotifications";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -14,6 +15,7 @@ export default function RootLayout() {
   const onboardingComplete = useDisplayPreferences(
     (state) => state.onboardingComplete,
   );
+  useKeywordNotifications(startup.ready && onboardingComplete);
   return (
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
@@ -35,6 +37,7 @@ export default function RootLayout() {
             <Stack.Protected guard={onboardingComplete}>
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="settings" />
+              <Stack.Screen name="keyword-notifications" />
               <Stack.Screen name="notice/[id]" />
             </Stack.Protected>
             <Stack.Screen name="onboarding" />
