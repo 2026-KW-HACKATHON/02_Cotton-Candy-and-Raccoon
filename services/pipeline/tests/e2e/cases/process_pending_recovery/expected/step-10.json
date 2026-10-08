@@ -98,7 +98,9 @@
         "created_at": "<unchanged>",
         "updated_at": "<unchanged>"
       }
-    }
+    },
+    "notice_dictionary_links": {},
+    "standard_dictionary_cache": {}
   },
   "row_counts": {
     "holidays": 0,
@@ -108,7 +110,8 @@
     "notice_summaries": 1,
     "notice_summary_executions": 1,
     "notices": 1,
-    "standard_dictionary_cache": 0
+    "standard_dictionary_cache": 0,
+    "notice_dictionary_links": 0
   },
   "anon": {
     "notices": {
@@ -158,6 +161,24 @@
         "body_text_present": true,
         "attachment_content_included": false,
         "dictionary_candidates": []
+      }
+    },
+    "get_notice_dictionary": {
+      "nowon/1001/900611": {
+        "result": {
+          "attachment_content_included": false,
+          "body_text_present": true,
+          "changes": [],
+          "easy_text": "지원 사업 신청\n지원 사업 신청\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참\n추가 안내",
+          "generated_at": "<unchanged>",
+          "model": "gemini-3.5-flash-lite",
+          "notice_revision": "10b39f77d7d04ade2769a7d5784eadb95cf0f2443bb6a0156353db38502b8c1c",
+          "original_text": "지원 사업 신청\n지원 사업 신청\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참\n추가 안내",
+          "prompt_version": "easy-language-v8",
+          "dictionary_candidates": null,
+          "dictionary_status": "pending",
+          "notice_id": 1
+        }
       }
     }
   }

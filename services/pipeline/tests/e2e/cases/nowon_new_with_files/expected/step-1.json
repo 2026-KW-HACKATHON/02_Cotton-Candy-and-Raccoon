@@ -19,7 +19,14 @@
       "skipped_count": 0,
       "failed_count": 0,
       "skipped": [],
-      "failures": []
+      "failures": [],
+      "dictionary": {
+        "attempted_count": 1,
+        "complete_count": 1,
+        "partial_count": 0,
+        "pending_count": 0,
+        "failures": []
+      }
     }
   },
   "stderr": [],
@@ -111,11 +118,20 @@
         "dictionary_candidates": []
       }
     },
+    "notice_dictionary_links": {
+      "nowon/1001/900401": {
+        "easy_text_token": "<set>",
+        "candidates": [],
+        "generated_at": "<set>"
+      }
+    },
+    "standard_dictionary_cache": {},
     "notice_summary_executions": {},
     "notice_processing_jobs": {}
   },
   "row_counts": {
     "holidays": 0,
+    "notice_dictionary_links": 1,
     "notice_easy_texts": 1,
     "notice_files": 3,
     "notice_summaries": 0,
@@ -180,6 +196,32 @@
         "body_text_present": true,
         "attachment_content_included": false,
         "dictionary_candidates": []
+      }
+    },
+    "get_notice_dictionary": {
+      "nowon/1001/900401": {
+        "result": {
+          "attachment_content_included": false,
+          "body_text_present": true,
+          "changes": [
+            {
+              "context": "참가자를 모집합니다",
+              "end": 29,
+              "original": "참가자를",
+              "replacement": "참여할 사람을",
+              "start": 25
+            }
+          ],
+          "dictionary_candidates": [],
+          "dictionary_status": "complete",
+          "easy_text": "어린이 독서교실 참가자 모집\n어린이 독서교실 참여할 사람을 모집합니다.\n신청 기간: 2026-10-08 ~ 2026-10-17",
+          "generated_at": "<set>",
+          "model": "gemini-3.5-flash-lite",
+          "notice_id": 1,
+          "notice_revision": "34c976bf4b5a63449509ed7300eab55f15356e2dc4505221d6d0b9d3a1420319",
+          "original_text": "어린이 독서교실 참가자 모집\n어린이 독서교실 참가자를 모집합니다.\n신청 기간: 2026-10-08 ~ 2026-10-17",
+          "prompt_version": "easy-language-v8"
+        }
       }
     }
   }

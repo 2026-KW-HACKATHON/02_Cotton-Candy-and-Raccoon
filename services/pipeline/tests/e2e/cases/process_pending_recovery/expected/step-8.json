@@ -116,7 +116,9 @@
         "created_at": "<unchanged>",
         "updated_at": "<unchanged>"
       }
-    }
+    },
+    "notice_dictionary_links": {},
+    "standard_dictionary_cache": {}
   },
   "row_counts": {
     "holidays": 0,
@@ -126,7 +128,8 @@
     "notice_summaries": 1,
     "notice_summary_executions": 1,
     "notices": 1,
-    "standard_dictionary_cache": 0
+    "standard_dictionary_cache": 0,
+    "notice_dictionary_links": 0
   },
   "anon": {
     "notices": {
@@ -162,6 +165,11 @@
         "preparation_omissions": null
       }
     },
-    "notice_easy_texts": {}
+    "notice_easy_texts": {},
+    "get_notice_dictionary": {
+      "nowon/1001/900611": {
+        "result": null
+      }
+    }
   }
 }

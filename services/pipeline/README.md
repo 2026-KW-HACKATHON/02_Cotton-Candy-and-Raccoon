@@ -4,7 +4,7 @@ Python·uv 기반 공지 수집 파이프라인입니다. 노원구 `NowonNewsNo
 
 ## #18 현재 구현 범위와 새 저장 계약
 
-노원구·월계1동·서울시 수집 모델·변환·저장은 `supabase/migrations`의 스키마를 사용합니다. 비어 있는 DB에는 아래 SQL 7개를 파일명 순서대로 적용하고, 기존 DB에는 아직 적용하지 않은 새 마이그레이션을 추가합니다.
+노원구·월계1동·서울시 수집 모델·변환·저장은 `supabase/migrations`의 스키마를 사용합니다. 비어 있는 DB에는 아래 SQL 8개를 파일명 순서대로 적용하고, 기존 DB에는 아직 적용하지 않은 새 마이그레이션을 추가합니다.
 
 1. `20260922053900_notices.sql`: 공지·파일의 컬럼과 제약, 앱 읽기 권한
 2. `20260922053901_holidays.sql`: 공휴일 테이블과 앱 접근 차단
@@ -12,7 +12,8 @@ Python·uv 기반 공지 수집 파이프라인입니다. 노원구 `NowonNewsNo
 4. `20260922053903_notice_easy_texts.sql`: 쉬운말 결과
 5. `20261008150000_standard_dictionary_cache.sql`: 표준국어대사전 공유 캐시와 조회 권한
 6. `20261008170000_notice_dictionary_candidates.sql`: 쉬운말 사전 후보
-7. `20261008210000_notice_processing_jobs.sql`: 기능별 재처리 상태와 점유 기한
+7. `20261008190000_notice_dictionary_links.sql`: 공지별 사전 뜻풀이 연결과 조회
+8. `20261008210000_notice_processing_jobs.sql`: 기능별 재처리 상태와 점유 기한
 
 재구성 전 마이그레이션 14개를 적용한 로컬 DB는 다시 만들어야 합니다(`npx supabase db reset`).
 
@@ -812,6 +813,8 @@ uv run pipeline process-pending --feature summary --notice-id 123 --retry-stoppe
 모델과 프롬프트 버전도 캐시 계약에 포함합니다. 첨부만 바뀌면 쉬운말 정상 캐시는 유지합니다.
 현재 원문의 정상 요약과 내용이 있는 `needs_review`는 재사용하고, 요약과 쉬운말은 독립적으로
 선택합니다. 쉬운말은 사전 후보 배열까지 있어야 완료된 캐시입니다. 사전 뜻풀이 조회는 #54 범위입니다.
+`process-pending`은 사전 뜻풀이 후처리를 호출하지 않으므로, 이 명령으로 생성한 쉬운말의
+사전 조회 RPC는 별도 후처리 전까지 `dictionary_status=pending`을 반환합니다.
 
 비공개 `notice_processing_jobs`의 `(notice_id, feature)` 한 행이 작업 상태를 관리합니다.
 앱 역할 `anon`·`authenticated`에는 접근 권한이 없으며 기존 결과 테이블과 공개 형식을 유지합니다.

@@ -1,0 +1,19 @@
+{
+  "channel": {
+    "total": 1,
+    "item": {
+      "target_code": "100",
+      "word_info": {
+        "word": "구비^서류",
+        "pos_info": [{
+          "pos_code": "1",
+          "pos": "명사",
+          "comm_pattern_info": [{"sense_info": [
+            {"sense_code": "101", "definition": "일을 처리하는 데 필요한 서류."},
+            {"sense_code": "102", "definition": "일정한 조건에 맞추어 갖추어 놓은 서류."}
+          ]}]
+        }]
+      }
+    }
+  }
+}

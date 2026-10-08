@@ -40,6 +40,7 @@ jobs:
           NOWON_NOTICE_API_KEY: ${{ secrets.NOWON_NOTICE_API_KEY }}
           EASY_TEXT_ENABLED: ${{ vars.PIPELINE_EASY_TEXT_ENABLED }}
           GEMINI_API_KEY: ${{ vars.PIPELINE_EASY_TEXT_ENABLED == 'true' && secrets.GEMINI_API_KEY || '' }}
+          STDICT_API_KEY: ${{ vars.PIPELINE_EASY_TEXT_ENABLED == 'true' && secrets.STDICT_API_KEY || '' }}
         run: |
           if [ -z "$DATABASE_URL" ] || [ -z "$NOWON_NOTICE_API_KEY" ]; then
             echo "Required pipeline secrets are missing." >&2
@@ -47,6 +48,10 @@ jobs:
           fi
           if [ "$EASY_TEXT_ENABLED" = "true" ] && [ -z "$GEMINI_API_KEY" ]; then
             echo "GEMINI_API_KEY is required when easy-text processing is enabled." >&2
+            exit 1
+          fi
+          if [ "$EASY_TEXT_ENABLED" = "true" ] && [ -z "$STDICT_API_KEY" ]; then
+            echo "STDICT_API_KEY is required when notice dictionary processing is enabled." >&2
             exit 1
           fi
       - run: uv sync --no-dev --frozen
@@ -76,6 +81,7 @@ jobs:
           DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
           NOWON_NOTICE_API_KEY: ${{ secrets.NOWON_NOTICE_API_KEY }}
           GEMINI_API_KEY: ${{ vars.PIPELINE_EASY_TEXT_ENABLED == 'true' && secrets.GEMINI_API_KEY || '' }}
+          STDICT_API_KEY: ${{ vars.PIPELINE_EASY_TEXT_ENABLED == 'true' && secrets.STDICT_API_KEY || '' }}
         run: >-
           uv run --no-dev --frozen pipeline collect --source nowon
           --mode "${{ steps.mode.outputs.mode }}" ${{ steps.mode.outputs.easy_text_flag }}
@@ -85,6 +91,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
           GEMINI_API_KEY: ${{ vars.PIPELINE_EASY_TEXT_ENABLED == 'true' && secrets.GEMINI_API_KEY || '' }}
+          STDICT_API_KEY: ${{ vars.PIPELINE_EASY_TEXT_ENABLED == 'true' && secrets.STDICT_API_KEY || '' }}
         run: >-
           uv run --no-dev --frozen pipeline collect --source wolgye1
           --mode "${{ steps.mode.outputs.mode }}" ${{ steps.mode.outputs.easy_text_flag }}
@@ -95,6 +102,6 @@ jobs:
           WOLGYE1_OUTCOME: ${{ steps.wolgye1.outcome }}
         run: |
           if [ "$NOWON_OUTCOME" != "success" ] || [ "$WOLGYE1_OUTCOME" != "success" ]; then
-            echo "Collection or easy-text processing was incomplete. Review the per-source JSON above." >&2
+            echo "Collection, easy-text or dictionary processing was incomplete. Review the per-source JSON above." >&2
             exit 1
           fi
