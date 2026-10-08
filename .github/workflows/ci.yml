@@ -44,6 +44,7 @@ jobs:
       AUDIT_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/pipeline_schema_test_ci
       SCHEMA_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/pipeline_schema_test_empty_ci
       GLOSSARY_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/pipeline_glossary_test_ci
+      E2E_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/pipeline_e2e_test_ci
     defaults:
       run:
         working-directory: services/pipeline
@@ -54,11 +55,21 @@ jobs:
       - run: uv run --locked ruff check
       - name: Prepare disposable test databases
         run: uv run --locked python scripts/prepare_test_databases.py
-      - name: Test pipeline with PostgreSQL
-        run: uv run --locked pytest --junitxml="$RUNNER_TEMP/pipeline-junit.xml"
+      - name: Test pipeline units with PostgreSQL
+        run: uv run --locked pytest tests/unit --junitxml="$RUNNER_TEMP/pipeline-junit.xml"
+      - name: Test pipeline e2e cases
+        run: uv run --locked pytest tests/e2e --junitxml="$RUNNER_TEMP/e2e-junit.xml"
       - name: Test migrations and app database permissions
         run: uv run --locked pytest ../../supabase/tests --junitxml="$RUNNER_TEMP/schema-junit.xml"
-      - name: Require both test suites without skips
+      - name: Require every test suite without skips
         run: >-
           uv run --locked python scripts/check_test_report.py
-          "$RUNNER_TEMP/pipeline-junit.xml" "$RUNNER_TEMP/schema-junit.xml"
+          "$RUNNER_TEMP/pipeline-junit.xml" "$RUNNER_TEMP/e2e-junit.xml"
+          "$RUNNER_TEMP/schema-junit.xml"
+      - name: Upload e2e reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-reports
+          path: services/pipeline/artifacts/e2e/
+          if-no-files-found: warn

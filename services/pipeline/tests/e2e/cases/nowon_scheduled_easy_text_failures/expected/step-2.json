@@ -1,0 +1,198 @@
+{
+  "exit_code": 1,
+  "report": {
+    "mode": "new",
+    "total_count": 3,
+    "selected_count": 3,
+    "saved_count": 2,
+    "pages_read": 1,
+    "initial_baseline": true,
+    "listing_complete": true,
+    "failed_ranges": [],
+    "complete": false,
+    "failures": [
+      {
+        "post_sn": "900533",
+        "stage": "storage",
+        "reason_code": "db_save_failed"
+      }
+    ],
+    "easy_text": {
+      "status": "failed",
+      "complete": false,
+      "attempted_count": 2,
+      "successful_count": 1,
+      "skipped_count": 0,
+      "failed_count": 1,
+      "skipped": [],
+      "failures": [
+        {
+          "notice_id": 2,
+          "reason_code": "api_failed"
+        }
+      ]
+    }
+  },
+  "stderr": [],
+  "http_calls": [
+    "nowon_api 1-50",
+    "nowon_page 900533",
+    "nowon_page 900532",
+    "nowon_page 900531"
+  ],
+  "gemini_calls": {
+    "easy_text": [
+      {
+        "model": "gemini-3.5-flash-lite",
+        "input": [
+          {
+            "type": "text",
+            "sha256": "fc56b55f2134ff0b",
+            "length": 18
+          }
+        ]
+      },
+      {
+        "model": "gemini-3.5-flash-lite",
+        "input": [
+          {
+            "type": "text",
+            "sha256": "90238145ac8f8b07",
+            "length": 18
+          }
+        ]
+      }
+    ]
+  },
+  "db": {
+    "notices": {
+      "nowon/1001/900531": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "어르신 체조 참가자 모집",
+        "department": "어르신복지과",
+        "registered_on": "2026-10-07",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900531",
+        "body_html": "<p>어르신 체조 참가자를 모집합니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      },
+      "nowon/1001/900532": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "청소년 캠프 참가자 모집",
+        "department": "교육지원과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900532",
+        "body_html": "<p>청소년 캠프 참가자를 모집합니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {
+      "nowon/1001/900531": {
+        "notice_revision": "9a552e3ef7d2eea6b790fe16d4624d85e811cef14281d2055e1eb847e2060b0e",
+        "source_hash": "bdf98ac143995637d0cd830b0817251fa6d63cbdd71983f4fcd5c603bba3fd8b",
+        "original_text": "어르신 체조 참가자 모집\n어르신 체조 참가자를 모집합니다.",
+        "easy_text": "어르신 체조 참가자 모집\n어르신 체조 참여할 사람을 모집합니다.",
+        "changes": [
+          {
+            "context": "참가자를 모집합니다",
+            "end": 25,
+            "original": "참가자를",
+            "replacement": "참여할 사람을",
+            "start": 21
+          }
+        ],
+        "model": "gemini-3.5-flash-lite",
+        "prompt_version": "easy-language-v7",
+        "attempt_count": 1,
+        "generated_at": "<set>",
+        "body_text_present": true,
+        "attachment_content_included": false
+      }
+    },
+    "notice_summary_executions": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_easy_texts": 1,
+    "notice_files": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 2
+  },
+  "anon": {
+    "notices": {
+      "nowon/1001/900531": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "어르신 체조 참가자 모집",
+        "department": "어르신복지과",
+        "registered_on": "2026-10-07",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900531",
+        "body_html": "<p>어르신 체조 참가자를 모집합니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      },
+      "nowon/1001/900532": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "청소년 캠프 참가자 모집",
+        "department": "교육지원과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900532",
+        "body_html": "<p>청소년 캠프 참가자를 모집합니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {
+      "nowon/1001/900531": {
+        "notice_revision": "9a552e3ef7d2eea6b790fe16d4624d85e811cef14281d2055e1eb847e2060b0e",
+        "source_hash": "bdf98ac143995637d0cd830b0817251fa6d63cbdd71983f4fcd5c603bba3fd8b",
+        "original_text": "어르신 체조 참가자 모집\n어르신 체조 참가자를 모집합니다.",
+        "easy_text": "어르신 체조 참가자 모집\n어르신 체조 참여할 사람을 모집합니다.",
+        "changes": [
+          {
+            "context": "참가자를 모집합니다",
+            "end": 25,
+            "original": "참가자를",
+            "replacement": "참여할 사람을",
+            "start": 21
+          }
+        ],
+        "model": "gemini-3.5-flash-lite",
+        "prompt_version": "easy-language-v7",
+        "attempt_count": 1,
+        "generated_at": "<set>",
+        "body_text_present": true,
+        "attachment_content_included": false
+      }
+    }
+  }
+}

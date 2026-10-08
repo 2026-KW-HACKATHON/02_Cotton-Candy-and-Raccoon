@@ -1,0 +1,25 @@
+{
+  "http_calls": [],
+  "gemini_calls": {},
+  "db": {
+    "notices": {},
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {},
+    "notice_summary_executions": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_easy_texts": 0,
+    "notice_files": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 0
+  },
+  "anon": {
+    "notices": {},
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {}
+  }
+}

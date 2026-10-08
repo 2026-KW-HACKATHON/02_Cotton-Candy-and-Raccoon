@@ -1,0 +1,150 @@
+{
+  "exit_code": 1,
+  "report": {
+    "mode": "new",
+    "total_count": 2,
+    "selected_count": 2,
+    "saved_count": 1,
+    "pages_read": 1,
+    "initial_baseline": true,
+    "listing_complete": true,
+    "failed_ranges": [],
+    "complete": false,
+    "failures": [
+      {
+        "post_sn": "900452",
+        "stage": "storage",
+        "reason_code": "db_save_failed"
+      }
+    ],
+    "easy_text": {
+      "status": "complete",
+      "complete": true,
+      "attempted_count": 1,
+      "successful_count": 1,
+      "skipped_count": 0,
+      "failed_count": 0,
+      "skipped": [],
+      "failures": []
+    }
+  },
+  "stderr": [],
+  "http_calls": [
+    "nowon_api 1-50",
+    "nowon_page 900452",
+    "nowon_page 900451"
+  ],
+  "gemini_calls": {
+    "easy_text": [
+      {
+        "model": "gemini-3.5-flash-lite",
+        "input": [
+          {
+            "type": "text",
+            "sha256": "3f0a9e676a072420",
+            "length": 19
+          }
+        ]
+      }
+    ]
+  },
+  "db": {
+    "notices": {
+      "nowon/1001/900451": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "평생학습 강좌 참가자 모집",
+        "department": "교육지원과",
+        "registered_on": "2026-10-07",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900451",
+        "body_html": "<p>평생학습 강좌 참가자를 모집합니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {
+      "nowon/1001/900451": {
+        "notice_revision": "b5c378a2b2262b651b5eade31a8fd1685c9a05f1a9f775595dd6ab3039bd3302",
+        "source_hash": "308bfb8fcc6a09aa629c2c755124b32d1fcf32bd6c906a9959e2b6c413df90ed",
+        "original_text": "평생학습 강좌 참가자 모집\n평생학습 강좌 참가자를 모집합니다.",
+        "easy_text": "평생학습 강좌 참가자 모집\n평생학습 강좌 참여할 사람을 모집합니다.",
+        "changes": [
+          {
+            "context": "참가자를 모집합니다",
+            "end": 27,
+            "original": "참가자를",
+            "replacement": "참여할 사람을",
+            "start": 23
+          }
+        ],
+        "model": "gemini-3.5-flash-lite",
+        "prompt_version": "easy-language-v7",
+        "attempt_count": 1,
+        "generated_at": "<set>",
+        "body_text_present": true,
+        "attachment_content_included": false
+      }
+    },
+    "notice_summary_executions": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_easy_texts": 1,
+    "notice_files": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 1
+  },
+  "anon": {
+    "notices": {
+      "nowon/1001/900451": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "평생학습 강좌 참가자 모집",
+        "department": "교육지원과",
+        "registered_on": "2026-10-07",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900451",
+        "body_html": "<p>평생학습 강좌 참가자를 모집합니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {
+      "nowon/1001/900451": {
+        "notice_revision": "b5c378a2b2262b651b5eade31a8fd1685c9a05f1a9f775595dd6ab3039bd3302",
+        "source_hash": "308bfb8fcc6a09aa629c2c755124b32d1fcf32bd6c906a9959e2b6c413df90ed",
+        "original_text": "평생학습 강좌 참가자 모집\n평생학습 강좌 참가자를 모집합니다.",
+        "easy_text": "평생학습 강좌 참가자 모집\n평생학습 강좌 참여할 사람을 모집합니다.",
+        "changes": [
+          {
+            "context": "참가자를 모집합니다",
+            "end": 27,
+            "original": "참가자를",
+            "replacement": "참여할 사람을",
+            "start": 23
+          }
+        ],
+        "model": "gemini-3.5-flash-lite",
+        "prompt_version": "easy-language-v7",
+        "attempt_count": 1,
+        "generated_at": "<set>",
+        "body_text_present": true,
+        "attachment_content_included": false
+      }
+    }
+  }
+}

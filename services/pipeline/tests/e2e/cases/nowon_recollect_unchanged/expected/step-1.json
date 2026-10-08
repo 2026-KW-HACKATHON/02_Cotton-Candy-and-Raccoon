@@ -1,0 +1,109 @@
+{
+  "exit_code": 0,
+  "report": {
+    "mode": "new",
+    "total_count": 2,
+    "selected_count": 2,
+    "saved_count": 2,
+    "pages_read": 1,
+    "initial_baseline": true,
+    "listing_complete": true,
+    "failed_ranges": [],
+    "complete": true,
+    "failures": []
+  },
+  "stderr": [],
+  "http_calls": [
+    "nowon_api 1-50",
+    "nowon_page 900202",
+    "nowon_page 900201"
+  ],
+  "gemini_calls": {},
+  "db": {
+    "notices": {
+      "nowon/1001/900201": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "가을 문화행사 일정 안내",
+        "department": "문화체육과",
+        "registered_on": "2026-10-07",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900201",
+        "body_html": "<p>가을 문화행사 일정을 안내합니다.</p><p>일시: 2026-10-25(토) 14:00</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      },
+      "nowon/1001/900202": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "구립도서관 휴관일 변경 안내",
+        "department": "문화체육과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900202",
+        "body_html": "<p>구립도서관 휴관일 변경을 안내합니다.</p><p>변경 휴관일: 매월 둘째 주 월요일</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {},
+    "notice_summary_executions": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_easy_texts": 0,
+    "notice_files": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 2
+  },
+  "anon": {
+    "notices": {
+      "nowon/1001/900201": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "가을 문화행사 일정 안내",
+        "department": "문화체육과",
+        "registered_on": "2026-10-07",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900201",
+        "body_html": "<p>가을 문화행사 일정을 안내합니다.</p><p>일시: 2026-10-25(토) 14:00</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      },
+      "nowon/1001/900202": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "구립도서관 휴관일 변경 안내",
+        "department": "문화체육과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900202",
+        "body_html": "<p>구립도서관 휴관일 변경을 안내합니다.</p><p>변경 휴관일: 매월 둘째 주 월요일</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {}
+  }
+}

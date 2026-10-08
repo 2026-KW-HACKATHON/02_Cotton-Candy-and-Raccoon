@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SeoulNewsList>
+  <list_total_count>1</list_total_count>
+  <RESULT><CODE>INFO-000</CODE><MESSAGE>정상 처리되었습니다</MESSAGE></RESULT>
+  <row>
+    <BLOG_ID>21</BLOG_ID>
+    <BLOG_NAME>복지</BLOG_NAME>
+    <POST_ID>000777</POST_ID>
+    <POST_TITLE>돌봄 서비스 신청 안내</POST_TITLE>
+    <THUMB_URI></THUMB_URI>
+    <POST_EXCERPT><![CDATA[<p>미리보기</p>]]></POST_EXCERPT>
+    <PUBLISH_DATE>2026-10-07 10:00:00</PUBLISH_DATE>
+    <MODIFY_DATE>2026-10-07 10:00:00</MODIFY_DATE>
+    <POST_STATUS>publish</POST_STATUS>
+    <POST_CONTENT><![CDATA[<p>돌봄 서비스 신청을 안내합니다.</p>]]></POST_CONTENT>
+    <MANAGER_NAME></MANAGER_NAME>
+    <MANAGER_PHONE></MANAGER_PHONE>
+    <MANAGER_DEPT>테스트 부서</MANAGER_DEPT>
+  </row>
+</SeoulNewsList>

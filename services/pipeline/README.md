@@ -4,15 +4,18 @@ Python·uv 기반 공지 수집 파이프라인입니다. 노원구 `NowonNewsNo
 
 ## #18 현재 구현 범위와 새 저장 계약
 
-노원구·월계1동·서울시 수집 모델·변환·저장은 #16의 통합 초기 스키마를 사용합니다. 비어 있는 DB에 아래 3개 SQL을 파일명 순서대로 적용해야 합니다. 별도의 identity 후속 SQL은 init에 통합되어 더 이상 적용하지 않습니다.
+노원구·월계1동·서울시 수집 모델·변환·저장은 `supabase/migrations`의 최초 생성용 스키마를 사용합니다. 비어 있는 DB에 아래 4개 SQL을 파일명 순서대로 적용해야 합니다.
 
-1. `20260922053900_init.sql`: 공지·파일의 최종 컬럼과 제약 생성
-2. `20260922053901_rls.sql`: 앱의 공개 데이터 읽기 권한 설정
-3. `20260923044500_holidays.sql`: 기존 공휴일 테이블·접근 제한 설정
+1. `20260922053900_notices.sql`: 공지·파일의 컬럼과 제약, 앱 읽기 권한
+2. `20260922053901_holidays.sql`: 공휴일 테이블과 앱 접근 차단
+3. `20260922053902_notice_summaries.sql`: 요약, 요약 실행, 원문 변경 trigger
+4. `20260922053903_notice_easy_texts.sql`: 쉬운말 결과
+
+재구성 전 마이그레이션 14개를 적용한 로컬 DB는 다시 만들어야 합니다(`npx supabase db reset`).
 
 파일별 역할과 제약은 [공지 DB README](../../supabase/README.md)를 참고하세요. 이 초기 구조는 이미 생성된 DB를 자동 변경하는 업그레이드 SQL이 아닙니다. CLI도 스키마를 생성하거나 마이그레이션을 자동 적용하지 않습니다.
 
-공지 식별은 `(category, source_board, post_sn)`이고 source_board는 노원구 `1001`, 월계1동 게시판 `1042`입니다. 같은 게시판에 표시되는 다른 동 고정 공지도 source_board는 `1042`입니다. 서울시는 BLOG_ID를 사용합니다. SQL 구성은 5개에서 3개로 통합됐지만 BE의 최종 저장 계약은 같습니다.
+공지 식별은 `(category, source_board, post_sn)`이고 source_board는 노원구 `1001`, 월계1동 게시판 `1042`입니다. 같은 게시판에 표시되는 다른 동 고정 공지도 source_board는 `1042`입니다. 서울시는 BLOG_ID를 사용합니다. SQL 파일 구성이 바뀌어도 BE의 저장 계약은 같습니다.
 
 파일 식별은 `(notice_id, file_key, kind)`입니다. `FileRecord.file_key`는 읽기 전용 계산 속성으로, 실제 ID가 있으면 `id:<file_id>`, 없으면 `url:<저장할 정규화 URL의 UTF-8 SHA256>`을 반환합니다. `file_sn`·`file_id`는 출처에 없을 때 None/SQL NULL이며, 빈 값이나 가짜 UUID를 넣지 않습니다. URL 해시는 파일 내용 해시가 아닙니다.
 
@@ -459,11 +462,11 @@ PDF·이미지 입력을 받는 요약 경로가 추가됐습니다. #13 준비 
 입력 검증 함수까지 실제 자료로 확인했으며, Gemini 전송·응답은 별도입니다. 추출 텍스트·파일을 DB에 다시
 저장하거나 새 테이블·환경 변수·예약 실행을 추가하지 않았습니다.
 
-현재 호환 회귀는 `test_summary_bundle_manifest.py`에서 중복 파일 연결, HWP 텍스트 해시,
+현재 호환 회귀는 `tests/unit/attachments/test_summary_bundle_manifest.py`에서 중복 파일 연결, HWP 텍스트 해시,
 본문 이미지 원문 링크, 준비 실패와 원문 버전 변경을 검증합니다. 전용 로컬 PostgreSQL에서
 실제 원본 조회→입력 준비→요약 job→결과·파일 연결 저장도 검증하며,
 이 테스트의 다운로드와 Gemini 응답은 대역을 사용합니다.
-추가 회귀는 `test_attachment_recovery.py`에서 URL 오류 격리, 캐시 공유, 이미지 합계 예산,
+추가 회귀는 `tests/unit/attachments/test_attachment_recovery.py`에서 URL 오류 격리, 캐시 공유, 이미지 합계 예산,
 시간 예산, 부분 요약 저장·재조회·복구·기존 결과 보존을 검증합니다.
 2026-10-08 검증: develop `edc975b` 통합 상태에서 pipeline **3559 passed**, DB 스키마
 **506 passed**, 모두 **0 skipped**. 공유 URL 정규화 변경 후 관련 회귀도 통과했습니다.
@@ -527,6 +530,37 @@ API 호출 중 DB 잠금을 유지하지 않도록 autocommit 연결을 권장�
 `attempt_count`는 저장이 적용된 요약 실행의 누적 횟수이며 성공 후 초기화하지 않습니다.
 내부 재요청·HTTP 전송 횟수와 다르며 기본 job의 `superseded` 종료는 세지 않습니다.
 외부에서 같은 실행의 `pending`을 `attempt_increment=1`로 기록했다면 job에는 `attempt_increment=0`을 전달합니다.
+
+### 같은 원문의 재요약에서 정보 보존 (#40)
+
+응답이 형식 검사를 통과해도 같은 원문의 기존 정보를 지우는 후보는 자동 교체하지 않습니다.
+DB의 UPSERT 행 잠금 안에서 기존 행과 후보를 비교하며 다음 중 하나라도 해당하면 보존합니다.
+
+- 기존 대상·행동·장소·발행처·지역·분류 등 채워진 값이 빈 값이나 `unknown`으로 바뀜
+- 기존 대상·기한·행동·유의사항 카드가 비어짐
+- 일정 종류별 항목 수나 시작일·종료일·시각의 채워진 값 수가 줄어듦
+- 유의사항·주제 수, 근거가 연결된 필드 집합이 줄어듦(해소된 불확실성의 근거 제외)
+- 기존 정렬 마감일 또는 파일 연결 manifest가 사라짐
+
+보존할 때는 기존 결과·카드·상태·마감일·근거·파일 연결·생성 메타데이터를 **통째로** 유지합니다.
+새 후보의 일부 필드를 기존 결과와 섞지 않습니다. `attempt_count`, `updated_at`과 비공개
+`last_error_code='summary_information_loss'`만 갱신하며, 이 코드는 자동 재시도 지시가 아닙니다.
+반환값의 `information_loss_prevented=True`로 이 결정을 구분할 수 있습니다. 반환값의 `result`는
+생성된 후보이므로, 앱은 commit 이후 DB를 다시 조회해야 합니다. 반환되는 `status`,
+`deadline_on`, `generated_at`은 실제 저장된 행의 값입니다. 보정·첨부 준비 실패에 따른
+기존 결과 보존은 별도 처리이며 이 플래그로 표시하지 않습니다.
+
+기존 결과가 없는 최초 부분 요약은 저장할 수 있고, 정보가 줄지 않는 문구·날짜 수정이나
+정보 보완도 허용합니다. 원문이 바뀌면 기존 버전 무효화 규칙을 따릅니다. 실행 토큰이 있는
+경로는 원문 버전을 기준으로 판단하므로 입력 해시만 달라져도 보호합니다. 토큰 없는 기존
+저수준 호출은 해시가 같은 경우만 보호하므로 실제 연동은 위 job 경로를 사용하세요.
+
+이 정책은 정보가 채워진 범위를 비교하며 문장의 의미·정확도까지 판정하지는 않습니다.
+같은 개수의 항목을 다른 내용으로 바꾸거나 기존 오류를 삭제해야 하는 상황은 별도 검토가
+필요합니다. 검토자용 강제 교체 기능은 포함하지 않습니다.
+
+코드가 DB 함수 `summary_information_loss`를 호출하므로, 이 함수를 만드는
+`supabase/migrations/20260922053902_notice_summaries.sql`을 코드보다 먼저 적용합니다. 자동 검증에서는 임시 PostgreSQL에만 적용하며 공식 DB 적용은 별도입니다.
 
 ### 분야 코드
 
@@ -608,8 +642,7 @@ payload = view.model_dump(mode="json")
 
 저장 시 현재 원문 버전과 전체 파일 목록을 대조하며 요약과 연결 정보를 함께 씁니다.
 `file_manifest`는 비공개이고 앱은 자동 생성된 `file_references`만 조회합니다.
-새 마이그레이션 `20261008120000_notice_summary_omissions.sql` 적용 후 앱은
-`preparation_omissions`도 조회할 수 있습니다. 항목은 `notice_file_id`(본문 이미지는 null),
+앱은 `preparation_omissions`도 조회할 수 있습니다. 항목은 `notice_file_id`(본문 이미지는 null),
 `url`(등록 파일의 원본 URL 또는 원문 공지 URL), 안전한 `reason_code`만 포함합니다.
 모델이 만든 필드가 아니며 해시·파일 키·상세 예외는 노출하지 않습니다.
 `build_notice_summary_view(..., preparation_omissions=row["preparation_omissions"])`로
@@ -626,6 +659,133 @@ PDF·이미지 좌표는 제공하지 않습니다. 준비 결과에 연결 정�
 있습니다. 수집·파일 준비에서 이 job으로 이어지는 자동 연결과 모바일 표시·강조는
 별도 구현이 필요합니다.
 
+## 공지 ID로 요약 실행
+
+`pipeline summarize-one --notice-id <id>`는 DB에 저장된 공지 하나를 요약해 저장하고, 커밋된 행에서
+앱이 읽을 공개 결과를 다시 만들어 JSON 한 줄로 출력합니다. 기존 준비, 검증, 저장 함수를 순서대로
+연결할 뿐 새 판정 로직은 없습니다. 쉬운말 변환은 별도 기능(`collect --easy-text`)이며 이 명령의
+보고에 섞지 않습니다.
+
+```powershell
+python -m uv run pipeline summarize-one --notice-id 123
+```
+
+필요한 설정은 `DATABASE_URL`과 `GEMINI_API_KEY`입니다. `GEMINI_API_KEY`가 환경변수에 없으면
+`services/pipeline/.env`에서 읽습니다. 둘 중 하나라도 없으면 DB에 아무것도 쓰지 않고 exit code 2로
+끝납니다.
+
+### 실행 단계와 트랜잭션 책임
+
+| 순서 | 단계 | DB 연결 |
+| --- | --- | --- |
+| 1 | `load_summary_source`: 본문, 파일, `content_revision`을 한 문장으로 읽음 | 짧은 autocommit 연결, 읽고 바로 닫음 |
+| 2 | `prepare_summary_source`: 첨부 다운로드와 입력 준비 | 연결 없음 |
+| 3 | `build_summary_metadata_from_manifest` | 연결 없음 |
+| 4 | `summarize_and_save_prepared_notice`: 실행 토큰 등록, Gemini, 결과 또는 실패 저장 | autocommit 연결. 토큰 등록은 즉시 커밋되어 Gemini 호출 중 열린 트랜잭션이 없고, 결과 저장은 저장 함수가 자체 트랜잭션으로 커밋 |
+| 5 | `load_stored_summary` → `build_notice_summary_view` | 새 연결로 커밋된 행만 읽음 |
+
+1단계에서 읽은 `content_revision`을 그대로 `expected_source_revision`으로 넘기므로, 준비 중이나
+Gemini 호출 중 원문, 파일 목록이 바뀌거나 같은 공지의 더 최신 실행이 시작되면 결과를 저장하지 않고
+`superseded`로 끝납니다. 준비 기준 시각(`reference_datetime`)과 저장 시각(`generated_at`)은 모두
+`pipeline.clock.now()`에서 얻습니다.
+
+### Gemini 호출 횟수와 비용
+
+- 한 번 실행에 요약 요청은 최대 2회입니다(응답 형식 교정 재요청 1회 포함). SDK 설정상 요청 1회는
+  HTTP 시도 최대 2회이므로, 실행 1회의 HTTP 요청은 최대 4회입니다.
+- 출력의 `gemini_requests`가 이번 실행에서 실제로 보낸 요약 요청 수입니다. 0이면 비용이 발생하지
+  않았습니다.
+- 공지 없음, 비공개 공지, 읽을 본문과 첨부가 없음, 설정 오류, 이미 오래된 입력이면 Gemini를 호출하지
+  않습니다.
+- 첨부 PDF와 이미지는 입력 토큰에 포함되어 본문만 있는 공지보다 비용이 큽니다.
+
+### 출력 JSON
+
+| 필드 | 의미 |
+| --- | --- |
+| `notice_id` | 처리한 공지 ID |
+| `execution_status` | 이번 실행 결과: `summarized`, `needs_review`, `failed`, `superseded`, `not_found`, `storage_failed` |
+| `stored_status` | 실행 후 새 연결로 다시 읽은 `notice_summaries.status`. 행이 없거나 확인하지 못했으면 `null` |
+| `public_result` | 앱이 읽을 요약 내용(`view.content`)이 있는지 |
+| `attachment_status` | 이번 실행이 읽은 첨부 범위: `none`, `all_read`, `partial`, `unread`. 공지를 찾지 못했으면 `null` |
+| `reason_code` | 실패나 검토 사유 코드. 없으면 `null` |
+| `gemini_called` | 이번 실행에서 Gemini 요약 요청을 보냈는지 |
+| `gemini_requests` | 보낸 요약 요청 수 |
+| `view` | 커밋된 행으로 만든 공개 응답(`build_notice_summary_view`). 행이 없으면 `null` |
+
+이번 실행이 실패해도 기존 정상 결과가 남아 있으면 `stored_status`, `public_result`, `view`는 그 행을
+기준으로 보고합니다. 예를 들어 Gemini 타임아웃이면 `execution_status`는 `failed`, `stored_status`는
+`summarized`, `public_result`는 `true`입니다.
+
+| `execution_status` | `reason_code` |
+| --- | --- |
+| `summarized` | `null` |
+| `needs_review` | `attachments_partial`, `attachments_unread`(첨부를 다 읽지 못함), `summary_review_required`(근거, 불확실성 등 요약 판정) |
+| `failed` | 저장된 `last_error_code`와 같음. 예: `api_timeout`, `api_error`, `response_validation_failed`, `input_preparation_failed` |
+| `superseded` | `summary_execution_superseded` |
+| `not_found` | `notice_not_found_or_hidden` |
+| `storage_failed` | `db_unavailable`(시작 전 연결 실패), `summary_storage_failed` 등 저장 오류 코드, `summary_read_failed`(저장 후 재조회 실패) |
+
+읽을 본문과 첨부가 모두 없는 공지는 입력 준비 단계에서 `no_content` 실패로 처리되어 Gemini 호출 없이
+`failed`, `input_preparation_failed`로 기록됩니다.
+
+### exit code
+
+| exit code | 경우 |
+| --- | --- |
+| 0 | `summarized` 또는 `needs_review`로 저장 완료 |
+| 1 | `failed`: 준비 실패, Gemini 실패, 응답 검증 실패가 기록됨 |
+| 2 | 인자 또는 설정 오류. DB에 쓰지 않음 |
+| 3 | `not_found`: 공지가 없거나 `is_visible = false` |
+| 4 | `superseded`: 처리 중 원문 변경 또는 더 최신 실행 시작. 결과를 저장하지 않음 |
+| 5 | `storage_failed`: DB 연결, 저장, 재조회 실패. 성공으로 보지 않음 |
+
+### 실패 후 확인할 상태
+
+```sql
+select status, last_error_code, attempt_count, attachment_status, generated_at, updated_at
+from notice_summaries where notice_id = 123;
+```
+
+- `failed`: 기존 정상 결과가 있으면 `status`와 `result`는 그대로이고 `last_error_code`,
+  `attempt_count`만 바뀝니다. 일시적인 오류(`api_timeout`, `api_error`)면 다시 실행합니다.
+- `superseded`: 원문이 바뀐 경우 기존 요약은 DB 트리거가 이미 무효화했습니다. 다시 실행하면 새 원문으로
+  요약합니다.
+- `storage_failed`: 결과가 커밋됐는지 확인할 수 없거나 커밋되지 않았습니다. DB 상태를 확인한 뒤 다시
+  실행합니다. 같은 원문이면 다시 실행해도 안전합니다.
+
+### 앱이 읽는 결과 (#34)
+
+앱(anon)은 `notice_summaries`에서 `notice_id`, `status`, `category`, `category_code`, `deadline_on`,
+`result`, `attachment_status`, `generated_at`, `card_summaries`, `file_references`,
+`preparation_omissions`만 읽을 수 있습니다. `source_hash`, `model`, `prompt_version`,
+`attempt_count`, `last_error_code`, `file_manifest`는 공개하지 않습니다. 이 명령의 `view`는 같은
+행으로 만든 화면용 응답이며 다음 필드를 가집니다.
+
+| 필드 | 내용 | 값이 없을 때 |
+| --- | --- | --- |
+| `status` | `summarized`, `needs_review`, `pending`, `failed`. 읽지 못한 자료가 있으면 `needs_review` | 항상 있음 |
+| `message` | 상태 안내 문구. 예: "원문 확인 요함", "읽지 못한 자료가 있어요. 원문을 확인하세요." | `summarized`면 `null` |
+| `content` | `headline`(한 줄 요약), `cards`(`audience`, `deadline`, `action`, `notes`), `metadata` | `pending`, `failed`, 내용 없는 검토 행이면 `null` |
+| `text_highlights` | 카드 문장의 원문 근거 위치 | 저장된 행이 이번 실행과 다른 원문에서 만들어졌으면 키가 없음. 내용이 없으면 `null` |
+| `file_references` | 근거로 쓴 첨부의 공개 링크 | 행의 값이 NULL이면 키가 없음. 빈 배열 가능 |
+| `preparation_omissions` | 읽지 못한 첨부(`notice_file_id`, `url`, `reason_code`) | 행의 값이 NULL이면 키가 없음. 빈 배열 가능 |
+
+이 응답을 읽는 쪽은 위 세 필드의 키가 없는 경우를 빈 값과 같게 처리해야 합니다.
+
+### 재사용 계약
+
+재처리나 예약 실행은 공지마다 `pipeline.summary_run.summarize_one(database, notice_id, *, api_key,
+model=DEFAULT_MODEL)`을 호출합니다.
+
+- 반환값 `SummaryRunResult`는 위 출력 필드를 가지며 `report()`가 JSON용 dict, `exit_code`가 위 표의
+  값을 돌려줍니다.
+- 함수가 자체 연결을 열고 닫으므로 호출자는 트랜잭션을 갖지 않습니다. 환경변수는 읽지 않으니 설정은
+  호출자가 확인해 넘깁니다.
+- DB 오류는 예외 대신 `storage_failed`로 돌려줍니다. 잘못된 `notice_id`는 `ValueError`, 잘못 저장된
+  데이터(검증을 통과하지 못하는 원문 URL 등)와 프로그래밍 오류는 예외를 그대로 올립니다.
+- 대상 선택, 예약 실행, 자동 재시도는 이 함수 밖의 별도 작업입니다.
+
 ## 실행과 검증
 
 ```powershell
@@ -638,6 +798,7 @@ python -m uv run pipeline collect-one --source wolgye1
 python -m uv run pipeline collect --source wolgye1 --limit 26
 python -m uv run pipeline collect --source wolgye1
 python -m uv run pipeline collect --source nowon --limit 3
+python -m uv run pipeline summarize-one --notice-id 123
 python -m uv run ruff check
 python -m uv run pytest
 ```
@@ -645,7 +806,136 @@ python -m uv run pytest
 공식 설치 프로그램으로 `uv` 실행 파일이 `PATH`에 등록된 환경에서는 위 명령의
 `python -m uv`를 `uv`로 줄여 실행할 수 있습니다.
 
+테스트는 `tests/unit/` 아래 영역별 폴더(`attachments`, `collect`, `easy_text`, `storage`,
+`summary`, `tooling`)에 있습니다. 개발 중에는 `python -m uv run pytest tests/unit/collect`처럼
+해당 영역만 실행할 수 있습니다. 여러 테스트 파일이 함께 쓰는 helper와 fixture는
+`tests/support/`에 두고, 테스트 파일끼리는 서로 import하지 않습니다. 경로는
+`support.paths`의 `TESTS_DIR`, `FIXTURES_DIR`, `PIPELINE_DIR`, `REPO_ROOT`를 사용합니다.
+`tests/unit/legacy_flow/`는 수집에서 저장까지의 흐름을 확인하는 테스트의 임시 위치이며,
+같은 내용을 e2e 케이스로 대체한 뒤 삭제합니다. 남길 테스트의 기준은 CONTRIBUTING.md를 따릅니다.
+
+`tests/unit/storage/test_summary_field_preservation.py`는 #40의 대상·기한 누락 조합,
+첨부 링크 보존, 최초 부분 결과와 정상 교체, 동시 실행을 검증합니다. 실제 PostgreSQL에
+commit한 뒤 별도의 익명 연결에서 공개 결과를 읽습니다. Gemini와 다운로드 HTTP 응답만
+대체하며 실제 외부 서비스의 요약 품질은 검증하지 않습니다. 전체 마이그레이션이 적용된
+임시 로컬 DB를 `PIPELINE_TEST_DATABASE_URL` 또는 `AUDIT_TEST_DATABASE_URL`로 지정해야 합니다.
+
 CI는 임시 PostgreSQL에 전체 마이그레이션을 적용해 파이프라인의 DB 검사를 실행하고,
 별도의 빈 DB에서 스키마·권한을 검증합니다. 검사 결과가 없거나 건너뛴 검사가 있으면
 실패 처리합니다. `scripts/prepare_test_databases.py`는 CI 전용 DB 이름과 로컬 연결을
-사용하며, 이미 있는 DB를 초기화하지 않습니다.
+사용하며, 이미 있는 DB를 초기화하지 않습니다. CI는 `tests/unit`, `tests/e2e`,
+`supabase/tests`를 각각 실행해 세 보고서 모두 skip이 없는지 확인합니다. 이 세 폴더 밖에 있는
+`test_*.py`는 CI에서 실행되지 않으므로, `tests/unit/tooling/test_ci_database_checks.py`가 `ci.yml`의
+`pytest` 대상과 `tests/` 아래 테스트 파일을 비교해 빠진 파일이 있으면 실패합니다. 새 테스트 폴더를
+만들 때는 `ci.yml`에 실행 단계를 함께 추가합니다.
+
+## e2e 검증
+
+`tests/e2e/`는 API 응답 예시 파일을 넣고 실제 CLI(`pipeline.cli.main`)를 그대로 실행해,
+DB에 저장된 결과와 앱(anon)이 조회하는 결과를 기대값과 비교합니다. 외부 HTTP 요청과
+Gemini 호출만 pytest monkeypatch로 녹화 응답에 연결하고, 운영 코드(`src/`)에는 테스트용
+분기가 없습니다. 실제 네트워크, 실제 Gemini, 운영 DB는 쓰지 않습니다.
+
+### 로컬 실행
+
+로컬 PostgreSQL 서버 주소를 `E2E_TEST_DATABASE_URL`로 지정합니다. DB 이름은
+`pipeline_e2e_test_`로 시작해야 하며, 그 DB 자체는 없어도 됩니다. 케이스마다 같은 서버에
+`pipeline_e2e_test_auto_<uuid>` DB를 새로 만들어 마이그레이션을 적용하고, 끝나면 지웁니다.
+설정이 없으면 건너뛰지 않고 실패합니다.
+
+```powershell
+$env:E2E_TEST_DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:5432/pipeline_e2e_test_local"
+python -m uv run pytest tests/e2e                     # 전체 케이스와 하네스 검사
+python -m uv run pytest tests/e2e -k nowon_api_error  # 케이스 하나
+```
+
+실행할 때마다 케이스별 결과가 `artifacts/e2e/<케이스명>.md`에 남습니다(Git 제외). step별 CLI 인자,
+exit code, 외부 요청 순서, Gemini 호출 수, 테이블별 행 수, 저장된 공지, anon에 보이는 공지,
+기대값과의 차이를 적고, 통과하지 못한 실행에서도 씁니다. CI에서는 `e2e-reports` artifact로 올립니다.
+
+### 케이스 추가 절차
+
+1. `tests/e2e/cases/<케이스명>/input/`에 API 응답 원본(XML, HTML), 첨부 파일, Gemini 응답 JSON을
+   넣습니다. 실제 공지를 쓸 때는 첨부 파일명과 본문의 개인 이름, 연락처를 가짜 값으로 바꿉니다.
+2. `case.json`에 실행 단계를 적습니다. 노원구 응답은 scaffold로 초안을 만들 수 있습니다.
+   ```powershell
+   python -m uv run python tests/e2e/harness/scaffold.py --name <케이스명> --source nowon `
+       --api <목록.xml> --page <원문.html>
+   ```
+   scaffold는 수집기가 요청할 URL을 라우트로 채우고, 남은 할 일을 `TODO:`로 출력합니다.
+   마스킹된 이름(`이0진` 등)이나 휴대전화 번호가 보이면 경고합니다.
+3. 기대값을 생성합니다.
+   ```powershell
+   $env:E2E_UPDATE = "1"; python -m uv run pytest tests/e2e -k <케이스명>; Remove-Item Env:E2E_UPDATE
+   ```
+4. 생성된 `expected/step-<n>.json`이 의도와 맞는지 읽고 확인합니다.
+5. 커밋합니다. 이후 실행은 기대값과 다르면 테이블, 행 키, 컬럼 단위로 차이를 보여 주며 실패합니다.
+
+`E2E_UPDATE`는 `CI` 환경변수가 있으면 거부됩니다. 실패한 케이스는 동작이 바뀐 이유를 설명할 수
+있을 때만 기대값을 갱신하고, PR 본문에 `expected/` 차이를 요약합니다.
+
+### case.json
+
+```json
+{
+  "title": "이 케이스가 확인하는 것",
+  "strict_unused": true,
+  "steps": [
+    {
+      "type": "collect",
+      "args": ["--source", "nowon", "--mode", "new"],
+      "http": [
+        {"route": "nowon_api", "start": 1, "end": 50, "body": "input/nowon_list.xml"},
+        {"route": "nowon_page", "post_sn": "900101", "body": "input/nowon_page_900101.html"}
+      ],
+      "gemini": {"easy_text": [], "summary": []},
+      "expect_exit": 0
+    }
+  ]
+}
+```
+
+| step `type` | 실행 |
+| --- | --- |
+| `collect`, `collect-one` | `pipeline <type> <args>`. stdout의 JSON 보고서와 stderr를 스냅샷에 넣습니다 |
+| `sql` | 테스트 DB에 `sql`을 직접 실행합니다. 운영자 숨김처럼 코드 경로가 없는 상황에만 쓰고 `reason`을 적습니다 |
+
+| `route` | 필요한 값 | 요청 |
+| --- | --- | --- |
+| `nowon_api` | `start`, `end` | 서울 열린데이터 `NowonNewsNoticeList/<start>/<end>/` |
+| `nowon_page` | `post_sn` | 노원구 공지 원문 `BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=<post_sn>` |
+| `wolgye1_list` | `page`(기본 1) | 월계1동 게시판 목록 |
+| `wolgye1_detail` | `post_sn` | 월계1동 게시글 |
+| `seoul_api` | `start`, `end`, `board`(선택) | 서울시 `SeoulNewsList` |
+| `file` | `url` | 첨부, 본문 이미지의 정확한 URL |
+
+- 응답은 `body`(케이스 폴더 기준 파일 경로) 또는 `text`로 주고, `status`(기본 200)와 `headers`를
+  덧붙일 수 있습니다. `Content-Type`은 파일 확장자로 정합니다.
+- 같은 요청에 라우트를 여러 개 등록하면 등록 순서대로 하나씩 응답하고, 마지막 라우트는 이후 요청에도
+  계속 응답합니다. 예를 들어 503과 200을 차례로 등록하면 첫 요청은 503, 재시도부터는 200을 받습니다.
+  라우트를 하나만 등록하면 모든 요청에 같은 응답을 돌려줍니다. 재시도 횟수는 스냅샷의 `http_calls`로
+  확인합니다.
+- 등록하지 않은 요청은 `Unexpected external URL`로 실패합니다. 등록했지만 요청되지 않은 라우트는
+  보고서에 경고로 남고, `strict_unused`가 `true`면 실패합니다.
+- API 키는 `test-only-key`로 고정되며 보고서에는 `<key>`로 표시합니다. stdout과 stderr에서는 DB URI,
+  `:비밀번호@`, `password=비밀번호` 형태와 API 키를 `[REDACTED]`로 가립니다. 비밀번호 문자열 자체는
+  가리지 않아, 로컬과 CI의 비밀번호가 달라도 기대값이 같습니다.
+- Gemini 응답은 종류별(`easy_text`, `summary`) 파일 목록을 순서대로 소비합니다. 응답이 모자라거나
+  남으면 실패합니다. 쉬운말 처리는 Gemini 예외를 모두 자체 실패로 바꾸지만, 하네스가 응답이 모자란
+  호출을 따로 기록하므로 케이스는 실패합니다. 오류를 재현하려면 `{"__error__": "timeout"}`처럼
+  적습니다(`timeout`, `connection`, `api_error`, `too_large`).
+- 재시도와 요청 간격의 대기(`sleep`)는 실제로 기다리지 않고 보고서에 기록만 합니다.
+- `now`(요약 기준 시각)는 요약 step과 함께 Phase B에서 사용합니다.
+
+### 기대값 정규화
+
+- 행은 `category/source_board/post_sn` 공지 키로 묶습니다. `notice_files`는 `공지 키|kind|file_key`입니다.
+  `id`, `notice_id`는 기록하지 않습니다.
+- 시각 컬럼은 처음 나타나면 `"<set>"`, 이전 step에도 있던 행이면 `"<changed>"` 또는
+  `"<unchanged>"`로 적습니다. UUID와 `execution_token`은 `"<set>"`입니다.
+- 300자를 넘는 텍스트는 길이와 sha256 앞 16자로 적습니다. 원문은 보고서의 스냅샷 전체에서 볼 수
+  있습니다.
+- `row_counts`에 공개 스키마 모든 테이블의 행 수를 적어, 스냅샷 대상이 아닌 테이블의 변화도 잡습니다.
+- `anon`은 같은 DB에서 `set local role anon`으로 앱 권한과 같은 컬럼만 조회합니다. 마이그레이션이
+  anon의 컬럼 권한을 바꾸면 하네스(`harness/snapshot.py`의 `ANON_COLUMNS`)가 실패하므로, 목록과
+  기대값을 함께 확인합니다.

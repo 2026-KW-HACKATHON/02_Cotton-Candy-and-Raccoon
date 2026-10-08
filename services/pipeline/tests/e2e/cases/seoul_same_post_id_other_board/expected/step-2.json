@@ -1,0 +1,114 @@
+{
+  "exit_code": 0,
+  "report": {
+    "mode": "new",
+    "selected_count": 1,
+    "saved_count": 1,
+    "complete": true,
+    "boards": [
+      {
+        "source_board": "21",
+        "total_count": 1,
+        "selected_count": 1,
+        "saved_count": 1,
+        "pages_read": 1,
+        "initial_baseline": true,
+        "listing_complete": true,
+        "complete": true,
+        "failures": []
+      }
+    ]
+  },
+  "stderr": [],
+  "http_calls": [
+    "seoul_api 21 1-25"
+  ],
+  "gemini_calls": {},
+  "db": {
+    "notices": {
+      "seoul/21/000777": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "돌봄 서비스 신청 안내",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "url": "https://news.seoul.go.kr/traffic/archives/000777",
+        "body_html": "<p>돌봄 서비스 신청을 안내합니다.</p>",
+        "license_type": null,
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      },
+      "seoul/25/000777": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "미세먼지 저감 캠페인 안내",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "url": "https://news.seoul.go.kr/env/archives/000777",
+        "body_html": "<p>미세먼지 저감 캠페인을 안내합니다.</p>",
+        "license_type": null,
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {},
+    "notice_summary_executions": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_easy_texts": 0,
+    "notice_files": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 2
+  },
+  "anon": {
+    "notices": {
+      "seoul/21/000777": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "돌봄 서비스 신청 안내",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "url": "https://news.seoul.go.kr/traffic/archives/000777",
+        "body_html": "<p>돌봄 서비스 신청을 안내합니다.</p>",
+        "license_type": null,
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      },
+      "seoul/25/000777": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "미세먼지 저감 캠페인 안내",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "url": "https://news.seoul.go.kr/env/archives/000777",
+        "body_html": "<p>미세먼지 저감 캠페인을 안내합니다.</p>",
+        "license_type": null,
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {}
+  }
+}

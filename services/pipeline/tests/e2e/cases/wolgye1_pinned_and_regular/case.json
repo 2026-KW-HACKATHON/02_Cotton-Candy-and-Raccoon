@@ -1,0 +1,41 @@
+{
+  "title": "월계1동 목록: 월계1동 고정 글, 일반 글, 다른 동 고정 글을 dong_group과 is_pinned로 구분해 저장한다",
+  "steps": [
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "wolgye1"
+      ],
+      "http": [
+        {
+          "route": "wolgye1_list",
+          "page": 1,
+          "body": "input/wolgye1_list_1.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261001090000101",
+          "body": "input/wolgye1_detail_20261001090000101.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261002090000102",
+          "body": "input/wolgye1_detail_20261002090000102.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261007090000104",
+          "body": "input/wolgye1_detail_20261007090000104.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261006090000103",
+          "body": "input/wolgye1_detail_20261006090000103.html"
+        }
+      ],
+      "expect_exit": 0
+    }
+  ],
+  "strict_unused": true
+}

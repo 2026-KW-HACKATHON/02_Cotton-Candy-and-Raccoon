@@ -1,5 +1,9 @@
 """Call Gemini for one stateless, structured notice summary."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+
 import httpx
 from google import genai
 from google.genai import errors, types
@@ -15,6 +19,25 @@ from pipeline.transform.summary_schema import GeminiNoticeSummary
 
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
 REQUEST_TIMEOUT_MS = 60_000
+
+_request_counter: ContextVar[list[int] | None] = ContextVar(
+    "gemini_summary_request_counter", default=None
+)
+
+
+@contextmanager
+def count_summary_requests() -> Iterator[list[int]]:
+    """Count Gemini summary requests sent in this context, as ``counter[0]``.
+
+    Only calls that reach the SDK request are counted; input validation and
+    configuration failures before it are not. A run reports gemini_called from this.
+    """
+    counter = [0]
+    token = _request_counter.set(counter)
+    try:
+        yield counter
+    finally:
+        _request_counter.reset(token)
 
 
 class GeminiRequestError(RuntimeError):
@@ -119,6 +142,9 @@ def generate_summary_json(
                 ),
             ) as client,
         ):
+            counter = _request_counter.get()
+            if counter is not None:
+                counter[0] += 1
             interaction = client.interactions.create(
                 model=model,
                 system_instruction=prompt,

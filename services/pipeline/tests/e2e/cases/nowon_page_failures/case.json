@@ -1,0 +1,45 @@
+{
+  "title": "노원구 원문 페이지 실패: 일시 오류(503)는 재시도 후 저장하고, 삭제된 원문은 저장하지 않고 실패로 보고하며, 나머지 공지는 계속 저장한다",
+  "steps": [
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "nowon",
+        "--mode",
+        "new"
+      ],
+      "http": [
+        {
+          "route": "nowon_api",
+          "start": 1,
+          "end": 50,
+          "body": "input/nowon_list.xml"
+        },
+        {
+          "route": "nowon_page",
+          "post_sn": "900443",
+          "status": 503,
+          "text": "Service Unavailable"
+        },
+        {
+          "route": "nowon_page",
+          "post_sn": "900443",
+          "body": "input/nowon_page_900443.html"
+        },
+        {
+          "route": "nowon_page",
+          "post_sn": "900442",
+          "body": "input/nowon_page_900442_missing.html"
+        },
+        {
+          "route": "nowon_page",
+          "post_sn": "900441",
+          "body": "input/nowon_page_900441.html"
+        }
+      ],
+      "expect_exit": 1
+    }
+  ],
+  "strict_unused": true
+}

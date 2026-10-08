@@ -1,0 +1,76 @@
+{
+  "exit_code": 0,
+  "report": {
+    "mode": "refresh",
+    "total_count": 1,
+    "selected_count": 1,
+    "saved_count": 1,
+    "pages_read": 1,
+    "initial_baseline": false,
+    "listing_complete": true,
+    "failed_ranges": [],
+    "complete": true,
+    "failures": []
+  },
+  "stderr": [],
+  "http_calls": [
+    "nowon_api 1-50",
+    "nowon_page 900481"
+  ],
+  "gemini_calls": {},
+  "db": {
+    "notices": {
+      "nowon/1001/900481": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "경로당 프로그램 안내",
+        "department": "어르신복지과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900481",
+        "body_html": "<p>경로당 프로그램을 안내합니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<changed>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {},
+    "notice_summary_executions": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_easy_texts": 0,
+    "notice_files": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 1
+  },
+  "anon": {
+    "notices": {
+      "nowon/1001/900481": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "경로당 프로그램 안내",
+        "department": "어르신복지과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900481",
+        "body_html": "<p>경로당 프로그램을 안내합니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<set>",
+        "updated_at": "<set>",
+        "content_updated_at": "<set>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {}
+  }
+}
