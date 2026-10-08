@@ -6,6 +6,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { scheduleOnRN } from "react-native-worklets";
 import Animated, {
   useAnimatedStyle,
   type SharedValue,
@@ -20,8 +21,11 @@ import {
   wrapNoticeIndex,
 } from "../domain/letterOrbit";
 import { useLetterOrbit } from "../hooks/useLetterOrbit";
+import { useLetterOrbitWheel } from "../hooks/useLetterOrbitWheel";
+import { getEdgeTouchWidth } from "../domain/letterOrbitInput";
 import {
   LetterIllustration,
+  ClosedEnvelope,
   LETTER_HEIGHT,
   LETTER_WIDTH,
 } from "./LetterIllustration";
@@ -34,7 +38,6 @@ function OrbitSlot({
   scale,
   clock,
   position,
-  transition,
   notice,
   role,
   interactive,
@@ -45,17 +48,13 @@ function OrbitSlot({
   scale: number;
   clock: SharedValue<number>;
   position: SharedValue<number>;
-  transition: { from: number; to: number } | null;
   notice: Notice;
   role: LetterRole;
   interactive: boolean;
   onOpen: () => void;
 }) {
   const style = useAnimatedStyle(() => {
-    const progress = Math.max(0, Math.min(1, clock.value - 5));
-    const current = transition
-      ? transition.from + (transition.to - transition.from) * progress
-      : position.value;
+    const current = position.value;
     const pose = getOrbitPose(slot, current, scale);
     return {
       opacity: pose.opacity,
@@ -80,13 +79,24 @@ function OrbitSlot({
         style,
       ]}
     >
-      <LetterIllustration
-        notice={notice}
-        onOpen={onOpen}
-        clock={clock}
-        role={role}
-        interactive={interactive}
-      />
+      {role === "closed" ? (
+        <View
+          accessible={false}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={styles.closedSlot}
+        >
+          <ClosedEnvelope />
+        </View>
+      ) : (
+        <LetterIllustration
+          notice={notice}
+          onOpen={onOpen}
+          clock={clock}
+          role={role}
+          interactive={interactive}
+        />
+      )}
     </Animated.View>
   );
 }
@@ -101,28 +111,38 @@ export function LetterOrbit({
   const width = Math.min(useWindowDimensions().width, 600);
   const scale = Math.min(1, (width - 40) / LETTER_WIDTH);
   const orbit = useLetterOrbit(notices, width);
+  const data = orbit.displayNotices;
   const selectedIndex = wrapNoticeIndex(orbit.center, notices.length);
   const disabled = orbit.busy || notices.length < 2;
+  const wheelRef = useLetterOrbitWheel({
+    width,
+    enabled: Platform.OS === "web" && notices.length > 1,
+    busy: orbit.busy,
+    dragInput: orbit.dragInput,
+    beginDrag: orbit.beginDrag,
+    endDrag: orbit.endDrag,
+  });
+  const { dragInput, beginTouch, beginDrag, endDrag } = orbit;
   const pan = Gesture.Pan()
     .activeOffsetX([-24, 24])
     .failOffsetY([-16, 16])
-    .runOnJS(true)
-    .onEnd((event) => {
-      if (disabled) return;
-      if (
-        Math.abs(event.translationX) >= 40 ||
-        Math.abs(event.velocityX) >= 450
-      ) {
-        void orbit.move(
-          event.translationX === 0
-            ? event.velocityX < 0
-              ? 1
-              : -1
-            : event.translationX < 0
-              ? 1
-              : -1,
-        );
-      }
+    .enabled(notices.length > 1)
+    .onBegin(() => {
+      dragInput.set(0);
+      scheduleOnRN(beginTouch);
+    })
+    .onStart(() => {
+      scheduleOnRN(beginDrag);
+    })
+    .onUpdate((event) => {
+      dragInput.set(event.translationX);
+    })
+    .onEnd((event, success) => {
+      if (success)
+        scheduleOnRN(endDrag, event.translationX, event.velocityX, false);
+    })
+    .onFinalize((event, success) => {
+      if (!success) scheduleOnRN(endDrag, event.translationX, 0, true);
     });
   const keyboardProps =
     Platform.OS === "web"
@@ -144,7 +164,7 @@ export function LetterOrbit({
       : {};
   if (!notices.length) return null;
   return (
-    <View {...keyboardProps}>
+    <View ref={wheelRef} {...keyboardProps}>
       <GestureDetector gesture={pan}>
         <View
           testID="letter-orbit"
@@ -154,7 +174,7 @@ export function LetterOrbit({
           }}
         >
           {getOrbitSlots(orbit.center).map((slot) => {
-            const notice = notices[wrapNoticeIndex(slot, notices.length)];
+            const notice = data[wrapNoticeIndex(slot, data.length)];
             const role: LetterRole = orbit.transition
               ? slot === orbit.transition.from
                 ? "outgoing"
@@ -173,7 +193,6 @@ export function LetterOrbit({
                 scale={scale}
                 clock={orbit.clock}
                 position={orbit.position}
-                transition={orbit.transition}
                 notice={notice}
                 role={role}
                 interactive={interactive}
@@ -184,26 +203,20 @@ export function LetterOrbit({
           {([-1, 1] as const).map((direction) => (
             <Pressable
               key={direction}
-              accessible={notices.length > 1}
-              accessibilityElementsHidden={notices.length < 2}
-              importantForAccessibility={
-                notices.length < 2 ? "no-hide-descendants" : "auto"
-              }
-              accessibilityRole="button"
-              accessibilityLabel={
-                direction < 0 ? "이전 공문 봉투" : "다음 공문 봉투"
-              }
-              accessibilityState={{ disabled }}
+              accessible={false}
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+              tabIndex={-1}
               disabled={disabled}
               onPress={() => {
-                void orbit.move(direction);
+                orbit.click(direction);
               }}
               style={[
                 styles.envelopeTouch,
                 {
-                  top: 350 * scale,
-                  height: 190 * scale,
-                  width: Math.max(40, (width - LETTER_WIDTH * scale) / 2 + 15),
+                  top: 350 * scale - 80,
+                  height: 190 * scale + 80,
+                  width: getEdgeTouchWidth(width, LETTER_WIDTH * scale),
                   [direction < 0 ? "left" : "right"]: 0,
                 },
               ]}
@@ -257,6 +270,7 @@ const styles = StyleSheet.create({
     transformOrigin: "bottom center",
   },
   envelopeTouch: { position: "absolute", zIndex: 110 },
+  closedSlot: { position: "absolute", left: 0.24, top: 340.5 },
   controls: {
     marginTop: -74,
     flexDirection: "row",
