@@ -1,1 +1,0 @@
-"""External notice source adapters."""
