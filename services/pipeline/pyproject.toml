@@ -32,8 +32,9 @@ dev = [
 packages = ["src/pipeline"]
 
 [tool.pytest.ini_options]
-addopts = "-ra"
+addopts = "-ra --import-mode=importlib"
 testpaths = ["tests"]
+pythonpath = ["tests"]
 
 [tool.ruff]
 line-length = 100
