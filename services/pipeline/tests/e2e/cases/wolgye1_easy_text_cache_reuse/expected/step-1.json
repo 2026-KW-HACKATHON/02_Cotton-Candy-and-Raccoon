@@ -19,7 +19,14 @@
       "skipped_count": 0,
       "failed_count": 0,
       "skipped": [],
-      "failures": []
+      "failures": [],
+      "dictionary": {
+        "attempted_count": 2,
+        "complete_count": 2,
+        "partial_count": 0,
+        "pending_count": 0,
+        "failures": []
+      }
     }
   },
   "stderr": [],
@@ -135,10 +142,24 @@
         "dictionary_candidates": []
       }
     },
+    "notice_dictionary_links": {
+      "dong/1042/20261006090000401": {
+        "easy_text_token": "<set>",
+        "candidates": [],
+        "generated_at": "<set>"
+      },
+      "dong/1042/20261007090000402": {
+        "easy_text_token": "<set>",
+        "candidates": [],
+        "generated_at": "<set>"
+      }
+    },
+    "standard_dictionary_cache": {},
     "notice_summary_executions": {}
   },
   "row_counts": {
     "holidays": 0,
+    "notice_dictionary_links": 2,
     "notice_easy_texts": 2,
     "notice_files": 0,
     "notice_summaries": 0,
@@ -227,6 +248,56 @@
         "body_text_present": true,
         "attachment_content_included": false,
         "dictionary_candidates": []
+      }
+    },
+    "get_notice_dictionary": {
+      "dong/1042/20261006090000401": {
+        "result": {
+          "attachment_content_included": false,
+          "body_text_present": true,
+          "changes": [
+            {
+              "context": "참가자를 모집합니다",
+              "end": 33,
+              "original": "참가자를",
+              "replacement": "참여할 사람을",
+              "start": 29
+            }
+          ],
+          "dictionary_candidates": [],
+          "dictionary_status": "complete",
+          "easy_text": "월계1동 그림 교실 참가자 모집\n월계1동 그림 교실 참여할 사람을 모집합니다.",
+          "generated_at": "<set>",
+          "model": "gemini-3.5-flash-lite",
+          "notice_id": 2,
+          "notice_revision": "4ca394672194530761352e07c984001cdfddd0f7b47fd7e5290e619617892e2a",
+          "original_text": "월계1동 그림 교실 참가자 모집\n월계1동 그림 교실 참가자를 모집합니다.",
+          "prompt_version": "easy-language-v8"
+        }
+      },
+      "dong/1042/20261007090000402": {
+        "result": {
+          "attachment_content_included": false,
+          "body_text_present": true,
+          "changes": [
+            {
+              "context": "참가자를 모집합니다",
+              "end": 33,
+              "original": "참가자를",
+              "replacement": "참여할 사람을",
+              "start": 29
+            }
+          ],
+          "dictionary_candidates": [],
+          "dictionary_status": "complete",
+          "easy_text": "월계1동 탁구 교실 참가자 모집\n월계1동 탁구 교실 참여할 사람을 모집합니다.",
+          "generated_at": "<set>",
+          "model": "gemini-3.5-flash-lite",
+          "notice_id": 1,
+          "notice_revision": "42e9bbac18be993a2868ea49f79f545963eca31fa0b02b6ac28005d587b2729b",
+          "original_text": "월계1동 탁구 교실 참가자 모집\n월계1동 탁구 교실 참가자를 모집합니다.",
+          "prompt_version": "easy-language-v8"
+        }
       }
     }
   }
