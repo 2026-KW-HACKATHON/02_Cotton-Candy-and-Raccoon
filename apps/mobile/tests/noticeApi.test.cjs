@@ -1,44 +1,171 @@
-const { test } = require("node:test");
+const { test, beforeEach, afterEach } = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const ts = require("typescript");
-const { QueryClient } = require("@tanstack/react-query");
-
-const source = fs.readFileSync(
-  path.join(__dirname, "../src/features/notices/api/noticeApi.ts"),
-  "utf8",
-);
-const compiled = ts.transpileModule(source, {
-  compilerOptions: { module: ts.ModuleKind.CommonJS },
-}).outputText;
-const loaded = { exports: {} };
-new Function("module", "exports", compiled)(loaded, loaded.exports);
-const { fetchNotice, fetchNotices } = loaded.exports;
-
-test("없는 공문은 조회 성공의 빈 결과로 캐시하고 오류와 구분한다", async () => {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  try {
-    const queryKey = ["notices", "missing"];
-    assert.equal(await client.fetchQuery({ queryKey, queryFn: () => fetchNotice("missing") }), null);
-    assert.equal(client.getQueryState(queryKey).status, "success");
-    assert.equal(client.getQueryState(queryKey).error, null);
-    await assert.rejects(
-      client.fetchQuery({
-        queryKey: ["notices", "failed"],
-        queryFn: async () => { throw new Error("Request failed"); },
-      }),
-      /Request failed/,
+require("./loadTypeScript.cjs");
+const api = require("../src/features/notices/api/noticeApi.ts");
+const {
+  parseNotice,
+  httpUrl,
+} = require("../src/features/notices/api/noticeContract.ts");
+const {
+  filePreviewKind,
+  fileDownloadName,
+} = require("../src/features/notices/domain/noticeFiles.ts");
+const originalFetch = global.fetch;
+const envNames = [
+  "EXPO_PUBLIC_SUPABASE_URL",
+  "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+];
+const oldEnv = envNames.map((name) => process.env[name]);
+const row = (id = 1, extra = {}) => ({
+  id,
+  source: "seoul",
+  title: "공문",
+  registered_on: "2026-10-09",
+  display_status: "none",
+  category_code: 26,
+  has_easy_text: false,
+  ...extra,
+});
+beforeEach(() => {
+  process.env.EXPO_PUBLIC_SUPABASE_URL = "https://example.test";
+  process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_test";
+});
+afterEach(() => {
+  global.fetch = originalFetch;
+  envNames.forEach((name, i) => {
+    if (oldEnv[i] === undefined) delete process.env[name];
+    else process.env[name] = oldEnv[i];
+  });
+});
+test("목록은 같은 날짜의 ID 커서로 다음 페이지를 조회한다", async () => {
+  const urls = [];
+  global.fetch = async (url) => {
+    urls.push(new URL(url));
+    return new Response(
+      JSON.stringify(Array.from({ length: 20 }, (_, i) => row(40 - i))),
     );
-    assert.equal(client.getQueryState(["notices", "failed"]).status, "error");
-  } finally {
-    client.clear();
-  }
+  };
+  const page = await api.fetchNoticePage();
+  assert.deepEqual(page.nextCursor, { date: "2026-10-09", id: "21" });
+  await api.fetchNoticePage(page.nextCursor);
+  assert.equal(
+    urls[1].searchParams.get("or"),
+    "(registered_on.lt.2026-10-09,and(registered_on.eq.2026-10-09,id.lt.21))",
+  );
+});
+test("없는 상세는 빈 결과이며 예시 데이터로 대체하지 않는다", async () => {
+  let count = 0;
+  global.fetch = async () => {
+    count++;
+    return new Response("[]");
+  };
+  assert.equal(await api.fetchNotice("walk"), null);
+  assert.equal(count, 0);
+  assert.equal(await api.fetchNotice("123"), null);
+  assert.equal(count, 1);
+});
+test("보관 공문은 중복 ID를 제거하고 20개씩 조회한다", async () => {
+  const urls = [];
+  global.fetch = async (url) => {
+    urls.push(new URL(url));
+    return new Response("[]");
+  };
+  await api.fetchSavedNotices([
+    ...Array.from({ length: 21 }, (_, i) => String(i + 1)),
+    "1",
+    "bad",
+  ]);
+  assert.equal(urls.length, 2);
+  assert.equal(urls[1].searchParams.get("id"), "in.(21)");
+});
+test("설정과 권한 오류를 연결 오류와 구분한다", async () => {
+  delete process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  await assert.rejects(api.fetchNotices(), (e) => e.code === "configuration");
+  process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_test";
+  global.fetch = async () => new Response("", { status: 403 });
+  await assert.rejects(api.fetchNotices(), (e) => e.code === "configuration");
+  global.fetch = async () => {
+    throw new TypeError("offline");
+  };
+  await assert.rejects(api.fetchNotices(), (e) => e.code === "connection");
+});
+test("첨부 형식과 URL을 검증하며 HWPX 확장자를 유지한다", () => {
+  assert.equal(httpUrl("javascript:alert(1)"), undefined);
+  assert.equal(httpUrl("https://user:secret@example.test"), undefined);
+  assert.throws(() =>
+    parseNotice(
+      row(1, { files: [{ id: 2, kind: "attachment", url: "file:///tmp/a" }] }),
+    ),
+  );
+  const notice = parseNotice(
+    row(1, {
+      files: [
+        { id: 2, kind: "attachment", url: "https://example.test/a.hwpx" },
+      ],
+    }),
+  );
+  assert.equal(filePreviewKind(notice.files[0]), "unsupported");
+  assert.equal(fileDownloadName(notice.files[0]), "notice-file-2.hwpx");
+  assert.equal(
+    filePreviewKind({
+      id: 3,
+      kind: "attachment",
+      url: "https://example.test/get?filename=a.PDF",
+    }),
+    "pdf",
+  );
+});
+test("검토 중인 요약의 날짜로 마감을 단정하지 않는다", () => {
+  const value = parseNotice(
+    row(1, {
+      display_status: "needs_review",
+      deadline_on: "2026-10-01",
+      card_summaries: { audience: null },
+    }),
+  );
+  assert.equal(value.deadlineDate, undefined);
+  assert.equal(value.audience, "원문에서 확인");
+});
+test("쉬운말 표현은 코드포인트 위치에만 연결한다", () => {
+  const body = "🌿 통지 통지";
+  const start = Array.from("공문\n🌿 ").length;
+  const value = row(1, {
+    body_text: body,
+    has_easy_text: true,
+    easy_body_text_present: true,
+    easy_original_text: "공문\n" + body,
+    easy_text: "공문\n🌿 안내 통지",
+    easy_changes: [
+      { start, end: start + 2, original: "통지", replacement: "안내" },
+    ],
+  });
+  const notice = parseNotice(value);
+  assert.equal(notice.easy, "🌿 안내 통지");
+  assert.equal(notice.documentParts.original.filter((p) => p.term).length, 1);
+  assert.equal(
+    notice.documentParts.easy.map((p) => p.text).join(""),
+    notice.easy,
+  );
+  assert.equal(
+    parseNotice({ ...value, easy_text: "공문\n다른 문장" }).documentParts,
+    undefined,
+  );
+  assert.equal(
+    parseNotice({ ...value, easy_body_text_present: false }).hasEasyText,
+    false,
+  );
 });
 
-test("상세 조회는 목록과 동일한 공문·마감 시간을 제공한다", async () => {
-  for (const notice of await fetchNotices()) {
-    assert.deepEqual(await fetchNotice(notice.id), notice);
-  }
-  assert.equal((await fetchNotice("idea")).deadline, "10월 12일(월) 18:00까지");
+test('제목도 바뀐 쉬운말에서 본문만 추출하고 표현 위치를 유지한다', () => {
+  const notice = parseNotice(row(1, {
+    body_text: '통지', has_easy_text: true, easy_body_text_present: true,
+    easy_original_text: '공문\n통지', easy_text: '알림\n안내',
+    easy_changes: [
+      {start: 0, end: 2, original: '공문', replacement: '알림'},
+      {start: 3, end: 5, original: '통지', replacement: '안내'},
+    ],
+  }));
+  assert.equal(notice.easy, '안내');
+  assert.equal(notice.documentParts.easy.map(p=>p.text).join(''), '안내');
+  assert.equal(notice.documentParts.original.map(p=>p.text).join(''), '통지');
 });

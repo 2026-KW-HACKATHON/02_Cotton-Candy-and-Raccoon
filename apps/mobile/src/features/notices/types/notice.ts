@@ -1,4 +1,22 @@
-export type NoticeCategory = "주민 참여" | "생활" | "복지" | "민방위";
+export type NoticeCategory =
+  | "주민 참여"
+  | "생활"
+  | "복지"
+  | "민방위"
+  | "교통"
+  | "안전"
+  | "주택"
+  | "경제"
+  | "환경"
+  | "문화"
+  | "행정"
+  | "기타";
+export type NoticeFile = {
+  id: number;
+  kind: "attachment" | "inline_image";
+  url: string;
+};
+export type DocumentPart = { text: string; term?: GlossaryTerm };
 export type GlossaryTerm = {
   plain: string;
   original: string;
@@ -21,4 +39,10 @@ export type Notice = {
   easy: string;
   deadlineDate?: string;
   terms?: GlossaryTerm[];
+  sourceUrl?: string;
+  files?: NoticeFile[];
+  hasEasyText?: boolean;
+  easyAttachmentContentIncluded?: boolean;
+  summaryStatus?: "none" | "pending" | "failed" | "summarized" | "needs_review";
+  documentParts?: { original: DocumentPart[]; easy: DocumentPart[] };
 };

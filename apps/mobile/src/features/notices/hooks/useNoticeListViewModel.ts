@@ -2,7 +2,18 @@ import { useMemo, useState } from "react";
 import { useNotices } from "./useNotices";
 import { type NoticeCategory } from "../types/notice";
 
-export const CATEGORIES = ["전체", "주민 참여", "생활", "복지"] as const;
+export const CATEGORIES = [
+  "전체",
+  "교통",
+  "안전",
+  "주택",
+  "경제",
+  "환경",
+  "문화",
+  "복지",
+  "행정",
+  "기타",
+] as const;
 /** 조회 결과와 화면 내부 검색·필터·정렬 상태를 조합하는 Hook 기반 ViewModel이다. */
 export function useNoticeListViewModel() {
   const query = useNotices();
