@@ -1,7 +1,9 @@
 """Content correction failures preserve a first strict response, never partial JSON."""
 
 import json
+import sys
 from copy import deepcopy
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -10,10 +12,17 @@ from support.gemini_multimodal import PreparationIssue, _media, _prepared
 from support.summary_grounding_retry import FACT, _notice, _response
 
 from pipeline import summary_job
+from pipeline.gemini_execution import (
+    ExecutionBudget,
+    GeminiExecutionError,
+    current_execution,
+    execution_budget,
+)
 from pipeline.storage import summaries as storage_module
 from pipeline.storage.summary_record import SummaryMetadata, SummaryRecord
 from pipeline.storage.summary_view import build_notice_summary_view
 from pipeline.transform import summarize as summarize_module
+from pipeline.transform import summary_cli
 from pipeline.transform.gemini_client import DEFAULT_MODEL, GeminiRequestError
 from pipeline.transform.gemini_input import GeminiInputError
 from pipeline.transform.gemini_prompt import SUMMARY_PROMPT_VERSION
@@ -411,3 +420,170 @@ def test_job_stores_correction_fallback_as_review_and_public_view_keeps_it(monke
     _assert_first_is_preserved(record.result, first, attachment_status="none")
     assert outcome.result.summary.model_dump() == record.result.model_dump()
     assert outcome.result.correction_failure_code == "api_timeout"
+
+
+@pytest.mark.parametrize("kind", ["text", "pdf"])
+def test_expired_shared_budget_skips_correction_and_keeps_first_valid_candidate(
+    monkeypatch, kind,
+):
+    if kind == "pdf":
+        prepared = _prepared("", _media("document"))
+        first = _file_output("document")
+        for item in first["evidence"]:
+            del item["source_id"]
+    else:
+        prepared = _prepared()
+        prepared.notice = _notice()
+        prepared.blocks = [{"type": "text", "text": render_notice_input(prepared.notice)}]
+        first = _response()
+    budget = ExecutionBudget()
+    calls = _generate(monkeypatch, first)
+    append_feedback = summarize_module.append_retry_text
+
+    def expire_after_first_candidate(*args, **kwargs):
+        assert current_execution() is budget
+        request = append_feedback(*args, **kwargs)
+        budget.deadline = 0
+        return request
+
+    monkeypatch.setattr(summarize_module, "append_retry_text", expire_after_first_candidate)
+    result = summarize_module.summarize_prepared_notice(prepared, api_key="mock-key", budget=budget)
+
+    assert len(calls) == 1
+    assert result.correction_failure_code == "api_timeout"
+    assert result.execution_failure == budget.last_failure.to_dict()
+    assert result.execution_failure["failure_kind"] == "deadline"
+    _assert_first_is_preserved(
+        result.summary, first, attachment_status="all_read" if kind == "pdf" else "none",
+    )
+    assert current_execution() is None
+
+
+def test_expired_correction_without_a_valid_first_candidate_is_a_failure(monkeypatch):
+    budget = ExecutionBudget()
+    calls = _generate(monkeypatch, "{invalid-json")
+    append_feedback = summarize_module.append_retry_text
+
+    def expire_after_invalid_response(*args, **kwargs):
+        request = append_feedback(*args, **kwargs)
+        budget.deadline = 0
+        return request
+
+    monkeypatch.setattr(summarize_module, "append_retry_text", expire_after_invalid_response)
+    with pytest.raises(GeminiExecutionError) as error:
+        summarize_module.summarize_notice(_notice(), api_key="mock-key", budget=budget)
+    assert error.value.failure_kind == "deadline"
+    assert len(calls) == 1
+
+
+def test_corrections_reuse_the_callers_budget_without_resetting_deadline(monkeypatch):
+    budget = ExecutionBudget()
+    deadline = budget.deadline
+    seen = []
+
+    def generate(**kwargs):
+        seen.append(current_execution())
+        return json.dumps(_response() if len(seen) == 1 else _response(FACT))
+
+    monkeypatch.setattr(summarize_module, "generate_summary_json", generate)
+    with execution_budget(budget):
+        result = summarize_module.summarize_notice(_notice(), api_key="mock-key")
+    assert result.summary == FACT
+    assert seen == [budget, budget]
+    assert budget.deadline == deadline
+
+
+def test_late_first_response_is_rejected_before_it_can_become_a_candidate(monkeypatch):
+    budget = ExecutionBudget()
+
+    def generate(**kwargs):
+        budget.deadline = 0
+        return json.dumps(_response(FACT))
+
+    monkeypatch.setattr(summarize_module, "generate_summary_json", generate)
+    with pytest.raises(GeminiExecutionError) as error:
+        summarize_module.summarize_notice(_notice(), api_key="mock-key", budget=budget)
+    assert error.value.reason_code == "api_timeout"
+    assert error.value.failure_kind == "deadline"
+
+
+def test_cli_returns_failure_with_usable_output_and_safe_deferral_metadata(
+    monkeypatch, tmp_path, capsys,
+):
+    source = tmp_path / "notice.json"
+    source.write_text(_notice().model_dump_json(), encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["summarize-notice", str(source)])
+    monkeypatch.setattr(summarize_module, "load_gemini_api_key", lambda: "private-test-key")
+    failure = GeminiExecutionError(
+        "api_error", failure_kind="deferred", retryable=True,
+        retry_at=datetime(2026, 10, 9, tzinfo=UTC), status_code=429,
+    )
+    calls = _generate(monkeypatch, _response(), failure)
+
+    assert summary_cli.main() == 1
+    captured = capsys.readouterr()
+    assert len(calls) == 2
+    assert json.loads(captured.out)["summary"] == _response()["summary"]
+    details = json.loads(captured.err.removeprefix("Summary failed: "))
+    assert details["execution_failure"] == failure.to_dict()
+    assert "private-test-key" not in captured.out + captured.err
+
+
+def test_cli_invalid_execution_budget_is_safe_without_starting_generation(
+    monkeypatch, tmp_path, capsys,
+):
+    source = tmp_path / "notice.json"
+    source.write_text(_notice().model_dump_json(), encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["summarize-notice", str(source)])
+    monkeypatch.setenv("GEMINI_EXECUTION_TIMEOUT_SECONDS", "private-invalid-value")
+    calls = _generate(monkeypatch)
+
+    assert summary_cli.main() == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert calls == []
+    details = json.loads(captured.err.removeprefix("Summary failed: "))
+    assert details["execution_failure"]["reason_code"] == "configuration_error"
+    assert details["gemini_requests"] == details["gemini_http_attempts"] == 0
+    assert "private-invalid-value" not in captured.err
+
+
+@pytest.mark.parametrize(
+    "stage", [
+        "_validate_summary", "_require_generated_cards",
+        "validation_error", "final_validation_error",
+    ],
+)
+@pytest.mark.parametrize("attempt", [1, 2])
+def test_local_validation_must_finish_before_a_new_candidate_can_be_published(
+    monkeypatch, stage, attempt,
+):
+    budget = ExecutionBudget()
+    first = _response() if attempt == 2 else _response(FACT)
+    calls = _generate(monkeypatch, first, _response(FACT))
+    validator = {
+        "validation_error": "_validate_summary",
+        "final_validation_error": "_require_generated_cards",
+    }.get(stage, stage)
+    validate = getattr(summarize_module, validator)
+
+    def expire_during_validation(*args, **kwargs):
+        result = validate(*args, **kwargs)
+        if len(calls) == attempt:
+            budget.deadline = 0
+            if stage == "validation_error" or (
+                stage == "final_validation_error" and result._correction_failure_code is None
+            ):
+                raise SummaryValidationError("validation did not complete")
+        return result
+
+    monkeypatch.setattr(summarize_module, validator, expire_during_validation)
+    if attempt == 1:
+        with pytest.raises(GeminiExecutionError) as error:
+            summarize_module.summarize_notice(_notice(), api_key="mock-key", budget=budget)
+        assert error.value.failure_kind == "deadline"
+    else:
+        result = summarize_module.summarize_notice(_notice(), api_key="mock-key", budget=budget)
+        _assert_first_is_preserved(result, first, attachment_status="none")
+        assert result._correction_failure_code == "api_timeout"
+    assert len(calls) == attempt

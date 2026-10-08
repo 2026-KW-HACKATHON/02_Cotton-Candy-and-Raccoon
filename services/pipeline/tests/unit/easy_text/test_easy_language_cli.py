@@ -50,6 +50,10 @@ def offline(monkeypatch, tmp_path):
     monkeypatch.setattr(module, "simplify_notice", gemini)
     monkeypatch.setattr(module.psycopg, "connect", connect)
     monkeypatch.setattr(module, "load_gemini_api_key", lambda: "fake")
+    dictionary = MagicMock(return_value={
+        **result.model_dump(mode="json"), "dictionary_status": "complete",
+    })
+    monkeypatch.setattr(module, "enrich_notice_dictionary", dictionary)
     monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost/test")
     return SimpleNamespace(
         source=source,
@@ -58,6 +62,7 @@ def offline(monkeypatch, tmp_path):
         gemini=gemini,
         connect=connect,
         conn=conn,
+        dictionary=dictionary,
     )
 
 
@@ -70,6 +75,7 @@ def test_file_mode_preserves_original_and_never_calls_dictionary(offline, capsys
     assert payload["attachment_content_included"] is None
     assert not {"dictionary_terms", "dictionary_results", "dictionary_failures"} & payload.keys()
     offline.connect.assert_not_called()
+    offline.dictionary.assert_not_called()
 
 
 def test_direct_json_cannot_inject_db_processing_scope(offline, capsys):
@@ -86,7 +92,7 @@ def test_default_entry_uses_gemini_route(monkeypatch):
     entry = MagicMock(return_value=0)
     monkeypatch.setattr(module, "main", entry)
     assert cli.main() == 0
-    entry.assert_called_once_with()
+    entry.assert_called_once_with(None)
 
 
 def test_notice_db_mode_uses_saved_service_without_eager_credentials(offline, monkeypatch, capsys):
@@ -160,6 +166,41 @@ def test_api_failure_outputs_no_result_and_never_exposes_details(error, offline,
     assert output.out == "" and "private-api-secret" not in output.err
 
 
+@pytest.mark.parametrize("value", ["0", "-1", "nan", "inf", "private-invalid-budget"])
+def test_invalid_execution_budget_is_a_safe_configuration_error(
+    offline, monkeypatch, capsys, value
+):
+    monkeypatch.setenv("GEMINI_EXECUTION_TIMEOUT_SECONDS", value)
+    monkeypatch.setattr(module, "simplify_notice", simplify_notice)
+    assert module.main(["--input", str(offline.path)]) == 2
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert json.loads(output.err)["execution_failure"]["reason_code"] == "configuration_error"
+    assert "private-invalid-budget" not in output.err
+    offline.gemini.assert_not_called()
+
+
+def test_deferred_failure_reports_retry_time_without_overwriting_saved_output(
+    offline, capsys, tmp_path
+):
+    retry_at = datetime(2026, 10, 9, tzinfo=UTC)
+    offline.gemini.side_effect = EasyLanguageAPIError(
+        "private-api-secret", failure_kind="deferred", retryable=True,
+        retry_at=retry_at, status_code=429,
+    )
+    output_path = tmp_path / "previous.json"
+    output_path.write_text("previous-good-result", encoding="utf-8")
+    assert module.main(["--input", str(offline.path), "--output", str(output_path)]) == 1
+    output = capsys.readouterr()
+    details = json.loads(output.err)["execution_failure"]
+    assert details["failure_kind"] == "deferred"
+    assert details["retry_at"] == retry_at.isoformat()
+    assert details["status_code"] == 429
+    assert output.out == ""
+    assert "private-api-secret" not in output.err
+    assert output_path.read_text("utf-8") == "previous-good-result"
+
+
 def test_output_cannot_overwrite_input(offline):
     original = offline.path.read_bytes()
     with pytest.raises(SystemExit):
@@ -173,3 +214,32 @@ def test_refresh_requires_database_mode_before_network(offline):
         module.main(["--input", str(offline.path), "--refresh"])
     offline.connect.assert_not_called()
     offline.gemini.assert_not_called()
+
+
+def test_read_only_returns_public_result_without_generation_or_dictionary(offline, monkeypatch,
+                                                                        capsys):
+    read = MagicMock(return_value={"notice_id": 7, "dictionary_status": "complete"})
+    monkeypatch.setattr(module, "get_notice_dictionary", read)
+    assert cli.main(["--notice-id", "7", "--read-only"]) == 0
+    assert json.loads(capsys.readouterr().out)["notice_id"] == 7
+    offline.gemini.assert_not_called()
+    offline.dictionary.assert_not_called()
+    read.assert_called_once_with(offline.conn, 7)
+
+
+@pytest.mark.parametrize("status", ["partial", "pending"])
+def test_dictionary_incomplete_still_prints_saved_easy_text(offline, monkeypatch, capsys, status):
+    monkeypatch.setattr(module, "load_notice_glossary_input", lambda *args: offline.source)
+    monkeypatch.setattr(module, "simplify_and_store_notice", lambda *args, **kwargs: offline.result)
+    offline.dictionary.return_value["dictionary_status"] = status
+    assert module.main(["--notice-id", "7"]) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["easy_text"] == offline.result.easy_text
+    assert payload["dictionary_status"] == status
+
+
+@pytest.mark.parametrize("args", [["--refresh"], ["--save"]])
+def test_read_only_rejects_mutating_options(offline, args):
+    with pytest.raises(SystemExit):
+        module.main(["--notice-id", "7", "--read-only", *args])
+    offline.connect.assert_not_called()

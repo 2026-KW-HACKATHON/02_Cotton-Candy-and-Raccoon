@@ -11,6 +11,11 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture(scope="module")
+def pipeline_readme() -> str:
+    return (ROOT / "services/pipeline/README.md").read_text(encoding="utf-8")
+
+
+@pytest.fixture(scope="module")
 def database(request: pytest.FixtureRequest) -> Iterator[psycopg.Connection]:
     """Apply all migrations, or stop before one for an incremental upgrade test."""
     dsn = os.environ.get("SCHEMA_TEST_DATABASE_URL")
@@ -74,7 +79,9 @@ def database(request: pytest.FixtureRequest) -> Iterator[psycopg.Connection]:
             if path.name == stop_before:
                 break
             conn.execute(path.read_text(encoding="utf-8"))
-        conn.execute((ROOT / "supabase/seed.sql").read_text(encoding="utf-8"))
+        seed = ROOT / ("supabase/tests/fixtures/pre_app_views_seed.sql"
+                       if stop_before else "supabase/seed.sql")
+        conn.execute(seed.read_bytes().decode("utf-8"))
         yield conn
     finally:
         conn.rollback()

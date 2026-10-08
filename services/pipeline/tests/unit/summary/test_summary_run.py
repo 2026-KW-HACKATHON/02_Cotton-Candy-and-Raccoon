@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Callable, Iterator
+from contextlib import nullcontext
 from copy import deepcopy
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -16,10 +17,19 @@ from support.db import database_uri, owned_migrated_database
 from support.prepared_summary_storage import _response
 from support.summary_bundle import PNG, URL
 
-from pipeline import cli, clock
+from pipeline import cli, clock, gemini_execution, summary_run
 from pipeline.config import DatabaseSettings
-from pipeline.storage.summaries import begin_summary_execution
+from pipeline.gemini_execution import current_execution, record_http_dispatch
+from pipeline.storage.summaries import (
+    StoredPreparedSummary,
+    StoredSummaryRow,
+    begin_summary_execution,
+)
+from pipeline.storage.summary_record import SummaryMetadata
 from pipeline.summary_run import summarize_one
+from pipeline.transform import gemini_client
+from pipeline.transform.prepared_summary import PreparedSummaryResult
+from pipeline.transform.summary_schema import NoticeSummary
 
 BODY = "<p>행사 안내</p>"
 FIXED_NOW = datetime(2026, 10, 8, 3, 0, tzinfo=UTC)
@@ -50,12 +60,23 @@ class Gemini:
         self.replies: list[object] = []
         self.calls = 0
         monkeypatch.setattr(genai, "Client", self._client)
+        monkeypatch.setattr(gemini_client, "run_gemini_request", self._run)
+
+    def _run(self, operation, payload):
+        """Replay the existing SDK fake; isolated worker lifecycle is tested separately."""
+        assert operation == "summary"
+        active = current_execution()
+        assert active is not None
+        active.logical_requests += 1
+        return gemini_client._generate_summary_json_direct(**payload)
 
     def _client(self, **_: object) -> object:
         outer = self
 
         class Client:
-            interactions = SimpleNamespace(create=outer._create)
+            interactions = SimpleNamespace(
+                create=outer._create, sdk_configuration=SimpleNamespace(retry_config=None),
+            )
 
             def __enter__(self):
                 return self
@@ -66,6 +87,7 @@ class Gemini:
         return Client()
 
     def _create(self, **_: object) -> object:
+        record_http_dispatch()
         self.calls += 1
         if not self.replies:
             raise AssertionError("unexpected Gemini call")
@@ -189,6 +211,8 @@ def test_first_summary_is_committed_and_readable_by_the_app(db, settings, gemini
         "reason_code": None,
         "gemini_called": True,
         "gemini_requests": 1,
+        "gemini_http_attempts": 1,
+        "execution_failure": None,
     }
     assert result.exit_code == 0
     assert report["view"]["status"] == "summarized"
@@ -461,3 +485,90 @@ def test_same_source_rerun_missing_audience_and_deadline_keeps_the_public_result
     assert _anon_row(db, notice_id) == anon_before
     assert second.stored_status == "summarized" and second.public_result is True
     assert second.report()["view"] == first.report()["view"]
+
+
+@pytest.mark.parametrize("stored_status", ["summarized", "needs_review"])
+@pytest.mark.parametrize("with_runtime_metadata", [False, True])
+@pytest.mark.parametrize("preparation_seconds", [0, 181])
+def test_correction_failure_is_reported_separately_from_preserved_storage(
+    monkeypatch, stored_status, with_runtime_metadata, preparation_seconds,
+):
+    """Exercise orchestration/reporting even when integration PostgreSQL is unavailable."""
+    monotonic = [100.0]
+    monkeypatch.setattr(gemini_execution.time, "monotonic", lambda: monotonic[0])
+    monkeypatch.setenv("GEMINI_EXECUTION_TIMEOUT_SECONDS", "120")
+    failure = {
+        "reason_code": "api_error", "failure_kind": "deferred", "retryable": True,
+        "retry_at": "2026-10-09T03:00:00+00:00", "status_code": 429,
+    }
+    summary = NoticeSummary.model_validate(_response("text"))
+    candidate = summary.model_copy(update={"summary": "후보 내용"})
+    result = PreparedSummaryResult(
+        42, candidate, (), correction_failure_code="api_error",
+        execution_failure=failure if with_runtime_metadata else None,
+    )
+    outcome = StoredPreparedSummary(
+        42, stored_status, result, FIXED_NOW, None,
+    )
+    metadata = SummaryMetadata("ab" * 32, "test-model", "test-prompt", "none")
+    row = StoredSummaryRow(
+        42, stored_status, summary.model_dump(mode="json"), "none", metadata.source_hash,
+        "api_error", None, None,
+    )
+    def connect(_):
+        assert current_execution() is None
+        monotonic[0] += 181
+        return nullcontext(object())
+
+    monkeypatch.setattr(summary_run, "_connect", connect)
+    monkeypatch.setattr(
+        summary_run, "load_summary_source", lambda *args: SimpleNamespace(content_revision=7),
+    )
+    def prepare(*args, **kwargs):
+        assert current_execution() is None
+        monotonic[0] += preparation_seconds
+        return SimpleNamespace(notice=None, file_manifest=None)
+
+    monkeypatch.setattr(summary_run, "prepare_summary_source", prepare)
+    monkeypatch.setattr(
+        summary_run, "build_summary_metadata_from_manifest", lambda **kwargs: metadata,
+    )
+    monkeypatch.setattr(summary_run, "load_stored_summary", lambda *args: row)
+
+    def generate(*args, **kwargs):
+        assert kwargs["expected_source_revision"] == 7
+        assert current_execution() is None
+        with gemini_execution.execution_budget(kwargs["budget"]):
+            assert current_execution().remaining_seconds() == 120
+            gemini_client._request_counter.get()[0] += 2
+            current_execution().http_attempts += 2
+            return outcome
+
+    monkeypatch.setattr(summary_run, "summarize_and_save_prepared_notice", generate)
+    report = summarize_one(
+        DatabaseSettings("postgresql://pipeline@127.0.0.1/test"), 42, api_key="mock-key",
+    ).report()
+
+    assert report["execution_status"] == "failed"
+    assert report["stored_status"] == stored_status
+    assert report["public_result"] is True
+    assert report["reason_code"] == "api_error"
+    assert report["gemini_requests"] == report["gemini_http_attempts"] == 2
+    assert report["view"]["content"]["headline"]["text"] == "행사 안내"
+    assert "후보 내용" not in json.dumps(report, ensure_ascii=False)
+    if with_runtime_metadata:
+        assert report["execution_failure"] == failure
+    else:
+        assert report["execution_failure"]["reason_code"] == "api_error"
+        assert report["execution_failure"]["retry_at"] is None
+
+
+def test_no_http_dispatch_is_not_reported_as_a_gemini_call():
+    result = summary_run.SummaryRunResult(
+        notice_id=42, execution_status="failed", stored_status=None,
+        public_result=False, attachment_status="none", reason_code="api_timeout",
+        gemini_requests=1, gemini_http_attempts=0,
+    )
+    assert result.report()["gemini_requests"] == 1
+    assert result.report()["gemini_called"] is False
+    assert result.exit_code == 1

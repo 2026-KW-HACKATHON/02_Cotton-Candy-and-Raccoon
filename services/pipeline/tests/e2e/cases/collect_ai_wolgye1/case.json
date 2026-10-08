@@ -1,0 +1,223 @@
+{
+  "title": "wolgye1: collection, both AI features, cache and independent failure recovery",
+  "now": "2026-10-08T03:00:00+00:00",
+  "strict_unused": true,
+  "steps": [
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "wolgye1",
+        "--mode",
+        "refresh",
+        "--process-ai"
+      ],
+      "http": [
+        {
+          "route": "wolgye1_list",
+          "page": 1,
+          "body": "input/wolgye1_list_1.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261006090000501",
+          "body": "input/wolgye1_detail_20261006090000501.html"
+        }
+      ],
+      "gemini": {
+        "summary": [
+          "input/summary.json"
+        ],
+        "easy_text": [
+          "input/easy.json"
+        ]
+      },
+      "expect_exit": 0
+    },
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "wolgye1",
+        "--mode",
+        "refresh",
+        "--process-ai"
+      ],
+      "http": [
+        {
+          "route": "wolgye1_list",
+          "page": 1,
+          "body": "input/wolgye1_list_1.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261006090000501",
+          "body": "input/wolgye1_detail_20261006090000501.html"
+        }
+      ],
+      "gemini": {},
+      "expect_exit": 0
+    },
+    {
+      "type": "sql",
+      "reason": "Force a changed source revision; preserve the notice identity.",
+      "sql": "update notices set title=title || ' 변경';"
+    },
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "wolgye1",
+        "--mode",
+        "refresh",
+        "--process-ai"
+      ],
+      "http": [
+        {
+          "route": "wolgye1_list",
+          "page": 1,
+          "body": "input/changed_wolgye1_list_1.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261006090000501",
+          "body": "input/changed_wolgye1_detail_20261006090000501.html"
+        }
+      ],
+      "gemini": {
+        "summary": [
+          "input/summary_timeout.json",
+          "input/summary_timeout.json"
+        ],
+        "easy_text": [
+          "input/easy.json"
+        ]
+      },
+      "expect_exit": 1
+    },
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "wolgye1",
+        "--mode",
+        "refresh",
+        "--process-ai"
+      ],
+      "http": [
+        {
+          "route": "wolgye1_list",
+          "page": 1,
+          "body": "input/changed_wolgye1_list_1.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261006090000501",
+          "body": "input/changed_wolgye1_detail_20261006090000501.html"
+        }
+      ],
+      "gemini": {},
+      "expect_exit": 1
+    },
+    {
+      "type": "sql",
+      "reason": "Make deferred summary due without sleeping.",
+      "sql": "update notice_processing_jobs set next_attempt_at=now()-interval '1 second' where state='retry_wait';"
+    },
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "wolgye1",
+        "--mode",
+        "refresh",
+        "--process-ai"
+      ],
+      "http": [
+        {
+          "route": "wolgye1_list",
+          "page": 1,
+          "body": "input/changed_wolgye1_list_1.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261006090000501",
+          "body": "input/changed_wolgye1_detail_20261006090000501.html"
+        }
+      ],
+      "gemini": {
+        "summary": [
+          "input/summary.json"
+        ]
+      },
+      "expect_exit": 0
+    },
+    {
+      "type": "sql",
+      "reason": "Discard easy cache and its completed claim to simulate missing output.",
+      "sql": "delete from notice_easy_texts; delete from notice_processing_jobs where feature='easy_text';"
+    },
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "wolgye1",
+        "--mode",
+        "refresh",
+        "--process-ai"
+      ],
+      "http": [
+        {
+          "route": "wolgye1_list",
+          "page": 1,
+          "body": "input/changed_wolgye1_list_1.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261006090000501",
+          "body": "input/changed_wolgye1_detail_20261006090000501.html"
+        }
+      ],
+      "gemini": {
+        "easy_text": [
+          "input/summary_timeout.json",
+          "input/summary_timeout.json"
+        ]
+      },
+      "expect_exit": 1
+    },
+    {
+      "type": "sql",
+      "reason": "Make easy-text retry due without sleeping.",
+      "sql": "update notice_processing_jobs set next_attempt_at=now()-interval '1 second' where state='retry_wait';"
+    },
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "wolgye1",
+        "--mode",
+        "refresh",
+        "--process-ai"
+      ],
+      "http": [
+        {
+          "route": "wolgye1_list",
+          "page": 1,
+          "body": "input/changed_wolgye1_list_1.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261006090000501",
+          "body": "input/changed_wolgye1_detail_20261006090000501.html"
+        }
+      ],
+      "gemini": {
+        "easy_text": [
+          "input/easy.json"
+        ]
+      },
+      "expect_exit": 0
+    }
+  ]
+}

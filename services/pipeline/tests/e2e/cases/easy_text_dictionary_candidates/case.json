@@ -1,5 +1,5 @@
 {
-  "title": "후보 추출·저장: 미치환 용어와 반복 위치를 보존하고, 재실행은 캐시를 쓰며 후보 미추출 행은 다시 처리한다",
+  "title": "공지 사전 연결: 반복 후보와 모든 뜻·미등재 결과를 공개하고, 재실행은 캐시를 쓰며 사전 실패 후 쉬운말을 보존해 복구한다",
   "steps": [
     {
       "type": "collect",
@@ -26,6 +26,37 @@
           "route": "nowon_page",
           "post_sn": "900551",
           "body": "input/nowon_page_900551.html"
+        },
+        {
+          "route": "dictionary_search",
+          "query_word": "구비서류",
+          "body": "input/dictionary_documents_search.json"
+        },
+        {
+          "route": "dictionary_view",
+          "target_code": "100",
+          "body": "input/dictionary_documents_view.json"
+        },
+        {
+          "route": "dictionary_search",
+          "query_word": "지참하다",
+          "body": "input/dictionary_bring_search.json"
+        },
+        {
+          "route": "dictionary_view",
+          "target_code": "200",
+          "body": "input/dictionary_bring_view.json"
+        },
+        {
+          "route": "dictionary_search",
+          "query_word": "직권처리",
+          "body": "input/dictionary_not_found.json"
+        },
+        {
+          "route": "dictionary_search",
+          "query_word": "직권처리",
+          "req_type": "xml",
+          "body": "input/dictionary_not_found.xml"
         }
       ],
       "expect_exit": 0
@@ -88,6 +119,77 @@
           "post_sn": "900551",
           "body": "input/nowon_page_900551.html"
         }
+      ],
+      "expect_exit": 0
+    },
+    {
+      "type": "sql",
+      "reason": "공지 연결을 다시 처리할 때 일부 조회어의 사전 API만 실패하는 상태를 만든다.",
+      "sql": "delete from public.notice_dictionary_links; delete from public.standard_dictionary_cache where query_word = '지참하다';"
+    },
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "nowon",
+        "--mode",
+        "refresh",
+        "--easy-text"
+      ],
+      "gemini": {
+        "easy_text": []
+      },
+      "http": [
+        {
+          "route": "nowon_api",
+          "start": 1,
+          "end": 50,
+          "body": "input/nowon_list.xml"
+        },
+        {
+          "route": "nowon_page",
+          "post_sn": "900551",
+          "body": "input/nowon_page_900551.html"
+        },
+        {
+          "route": "dictionary_search",
+          "query_word": "지참하다",
+          "status": 429
+        }
+      ],
+      "expect_exit": 1
+    },
+    {
+      "type": "sql",
+      "reason": "사전 API 실패의 재시도 대기 시간이 지난 상태를 만들어 지연 없이 복구를 확인한다.",
+      "sql": "update public.standard_dictionary_cache set retry_after_at = clock_timestamp() - interval '1 second' where query_word = '지참하다';"
+    },
+    {
+      "type": "notice-glossary",
+      "args": [
+        "--notice-id",
+        "1"
+      ],
+      "http": [
+        {
+          "route": "dictionary_search",
+          "query_word": "지참하다",
+          "body": "input/dictionary_bring_search.json"
+        },
+        {
+          "route": "dictionary_view",
+          "target_code": "200",
+          "body": "input/dictionary_bring_view.json"
+        }
+      ],
+      "expect_exit": 0
+    },
+    {
+      "type": "notice-glossary",
+      "args": [
+        "--notice-id",
+        "1",
+        "--read-only"
       ],
       "expect_exit": 0
     }

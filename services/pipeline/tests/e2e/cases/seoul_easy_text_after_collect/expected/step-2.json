@@ -18,10 +18,19 @@
       "complete": true,
       "attempted_count": 1,
       "successful_count": 1,
+      "gemini_requests": 0,
+      "gemini_http_attempts": 0,
       "skipped_count": 0,
       "failed_count": 0,
       "skipped": [],
-      "failures": []
+      "failures": [],
+      "dictionary": {
+        "attempted_count": 1,
+        "complete_count": 1,
+        "partial_count": 0,
+        "pending_count": 0,
+        "failures": []
+      }
     }
   },
   "stderr": [],
@@ -45,7 +54,8 @@
         "created_at": "<unchanged>",
         "updated_at": "<changed>",
         "content_updated_at": "<unchanged>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "환경 캠페인에 참여하세요."
       }
     },
     "notice_files": {},
@@ -66,12 +76,23 @@
         "dictionary_candidates": []
       }
     },
-    "notice_summary_executions": {}
+    "notice_dictionary_links": {
+      "seoul/25/000777": {
+        "easy_text_token": "<unchanged>",
+        "candidates": [],
+        "generated_at": "<changed>"
+      }
+    },
+    "standard_dictionary_cache": {},
+    "notice_summary_executions": {},
+    "notice_processing_jobs": {}
   },
   "row_counts": {
     "holidays": 0,
+    "notice_dictionary_links": 1,
     "notice_easy_texts": 1,
     "notice_files": 0,
+    "notice_processing_jobs": 0,
     "notice_summaries": 0,
     "notice_summary_executions": 0,
     "notices": 1,
@@ -93,25 +114,94 @@
         "created_at": "<unchanged>",
         "updated_at": "<changed>",
         "content_updated_at": "<unchanged>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "환경 캠페인에 참여하세요."
       }
     },
     "notice_files": {},
     "notice_summaries": {},
     "notice_easy_texts": {
       "seoul/25/000777": {
-        "notice_revision": "d35124e87fb139a0c910b07e7434c1957d264206c27c8d54a0e2783e7d678c52",
-        "source_hash": "07aa80eae137155050a28d65df1e9a60c583273c75d1cc7f1460bc1baec57694",
         "original_text": "환경 캠페인 안내\n환경 캠페인에 참여하세요.",
         "easy_text": "환경 캠페인 안내\n환경 캠페인에 참여하세요.",
         "changes": [],
-        "model": "gemini-3.5-flash-lite",
-        "prompt_version": "easy-language-v8",
-        "attempt_count": 1,
         "generated_at": "<unchanged>",
         "body_text_present": true,
-        "attachment_content_included": false,
-        "dictionary_candidates": []
+        "attachment_content_included": false
+      }
+    },
+    "app_notice_list": {
+      "seoul/25/000777": {
+        "source": "seoul",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "환경 캠페인 안내",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<unchanged>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true
+      }
+    },
+    "app_notice_detail": {
+      "seoul/25/000777": {
+        "source": "seoul",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "환경 캠페인 안내",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<unchanged>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true,
+        "url": "https://news.seoul.go.kr/env/archives/000777",
+        "license_type": null,
+        "body_text": "환경 캠페인에 참여하세요.",
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [],
+        "easy_original_text": "환경 캠페인 안내\n환경 캠페인에 참여하세요.",
+        "easy_text": "환경 캠페인 안내\n환경 캠페인에 참여하세요.",
+        "easy_changes": [],
+        "easy_body_text_present": true,
+        "easy_attachment_content_included": false,
+        "easy_generated_at": "<unchanged>"
+      }
+    },
+    "get_notice_dictionary": {
+      "seoul/25/000777": {
+        "result": {
+          "attachment_content_included": false,
+          "body_text_present": true,
+          "changes": [],
+          "dictionary_candidates": [],
+          "dictionary_status": "complete",
+          "easy_text": "환경 캠페인 안내\n환경 캠페인에 참여하세요.",
+          "generated_at": "<unchanged>",
+          "model": "gemini-3.5-flash-lite",
+          "notice_id": 1,
+          "notice_revision": "d35124e87fb139a0c910b07e7434c1957d264206c27c8d54a0e2783e7d678c52",
+          "original_text": "환경 캠페인 안내\n환경 캠페인에 참여하세요.",
+          "prompt_version": "easy-language-v8"
+        }
       }
     }
   }

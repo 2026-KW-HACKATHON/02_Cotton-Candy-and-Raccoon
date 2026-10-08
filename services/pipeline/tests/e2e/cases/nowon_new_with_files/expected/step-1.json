@@ -16,10 +16,19 @@
       "complete": true,
       "attempted_count": 1,
       "successful_count": 1,
+      "gemini_requests": 1,
+      "gemini_http_attempts": 1,
       "skipped_count": 0,
       "failed_count": 0,
       "skipped": [],
-      "failures": []
+      "failures": [],
+      "dictionary": {
+        "attempted_count": 1,
+        "complete_count": 1,
+        "partial_count": 0,
+        "pending_count": 0,
+        "failures": []
+      }
     }
   },
   "stderr": [],
@@ -57,7 +66,8 @@
         "created_at": "<set>",
         "updated_at": "<set>",
         "content_updated_at": "<set>",
-        "content_revision": 4
+        "content_revision": 4,
+        "body_text": "어린이 독서교실 참가자를 모집합니다.\n신청 기간: 2026-10-08 ~ 2026-10-17"
       }
     },
     "notice_files": {
@@ -111,12 +121,23 @@
         "dictionary_candidates": []
       }
     },
-    "notice_summary_executions": {}
+    "notice_dictionary_links": {
+      "nowon/1001/900401": {
+        "easy_text_token": "<set>",
+        "candidates": [],
+        "generated_at": "<set>"
+      }
+    },
+    "standard_dictionary_cache": {},
+    "notice_summary_executions": {},
+    "notice_processing_jobs": {}
   },
   "row_counts": {
     "holidays": 0,
+    "notice_dictionary_links": 1,
     "notice_easy_texts": 1,
     "notice_files": 3,
+    "notice_processing_jobs": 0,
     "notice_summaries": 0,
     "notice_summary_executions": 0,
     "notices": 1,
@@ -138,7 +159,8 @@
         "created_at": "<set>",
         "updated_at": "<set>",
         "content_updated_at": "<set>",
-        "content_revision": 4
+        "content_revision": 4,
+        "body_text": "어린이 독서교실 참가자를 모집합니다.\n신청 기간: 2026-10-08 ~ 2026-10-17"
       }
     },
     "notice_files": {
@@ -158,8 +180,6 @@
     "notice_summaries": {},
     "notice_easy_texts": {
       "nowon/1001/900401": {
-        "notice_revision": "34c976bf4b5a63449509ed7300eab55f15356e2dc4505221d6d0b9d3a1420319",
-        "source_hash": "3332e60988d7253549aca1aa5cbf6f72c835534500a39d43ce805ceae673a271",
         "original_text": "어린이 독서교실 참가자 모집\n어린이 독서교실 참가자를 모집합니다.\n신청 기간: 2026-10-08 ~ 2026-10-17",
         "easy_text": "어린이 독서교실 참가자 모집\n어린이 독서교실 참여할 사람을 모집합니다.\n신청 기간: 2026-10-08 ~ 2026-10-17",
         "changes": [
@@ -171,13 +191,115 @@
             "start": 25
           }
         ],
-        "model": "gemini-3.5-flash-lite",
-        "prompt_version": "easy-language-v8",
-        "attempt_count": 1,
         "generated_at": "<set>",
         "body_text_present": true,
-        "attachment_content_included": false,
-        "dictionary_candidates": []
+        "attachment_content_included": false
+      }
+    },
+    "app_notice_list": {
+      "nowon/1001/900401": {
+        "source": "nowon",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "어린이 독서교실 참가자 모집",
+        "department": "교육지원과",
+        "registered_on": "2026-10-08",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true
+      }
+    },
+    "app_notice_detail": {
+      "nowon/1001/900401": {
+        "source": "nowon",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "어린이 독서교실 참가자 모집",
+        "department": "교육지원과",
+        "registered_on": "2026-10-08",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true,
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900401",
+        "license_type": "KOGL-4",
+        "body_text": "어린이 독서교실 참가자를 모집합니다.\n신청 기간: 2026-10-08 ~ 2026-10-17",
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [
+          {
+            "id": 1,
+            "kind": "inline_image",
+            "url": "https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=401&q_fileId=4c1f0a2e-0000-4000-8000-000000000401"
+          },
+          {
+            "id": 2,
+            "kind": "attachment",
+            "url": "https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=402&q_fileId=4c1f0a2e-0000-4000-8000-000000000402"
+          },
+          {
+            "id": 3,
+            "kind": "attachment",
+            "url": "https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=403&q_fileId=4c1f0a2e-0000-4000-8000-000000000403"
+          }
+        ],
+        "easy_original_text": "어린이 독서교실 참가자 모집\n어린이 독서교실 참가자를 모집합니다.\n신청 기간: 2026-10-08 ~ 2026-10-17",
+        "easy_text": "어린이 독서교실 참가자 모집\n어린이 독서교실 참여할 사람을 모집합니다.\n신청 기간: 2026-10-08 ~ 2026-10-17",
+        "easy_changes": [
+          {
+            "context": "참가자를 모집합니다",
+            "end": 29,
+            "original": "참가자를",
+            "replacement": "참여할 사람을",
+            "start": 25
+          }
+        ],
+        "easy_body_text_present": true,
+        "easy_attachment_content_included": false,
+        "easy_generated_at": "<set>"
+      }
+    },
+    "get_notice_dictionary": {
+      "nowon/1001/900401": {
+        "result": {
+          "attachment_content_included": false,
+          "body_text_present": true,
+          "changes": [
+            {
+              "context": "참가자를 모집합니다",
+              "end": 29,
+              "original": "참가자를",
+              "replacement": "참여할 사람을",
+              "start": 25
+            }
+          ],
+          "dictionary_candidates": [],
+          "dictionary_status": "complete",
+          "easy_text": "어린이 독서교실 참가자 모집\n어린이 독서교실 참여할 사람을 모집합니다.\n신청 기간: 2026-10-08 ~ 2026-10-17",
+          "generated_at": "<set>",
+          "model": "gemini-3.5-flash-lite",
+          "notice_id": 1,
+          "notice_revision": "34c976bf4b5a63449509ed7300eab55f15356e2dc4505221d6d0b9d3a1420319",
+          "original_text": "어린이 독서교실 참가자 모집\n어린이 독서교실 참가자를 모집합니다.\n신청 기간: 2026-10-08 ~ 2026-10-17",
+          "prompt_version": "easy-language-v8"
+        }
       }
     }
   }

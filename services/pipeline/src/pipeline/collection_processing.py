@@ -10,8 +10,16 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Literal
 
+import psycopg
+from psycopg.rows import dict_row
+
 from pipeline.after_collect import AfterCollectEasyText
 from pipeline.config import ConfigError, DatabaseSettings
+from pipeline.gemini_execution import GeminiExecutionError, execution_budget
+from pipeline.glossary.notice_dictionary_service import enrich_notice_dictionary
+from pipeline.processing_runner import run_processing
+from pipeline.storage.processing_jobs import readiness_counts
+from pipeline.transform.gemini_prompt import GeminiConfigurationError, load_gemini_api_key
 
 Feature = Literal["summary", "easy_text"]
 FeatureReports = dict[Feature, dict[str, object]]
@@ -97,14 +105,82 @@ def create_easy_text_processing(database: DatabaseSettings) -> CollectionPostpro
 
 
 def create_ai_processing(
-    database: DatabaseSettings, *, source: str,
+    database: DatabaseSettings, *, source: str, limit: int = 100,
 ) -> CollectionPostprocessing:
-    """Integration point for the #61 runner using #60's bounded AI calls.
+    """Validate before collecting, then give each feature an independent batch."""
+    categories = {"nowon": "nowon", "wolgye1": "dong", "seoul": "seoul"}
+    if source not in categories or type(limit) is not int or not 1 <= limit <= 10000:
+        raise ConfigError("후처리 출처 또는 작업 상한이 올바르지 않습니다.")
+    try:
+        api_key = load_gemini_api_key()
+        with execution_budget():
+            pass
+    except (GeminiConfigurationError, GeminiExecutionError):
+        raise ConfigError("자동 후처리의 GEMINI_API_KEY와 실행 시간 설정을 확인하세요.") from None
 
-    Once available, the adapter must own two independent features, recover due
-    work for ``source`` even with no new IDs, and return committed result reports.
-    Until then, reject the combined mode before collecting or calling any APIs.
-    """
-    raise ConfigError(
-        "--process-ai는 공통 실행기(#61)와 전체 시간 제한(#60) 연결 후 사용할 수 있습니다."
-    )
+    def run(notice_ids: tuple[int, ...]) -> FeatureReports:
+        reports: FeatureReports = {}
+        published_ids = set(notice_ids)
+        for feature in ("summary", "easy_text"):
+            try:
+                result = run_processing(
+                    database, api_key=api_key, features=(feature,),
+                    source=categories[source], limit=limit,
+                )
+                report = result.report()
+                with psycopg.connect(
+                    database.database_url, connect_timeout=5,
+                    options="-c statement_timeout=10000 -c lock_timeout=5000",
+                ) as conn:
+                    counts = readiness_counts(conn, feature=feature, source=categories[source])
+                report["readiness"] = counts
+                report["complete"] = report["complete"] and not any(
+                    counts[state] for state in
+                    ("pending", "running", "retry_wait", "blocked", "exhausted")
+                )
+                published_ids.update(r["notice_id"] for r in result.records)
+                ids = sorted(published_ids)
+                # A new connection observes committed data. App visibility comes
+                # exclusively from #58's existing invoker-rights view under anon.
+                report["published"] = read_published(database, ids)
+                if feature == "easy_text":
+                    report["dictionary"] = []
+                    for item in report["published"]:
+                        if not item["has_easy_text"]:
+                            continue
+                        try:
+                            dictionary = enrich_notice_dictionary(database, item["id"])
+                            status = dictionary["dictionary_status"] if dictionary else "pending"
+                        except Exception:
+                            status = "partial"
+                        report["dictionary"].append({"notice_id": item["id"], "status": status})
+                        if status != "complete":
+                            report["complete"] = False
+                reports[feature] = report
+            except Exception:
+                reports[feature] = {
+                    "complete": False, "error_code": "postprocessing_failed",
+                }
+        # Both reports must show the final committed app state, including the
+        # other feature's successful result after a partial failure.
+        published = read_published(database, sorted(published_ids))
+        for report in reports.values():
+            report["published"] = published
+        return reports
+
+    return CollectionPostprocessing(("summary", "easy_text"), run)
+
+
+def read_published(database: DatabaseSettings, notice_ids: list[int]) -> list[dict[str, object]]:
+    """Return only app-visible readiness, never private queue or model metadata."""
+    with psycopg.connect(
+        database.database_url, connect_timeout=5,
+        options="-c statement_timeout=10000 -c lock_timeout=5000",
+    ) as conn, conn.cursor(row_factory=dict_row) as cursor:
+        cursor.execute("set local role anon")
+        rows = cursor.execute(
+            "select id, display_status, has_easy_text, url "
+            "from public.app_notice_detail where id = any(%s::bigint[]) order by id",
+            (notice_ids,),
+        ).fetchall()
+    return [dict(row) for row in rows]

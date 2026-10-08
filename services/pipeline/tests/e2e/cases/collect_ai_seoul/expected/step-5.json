@@ -1,0 +1,338 @@
+{
+  "exit_code": 1,
+  "report": {
+    "mode": "refresh",
+    "selected_count": 1,
+    "saved_count": 1,
+    "complete": true,
+    "boards": [
+      {
+        "source_board": "25",
+        "total_count": 1,
+        "selected_count": 1,
+        "saved_count": 1,
+        "pages_read": 1,
+        "initial_baseline": false,
+        "listing_complete": true,
+        "complete": true,
+        "failures": []
+      }
+    ],
+    "summary": {
+      "dry_run": false,
+      "complete": false,
+      "selected_count": 0,
+      "enqueued_count": 0,
+      "attempted_count": 0,
+      "succeeded_count": 0,
+      "skipped_count": 0,
+      "blocked_count": 0,
+      "retry_wait_count": 0,
+      "exhausted_count": 0,
+      "superseded_count": 0,
+      "retry_released": false,
+      "error_code": null,
+      "records": [],
+      "readiness": {
+        "ready": 0,
+        "skipped": 0,
+        "pending": 0,
+        "running": 0,
+        "retry_wait": 1,
+        "blocked": 0,
+        "exhausted": 0
+      },
+      "published": [
+        {
+          "id": 1,
+          "display_status": "needs_review",
+          "has_easy_text": true,
+          "url": "https://news.seoul.go.kr/env/archives/000777"
+        }
+      ]
+    },
+    "easy_text": {
+      "dry_run": false,
+      "complete": true,
+      "selected_count": 0,
+      "enqueued_count": 0,
+      "attempted_count": 0,
+      "succeeded_count": 0,
+      "skipped_count": 0,
+      "blocked_count": 0,
+      "retry_wait_count": 0,
+      "exhausted_count": 0,
+      "superseded_count": 0,
+      "retry_released": false,
+      "error_code": null,
+      "records": [],
+      "readiness": {
+        "ready": 1,
+        "skipped": 0,
+        "pending": 0,
+        "running": 0,
+        "retry_wait": 0,
+        "blocked": 0,
+        "exhausted": 0
+      },
+      "published": [
+        {
+          "id": 1,
+          "display_status": "needs_review",
+          "has_easy_text": true,
+          "url": "https://news.seoul.go.kr/env/archives/000777"
+        }
+      ],
+      "dictionary": [
+        {
+          "notice_id": 1,
+          "status": "complete"
+        }
+      ]
+    }
+  },
+  "stderr": [],
+  "http_calls": [
+    "seoul_api 25 1-10"
+  ],
+  "gemini_calls": {},
+  "db": {
+    "notices": {
+      "seoul/25/000777": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "지원 사업 신청 변경",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "url": "https://news.seoul.go.kr/env/archives/000777",
+        "body_html": "<p>지원 사업 신청 변경</p><p>대상: 월계1동 주민</p><p>신청 기간: 2026-10-03~2026-10-20</p><p>월계1동 주민센터 방문 신청</p><p>신분증 지참</p>",
+        "license_type": null,
+        "is_modified": true,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<changed>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 3,
+        "body_text": "지원 사업 신청 변경\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참"
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {
+      "seoul/25/000777": {
+        "status": "needs_review",
+        "result": null,
+        "category": null,
+        "category_code": null,
+        "deadline_on": null,
+        "attachment_status": "none",
+        "source_hash": "bc6ecbf37b36348122078d2b3a66c424a90447a3cc659f37b3a95c5dd5bd4b64",
+        "model": "gemini-3.5-flash-lite",
+        "prompt_version": "notice-summary-v6-card-grounding",
+        "attempt_count": 2,
+        "last_error_code": "api_timeout",
+        "generated_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "card_summaries": null,
+        "file_manifest": {
+          "files": [],
+          "media": [],
+          "notice_id": 1,
+          "omissions": [],
+          "original_url": "https://news.seoul.go.kr/env/archives/000777",
+          "source_revision": 1
+        },
+        "file_references": null,
+        "preparation_omissions": null
+      }
+    },
+    "notice_easy_texts": {
+      "seoul/25/000777": {
+        "notice_revision": "ec725944ab1364f1a5c8068c5c763b81297582e8f55ed4dfecfe99aa9becbeee",
+        "source_hash": "1dad85b2fd445f64e11251685c32ca83946fec27ad5bdd7c94daad5b0bef17df",
+        "original_text": "지원 사업 신청 변경\n지원 사업 신청 변경\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
+        "easy_text": "지원 사업 신청 변경\n지원 사업 신청 변경\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
+        "changes": [],
+        "model": "gemini-3.5-flash-lite",
+        "prompt_version": "easy-language-v8",
+        "attempt_count": 1,
+        "generated_at": "<unchanged>",
+        "body_text_present": true,
+        "attachment_content_included": false,
+        "dictionary_candidates": []
+      }
+    },
+    "notice_dictionary_links": {
+      "seoul/25/000777": {
+        "easy_text_token": "<unchanged>",
+        "candidates": [],
+        "generated_at": "<changed>"
+      }
+    },
+    "standard_dictionary_cache": {},
+    "notice_summary_executions": {
+      "seoul/25/000777": {
+        "execution_token": "<set>",
+        "source_revision": 3
+      }
+    },
+    "notice_processing_jobs": {
+      "seoul/25/000777|easy_text": {
+        "feature": "easy_text",
+        "input_version": "ec725944ab1364f1a5c8068c5c763b81297582e8f55ed4dfecfe99aa9becbeee",
+        "contract_key": "{\"model\":\"gemini-3.5-flash-lite\",\"prompt_version\":\"easy-language-v8\"}",
+        "state": "succeeded",
+        "attempts": 1,
+        "next_attempt_at": null,
+        "last_error_code": null,
+        "claim_token": null,
+        "lease_expires_at": null,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>"
+      },
+      "seoul/25/000777|summary": {
+        "feature": "summary",
+        "input_version": "3",
+        "contract_key": "{\"model\":\"gemini-3.5-flash-lite\",\"prompt_version\":\"notice-summary-v6-card-grounding\"}",
+        "state": "retry_wait",
+        "attempts": 1,
+        "next_attempt_at": "<unchanged>",
+        "last_error_code": "api_timeout",
+        "claim_token": null,
+        "lease_expires_at": null,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>"
+      }
+    }
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_dictionary_links": 1,
+    "notice_easy_texts": 1,
+    "notice_files": 0,
+    "notice_processing_jobs": 2,
+    "notice_summaries": 1,
+    "notice_summary_executions": 1,
+    "notices": 1,
+    "standard_dictionary_cache": 0
+  },
+  "anon": {
+    "notices": {
+      "seoul/25/000777": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "지원 사업 신청 변경",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "url": "https://news.seoul.go.kr/env/archives/000777",
+        "body_html": "<p>지원 사업 신청 변경</p><p>대상: 월계1동 주민</p><p>신청 기간: 2026-10-03~2026-10-20</p><p>월계1동 주민센터 방문 신청</p><p>신분증 지참</p>",
+        "license_type": null,
+        "is_modified": true,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<changed>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 3,
+        "body_text": "지원 사업 신청 변경\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참"
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {
+      "seoul/25/000777": {
+        "status": "needs_review",
+        "category": null,
+        "category_code": null,
+        "deadline_on": null,
+        "result": null,
+        "attachment_status": "none",
+        "generated_at": "<unchanged>",
+        "card_summaries": null,
+        "file_references": null,
+        "preparation_omissions": null
+      }
+    },
+    "notice_easy_texts": {
+      "seoul/25/000777": {
+        "original_text": "지원 사업 신청 변경\n지원 사업 신청 변경\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
+        "easy_text": "지원 사업 신청 변경\n지원 사업 신청 변경\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
+        "changes": [],
+        "generated_at": "<unchanged>",
+        "body_text_present": true,
+        "attachment_content_included": false
+      }
+    },
+    "app_notice_list": {
+      "seoul/25/000777": {
+        "source": "seoul",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "지원 사업 신청 변경",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<unchanged>",
+        "is_modified": true,
+        "summary_status": "needs_review",
+        "display_status": "needs_review",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": "none",
+        "has_easy_text": true
+      }
+    },
+    "app_notice_detail": {
+      "seoul/25/000777": {
+        "source": "seoul",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "지원 사업 신청 변경",
+        "department": "테스트 부서",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<unchanged>",
+        "is_modified": true,
+        "summary_status": "needs_review",
+        "display_status": "needs_review",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": "none",
+        "has_easy_text": true,
+        "url": "https://news.seoul.go.kr/env/archives/000777",
+        "license_type": null,
+        "body_text": "지원 사업 신청 변경\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
+        "result": null,
+        "generated_at": "<unchanged>",
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [],
+        "easy_original_text": "지원 사업 신청 변경\n지원 사업 신청 변경\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
+        "easy_text": "지원 사업 신청 변경\n지원 사업 신청 변경\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
+        "easy_changes": [],
+        "easy_body_text_present": true,
+        "easy_attachment_content_included": false,
+        "easy_generated_at": "<unchanged>"
+      }
+    },
+    "get_notice_dictionary": {
+      "seoul/25/000777": {
+        "result": {
+          "attachment_content_included": false,
+          "body_text_present": true,
+          "changes": [],
+          "dictionary_candidates": [],
+          "dictionary_status": "complete",
+          "easy_text": "지원 사업 신청 변경\n지원 사업 신청 변경\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
+          "generated_at": "<unchanged>",
+          "model": "gemini-3.5-flash-lite",
+          "notice_id": 1,
+          "notice_revision": "ec725944ab1364f1a5c8068c5c763b81297582e8f55ed4dfecfe99aa9becbeee",
+          "original_text": "지원 사업 신청 변경\n지원 사업 신청 변경\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
+          "prompt_version": "easy-language-v8"
+        }
+      }
+    }
+  }
+}

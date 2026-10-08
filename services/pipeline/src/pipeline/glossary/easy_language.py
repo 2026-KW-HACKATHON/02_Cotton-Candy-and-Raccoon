@@ -17,6 +17,13 @@ from pydantic import (
     model_validator,
 )
 
+from pipeline.gemini_execution import (
+    ExecutionBudget,
+    FailureKind,
+    GeminiExecutionError,
+    current_execution,
+    execution_budget,
+)
 from pipeline.glossary.source import (
     MAX_SOURCE_CHARACTERS,
     NoticeGlossaryInput,
@@ -42,8 +49,24 @@ class EasyLanguageConfigurationError(ValueError):
     """The local source, prompt or Gemini settings cannot be used."""
 
 
-class EasyLanguageAPIError(RuntimeError):
+class EasyLanguageAPIError(GeminiExecutionError):
     """Gemini failed; remote details and credentials are deliberately excluded."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason_code: str = "api_error",
+        failure_kind: FailureKind = "permanent",
+        retryable: bool = False,
+        retry_at: datetime | None = None,
+        status_code: int | None = None,
+    ) -> None:
+        super().__init__(
+            reason_code, failure_kind=failure_kind, retryable=retryable,
+            retry_at=retry_at, status_code=status_code,
+        )
+        self.args = (message,)
 
 
 class EasyLanguageValidationError(ValueError):
@@ -449,6 +472,37 @@ def simplify_notice(
     model: str = DEFAULT_MODEL,
     request: Callable[..., str] | None = None,
     clock: Callable[[], datetime] | None = None,
+    budget: ExecutionBudget | None = None,
+) -> EasyLanguageResult:
+    """Share one execution deadline across generation, validation and correction."""
+    with execution_budget(budget) as active:
+        try:
+            result = _simplify_notice(
+                source, api_key=api_key, model=model, request=request, clock=clock
+            )
+            active.check()
+            return result
+        except GeminiExecutionError as error:
+            # Preserve scheduling metadata, but never an injected client's message.
+            safe_error = EasyLanguageAPIError(
+                "Gemini easy-language request failed.",
+                reason_code=error.reason_code,
+                failure_kind=error.failure_kind,
+                retryable=error.retryable,
+                retry_at=error.retry_at,
+                status_code=error.status_code,
+            )
+            active.last_failure = safe_error
+            raise safe_error from None
+
+
+def _simplify_notice(
+    source: NoticeGlossaryInput,
+    *,
+    api_key: str,
+    model: str,
+    request: Callable[..., str] | None,
+    clock: Callable[[], datetime] | None,
 ) -> EasyLanguageResult:
     """Retry invalid JSON/spans once; API failures never become successful empty work.
 
@@ -478,11 +532,17 @@ def simplify_notice(
     credentials = _credential_forms(api_key)
     for attempt in (1, 2):
         try:
+            active = current_execution()
+            assert active is not None
+            active.check()
             output = request(prompt=prompt, notice_text=request_text, api_key=api_key, model=model)
+            active.check()
         except EasyLanguageConfigurationError:
             raise EasyLanguageConfigurationError(
                 "Gemini easy-language configuration failed."
             ) from None
+        except GeminiExecutionError:
+            raise
         except Exception:
             # This is an external request boundary, including injected SDK/network clients.
             # No arbitrary exception strings, response bodies or keys enter public errors.
@@ -500,6 +560,7 @@ def simplify_notice(
             easy_text = apply_easy_language_changes(source.text, changes)
             _validate_generated_credentials(easy_text, changes, credentials)
         except (ValidationError, ValueError) as error:
+            active.check()
             if attempt == 2:
                 raise EasyLanguageValidationError(
                     "Gemini easy-language JSON or source validation failed after two attempts."

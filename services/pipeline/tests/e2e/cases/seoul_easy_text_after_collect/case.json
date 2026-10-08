@@ -71,6 +71,7 @@
       ],
       "gemini": {
         "easy_text": [
+          "input/timeout.json",
           "input/timeout.json"
         ]
       },

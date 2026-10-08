@@ -60,7 +60,9 @@ jobs:
       - name: Test pipeline e2e cases
         run: uv run --locked pytest tests/e2e --junitxml="$RUNNER_TEMP/e2e-junit.xml"
       - name: Test migrations and app database permissions
-        run: uv run --locked pytest ../../supabase/tests --junitxml="$RUNNER_TEMP/schema-junit.xml"
+        run: >-
+          uv run --locked pytest -c pyproject.toml ../../supabase/tests
+          --junitxml="$RUNNER_TEMP/schema-junit.xml"
       - name: Require every test suite without skips
         run: >-
           uv run --locked python scripts/check_test_report.py

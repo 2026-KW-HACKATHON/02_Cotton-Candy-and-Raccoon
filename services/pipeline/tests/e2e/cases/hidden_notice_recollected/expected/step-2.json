@@ -17,18 +17,24 @@
         "created_at": "<unchanged>",
         "updated_at": "<unchanged>",
         "content_updated_at": "<unchanged>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "경로당 프로그램을 안내합니다."
       }
     },
     "notice_files": {},
     "notice_summaries": {},
     "notice_easy_texts": {},
-    "notice_summary_executions": {}
+    "notice_dictionary_links": {},
+    "standard_dictionary_cache": {},
+    "notice_summary_executions": {},
+    "notice_processing_jobs": {}
   },
   "row_counts": {
     "holidays": 0,
+    "notice_dictionary_links": 0,
     "notice_easy_texts": 0,
     "notice_files": 0,
+    "notice_processing_jobs": 0,
     "notice_summaries": 0,
     "notice_summary_executions": 0,
     "notices": 1,
@@ -38,6 +44,9 @@
     "notices": {},
     "notice_files": {},
     "notice_summaries": {},
-    "notice_easy_texts": {}
+    "notice_easy_texts": {},
+    "app_notice_list": {},
+    "app_notice_detail": {},
+    "get_notice_dictionary": {}
   }
 }

@@ -22,10 +22,19 @@
       "complete": true,
       "attempted_count": 1,
       "successful_count": 1,
+      "gemini_requests": 1,
+      "gemini_http_attempts": 1,
       "skipped_count": 0,
       "failed_count": 0,
       "skipped": [],
-      "failures": []
+      "failures": [],
+      "dictionary": {
+        "attempted_count": 1,
+        "complete_count": 1,
+        "partial_count": 0,
+        "pending_count": 0,
+        "failures": []
+      }
     }
   },
   "stderr": [],
@@ -64,7 +73,8 @@
         "created_at": "<set>",
         "updated_at": "<set>",
         "content_updated_at": "<set>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "평생학습 강좌 참가자를 모집합니다."
       }
     },
     "notice_files": {},
@@ -93,12 +103,23 @@
         "dictionary_candidates": []
       }
     },
-    "notice_summary_executions": {}
+    "notice_dictionary_links": {
+      "nowon/1001/900451": {
+        "easy_text_token": "<set>",
+        "candidates": [],
+        "generated_at": "<set>"
+      }
+    },
+    "standard_dictionary_cache": {},
+    "notice_summary_executions": {},
+    "notice_processing_jobs": {}
   },
   "row_counts": {
     "holidays": 0,
+    "notice_dictionary_links": 1,
     "notice_easy_texts": 1,
     "notice_files": 0,
+    "notice_processing_jobs": 0,
     "notice_summaries": 0,
     "notice_summary_executions": 0,
     "notices": 1,
@@ -120,15 +141,14 @@
         "created_at": "<set>",
         "updated_at": "<set>",
         "content_updated_at": "<set>",
-        "content_revision": 1
+        "content_revision": 1,
+        "body_text": "평생학습 강좌 참가자를 모집합니다."
       }
     },
     "notice_files": {},
     "notice_summaries": {},
     "notice_easy_texts": {
       "nowon/1001/900451": {
-        "notice_revision": "b5c378a2b2262b651b5eade31a8fd1685c9a05f1a9f775595dd6ab3039bd3302",
-        "source_hash": "308bfb8fcc6a09aa629c2c755124b32d1fcf32bd6c906a9959e2b6c413df90ed",
         "original_text": "평생학습 강좌 참가자 모집\n평생학습 강좌 참가자를 모집합니다.",
         "easy_text": "평생학습 강좌 참가자 모집\n평생학습 강좌 참여할 사람을 모집합니다.",
         "changes": [
@@ -140,13 +160,99 @@
             "start": 23
           }
         ],
-        "model": "gemini-3.5-flash-lite",
-        "prompt_version": "easy-language-v8",
-        "attempt_count": 1,
         "generated_at": "<set>",
         "body_text_present": true,
-        "attachment_content_included": false,
-        "dictionary_candidates": []
+        "attachment_content_included": false
+      }
+    },
+    "app_notice_list": {
+      "nowon/1001/900451": {
+        "source": "nowon",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "평생학습 강좌 참가자 모집",
+        "department": "교육지원과",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true
+      }
+    },
+    "app_notice_detail": {
+      "nowon/1001/900451": {
+        "source": "nowon",
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "평생학습 강좌 참가자 모집",
+        "department": "교육지원과",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<set>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": true,
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900451",
+        "license_type": "KOGL-4",
+        "body_text": "평생학습 강좌 참가자를 모집합니다.",
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [],
+        "easy_original_text": "평생학습 강좌 참가자 모집\n평생학습 강좌 참가자를 모집합니다.",
+        "easy_text": "평생학습 강좌 참가자 모집\n평생학습 강좌 참여할 사람을 모집합니다.",
+        "easy_changes": [
+          {
+            "context": "참가자를 모집합니다",
+            "end": 27,
+            "original": "참가자를",
+            "replacement": "참여할 사람을",
+            "start": 23
+          }
+        ],
+        "easy_body_text_present": true,
+        "easy_attachment_content_included": false,
+        "easy_generated_at": "<set>"
+      }
+    },
+    "get_notice_dictionary": {
+      "nowon/1001/900451": {
+        "result": {
+          "attachment_content_included": false,
+          "body_text_present": true,
+          "changes": [
+            {
+              "context": "참가자를 모집합니다",
+              "end": 27,
+              "original": "참가자를",
+              "replacement": "참여할 사람을",
+              "start": 23
+            }
+          ],
+          "dictionary_candidates": [],
+          "dictionary_status": "complete",
+          "easy_text": "평생학습 강좌 참가자 모집\n평생학습 강좌 참여할 사람을 모집합니다.",
+          "generated_at": "<set>",
+          "model": "gemini-3.5-flash-lite",
+          "notice_id": 2,
+          "notice_revision": "b5c378a2b2262b651b5eade31a8fd1685c9a05f1a9f775595dd6ab3039bd3302",
+          "original_text": "평생학습 강좌 참가자 모집\n평생학습 강좌 참가자를 모집합니다.",
+          "prompt_version": "easy-language-v8"
+        }
       }
     }
   }
