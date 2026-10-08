@@ -31,7 +31,9 @@
             "reason_code": "dictionary_incomplete"
           }
         ]
-      }
+      },
+      "gemini_requests": 0,
+      "gemini_http_attempts": 0
     }
   },
   "stderr": [],

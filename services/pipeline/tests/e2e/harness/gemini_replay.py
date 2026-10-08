@@ -19,6 +19,10 @@ from e2e.harness.http_replay import CaseDefinitionError
 from google import genai
 from google.genai import errors
 
+from pipeline import gemini_execution
+from pipeline.glossary import easy_language_client
+from pipeline.transform import gemini_client
+
 Kind = Literal["easy_text", "summary"]
 KINDS: tuple[Kind, ...] = ("easy_text", "summary")
 
@@ -131,6 +135,7 @@ class _Models:
         self._replay = replay
 
     def generate_content(self, *, model: str, contents: object, config: object = None) -> object:
+        gemini_execution.record_http_dispatch()
         payload = self._replay.next(
             "easy_text", {"model": model, "input": _describe_input(contents)}
         )
@@ -141,8 +146,10 @@ class _Models:
 class _Interactions:
     def __init__(self, replay: GeminiReplay) -> None:
         self._replay = replay
+        self.sdk_configuration = SimpleNamespace(retry_config=None)
 
     def create(self, *, model: str, input: object, **_: object) -> object:
+        gemini_execution.record_http_dispatch()
         payload = self._replay.next("summary", {"model": model, "input": _describe_input(input)})
         return SimpleNamespace(status="completed", errors=None, output_text=_as_text(payload))
 
@@ -164,3 +171,14 @@ class FakeClient:
 
 def install(monkeypatch: pytest.MonkeyPatch, replay: GeminiReplay) -> None:
     monkeypatch.setattr(genai, "Client", lambda **kwargs: FakeClient(replay, **kwargs))
+
+    def invoke(operation, payload, budget):
+        # Keep the production budget/retry loop; only replace the OS/SDK I/O boundary.
+        request = (
+            gemini_client._generate_summary_json_direct
+            if operation == "summary"
+            else easy_language_client._generate_easy_language_json_direct
+        )
+        return request(**payload)
+
+    monkeypatch.setattr(gemini_execution, "_invoke_worker", invoke)

@@ -40,6 +40,7 @@
       "gemini": {
         "easy_text": [
           "input/easy_602_error.json",
+          "input/easy_602_error.json",
           "input/easy_601.json"
         ]
       },

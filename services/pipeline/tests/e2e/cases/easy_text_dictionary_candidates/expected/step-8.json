@@ -164,7 +164,9 @@
     ],
     "attachment_content_included": false
   },
-  "stderr": [],
+  "stderr": [
+    "{\"gemini_requests\": 0, \"gemini_http_attempts\": 0}"
+  ],
   "http_calls": [
     "dictionary_search 지참하다 1 json",
     "dictionary_view 200"

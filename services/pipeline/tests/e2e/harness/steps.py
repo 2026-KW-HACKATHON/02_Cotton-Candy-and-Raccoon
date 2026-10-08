@@ -111,7 +111,9 @@ def _patch_sleep(monkeypatch: pytest.MonkeyPatch, sleeps: list[float]) -> None:
 def _drop_volatile(value: Any) -> Any:
     if isinstance(value, dict):
         return {
-            k: "<set>" if k in REPORT_TIME_KEYS and v is not None else _drop_volatile(v)
+            k: "<retry-at>" if k == "retry_at" and v is not None
+            else "<set>" if k in REPORT_TIME_KEYS and v is not None
+            else _drop_volatile(v)
             for k, v in value.items() if k not in VOLATILE_REPORT_KEYS
         }
     if isinstance(value, list):

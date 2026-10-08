@@ -106,12 +106,17 @@ def _install(monkeypatch, tmp_path, kind: str, *payloads: object) -> gemini_repl
 
 
 def test_easy_text_replay_matches_the_real_client(monkeypatch, tmp_path):
-    replay = _install(monkeypatch, tmp_path, "easy_text", {"changes": []}, {"__error__": "timeout"})
+    replay = _install(
+        monkeypatch, tmp_path, "easy_text", {"changes": []},
+        {"__error__": "timeout"}, {"__error__": "timeout"},
+    )
     output = generate_easy_language_json(prompt="p", notice_text="본문", api_key=API_KEY)
     assert json.loads(output) == {"changes": []}
     with pytest.raises(EasyLanguageAPIError):
         generate_easy_language_json(prompt="p", notice_text="본문", api_key=API_KEY)
-    assert [call["input"][0]["type"] for call in replay.calls["easy_text"]] == ["text", "text"]
+    assert [call["input"][0]["type"] for call in replay.calls["easy_text"]] == [
+        "text", "text", "text",
+    ]
     assert replay.leftovers() == {}
 
 
@@ -126,7 +131,10 @@ def test_easy_text_replay_matches_the_real_client(monkeypatch, tmp_path):
 def test_summary_replay_errors_follow_the_real_client_classification(
     monkeypatch, tmp_path, error, reason_code
 ):
-    _install(monkeypatch, tmp_path, "summary", {"summary": "ok"}, {"__error__": error})
+    _install(
+        monkeypatch, tmp_path, "summary", {"summary": "ok"},
+        {"__error__": error}, {"__error__": error},
+    )
     output = generate_summary_json(prompt="p", notice_text="본문", api_key=API_KEY)
     assert json.loads(output) == {"summary": "ok"}
     with pytest.raises(GeminiRequestError) as failure:

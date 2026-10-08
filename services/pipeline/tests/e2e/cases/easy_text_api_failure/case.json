@@ -16,6 +16,7 @@
       "gemini": {
         "easy_text": [
           "input/easy_900512_error.json",
+          "input/easy_900512_error.json",
           "input/easy_900511.json"
         ]
       },

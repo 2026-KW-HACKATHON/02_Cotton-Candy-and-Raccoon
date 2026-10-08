@@ -34,6 +34,7 @@
       "args": [],
       "gemini": {
         "summary": [
+          "input/summary_timeout.json",
           "input/summary_timeout.json"
         ],
         "easy_text": [
@@ -89,6 +90,7 @@
       "args": [],
       "gemini": {
         "summary": [
+          "input/summary_timeout.json",
           "input/summary_timeout.json"
         ],
         "easy_text": [

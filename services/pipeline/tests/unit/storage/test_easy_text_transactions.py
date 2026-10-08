@@ -1,6 +1,6 @@
 """Real PostgreSQL: Gemini runs without a transaction; concurrent work stays safe."""
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import psycopg
@@ -201,8 +201,9 @@ def test_deleted_cache_is_preserved_when_an_inflight_refresh_finishes(
         assert get_notice_easy_text(observer, source.notice_id) is None
 
 
+@pytest.mark.parametrize("failure_kind", ["permanent", "deadline", "deferred"])
 def test_gemini_failure_preserves_committed_cache_and_leaves_connection_idle(
-    service_db, committed_easy_db
+    service_db, committed_easy_db, failure_kind
 ):
     source = _ready_notice(service_db)
     previous = _result(source)
@@ -211,11 +212,43 @@ def test_gemini_failure_preserves_committed_cache_and_leaves_connection_idle(
 
     def fail(**_kwargs):
         assert service_db.info.transaction_status == TransactionStatus.IDLE
-        raise EasyLanguageAPIError("simulated failure")
+        raise EasyLanguageAPIError(
+            "simulated failure",
+            reason_code="api_timeout" if failure_kind == "deadline" else "api_error",
+            failure_kind=failure_kind,
+            retryable=failure_kind != "permanent",
+            retry_at=datetime(2026, 10, 9, tzinfo=UTC) if failure_kind == "deferred" else None,
+        )
 
     with pytest.raises(EasyLanguageAPIError):
         simplify_and_store_notice(service_db, source, refresh=True, api_key="fake", request=fail)
 
+    assert service_db.info.transaction_status == TransactionStatus.IDLE
+    with psycopg.connect(committed_easy_db.database_url) as observer:
+        assert get_notice_easy_text(observer, source.notice_id) == previous
+
+
+def test_valid_response_after_deadline_cannot_replace_committed_cache(
+    service_db, committed_easy_db, monkeypatch
+):
+    from pipeline import gemini_execution
+
+    source = _ready_notice(service_db)
+    previous = _result(source)
+    with service_db.transaction():
+        save_notice_easy_text(service_db, previous)
+    now = [0.0]
+    monkeypatch.setattr(gemini_execution.time, "monotonic", lambda: now[0])
+
+    def late_request(**kwargs):
+        now[0] += 121.0
+        return _request(**kwargs)
+
+    with pytest.raises(EasyLanguageAPIError) as captured:
+        simplify_and_store_notice(
+            service_db, source, refresh=True, api_key="fake", request=late_request
+        )
+    assert captured.value.failure_kind == "deadline"
     assert service_db.info.transaction_status == TransactionStatus.IDLE
     with psycopg.connect(committed_easy_db.database_url) as observer:
         assert get_notice_easy_text(observer, source.notice_id) == previous

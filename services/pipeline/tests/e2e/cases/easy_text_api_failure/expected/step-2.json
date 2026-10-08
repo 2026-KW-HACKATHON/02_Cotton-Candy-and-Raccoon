@@ -21,13 +21,22 @@
       "complete": false,
       "attempted_count": 2,
       "successful_count": 1,
+      "gemini_requests": 2,
+      "gemini_http_attempts": 3,
       "skipped_count": 0,
       "failed_count": 1,
       "skipped": [],
       "failures": [
         {
           "notice_id": 2,
-          "reason_code": "api_failed"
+          "reason_code": "api_failed",
+          "execution_failure": {
+            "reason_code": "api_error",
+            "failure_kind": "deferred",
+            "retryable": true,
+            "retry_at": "<retry-at>",
+            "status_code": 500
+          }
         }
       ],
       "dictionary": {
@@ -49,6 +58,16 @@
   ],
   "gemini_calls": {
     "easy_text": [
+      {
+        "model": "gemini-3.5-flash-lite",
+        "input": [
+          {
+            "type": "text",
+            "sha256": "b4dad59c287888d9",
+            "length": 19
+          }
+        ]
+      },
       {
         "model": "gemini-3.5-flash-lite",
         "input": [

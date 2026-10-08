@@ -81,17 +81,24 @@ def _prepared(
 
 
 def _mock_sdk(monkeypatch: pytest.MonkeyPatch, handler: Any) -> None:
-    """Keep Google's real serializer and response parser behind MockTransport."""
+    """Replay SDK serialization in-process; subprocess deadlines have separate tests."""
     real_client = gemini_client.genai.Client
 
     def client_factory(*, api_key: str, http_options: types.HttpOptions) -> Any:
         options = http_options.model_copy(
             update={
                 "base_url": "https://gemini.invalid",
-                "client_args": {"transport": httpx.MockTransport(handler)},
-                "retry_options": types.HttpRetryOptions(attempts=1),
+                "client_args": {
+                    **(http_options.client_args or {}),
+                    "transport": httpx.MockTransport(handler),
+                },
             }
         )
         return real_client(api_key=api_key, http_options=options)
 
     monkeypatch.setattr(gemini_client.genai, "Client", client_factory)
+
+    monkeypatch.setattr(
+        gemini_client, "run_gemini_request",
+        lambda _operation, payload: gemini_client._generate_summary_json_direct(**payload),
+    )

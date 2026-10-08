@@ -166,6 +166,41 @@ def test_api_failure_outputs_no_result_and_never_exposes_details(error, offline,
     assert output.out == "" and "private-api-secret" not in output.err
 
 
+@pytest.mark.parametrize("value", ["0", "-1", "nan", "inf", "private-invalid-budget"])
+def test_invalid_execution_budget_is_a_safe_configuration_error(
+    offline, monkeypatch, capsys, value
+):
+    monkeypatch.setenv("GEMINI_EXECUTION_TIMEOUT_SECONDS", value)
+    monkeypatch.setattr(module, "simplify_notice", simplify_notice)
+    assert module.main(["--input", str(offline.path)]) == 2
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert json.loads(output.err)["execution_failure"]["reason_code"] == "configuration_error"
+    assert "private-invalid-budget" not in output.err
+    offline.gemini.assert_not_called()
+
+
+def test_deferred_failure_reports_retry_time_without_overwriting_saved_output(
+    offline, capsys, tmp_path
+):
+    retry_at = datetime(2026, 10, 9, tzinfo=UTC)
+    offline.gemini.side_effect = EasyLanguageAPIError(
+        "private-api-secret", failure_kind="deferred", retryable=True,
+        retry_at=retry_at, status_code=429,
+    )
+    output_path = tmp_path / "previous.json"
+    output_path.write_text("previous-good-result", encoding="utf-8")
+    assert module.main(["--input", str(offline.path), "--output", str(output_path)]) == 1
+    output = capsys.readouterr()
+    details = json.loads(output.err)["execution_failure"]
+    assert details["failure_kind"] == "deferred"
+    assert details["retry_at"] == retry_at.isoformat()
+    assert details["status_code"] == 429
+    assert output.out == ""
+    assert "private-api-secret" not in output.err
+    assert output_path.read_text("utf-8") == "previous-good-result"
+
+
 def test_output_cannot_overwrite_input(offline):
     original = offline.path.read_bytes()
     with pytest.raises(SystemExit):

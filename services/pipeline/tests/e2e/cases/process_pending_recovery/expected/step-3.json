@@ -58,6 +58,16 @@
             "length": 296
           }
         ]
+      },
+      {
+        "model": "gemini-3.5-flash-lite",
+        "input": [
+          {
+            "type": "text",
+            "sha256": "9d332ad0a0ce2862",
+            "length": 296
+          }
+        ]
       }
     ]
   },

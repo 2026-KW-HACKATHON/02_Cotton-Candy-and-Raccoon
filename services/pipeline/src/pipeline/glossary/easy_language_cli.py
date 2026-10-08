@@ -10,9 +10,13 @@ import psycopg
 from pydantic import ValidationError
 
 from pipeline.config import ConfigError, DatabaseSettings
+from pipeline.gemini_execution import (
+    ExecutionStats,
+    GeminiExecutionError,
+    capture_execution_stats,
+)
 from pipeline.glossary.easy_language import (
     DEFAULT_MODEL,
-    EasyLanguageAPIError,
     EasyLanguageConfigurationError,
     EasyLanguageValidationError,
     NoNoticeBodyError,
@@ -25,6 +29,16 @@ from pipeline.glossary.source import NoticeGlossaryInput
 from pipeline.storage.notice_dictionary import NoticeDictionaryStorageError, get_notice_dictionary
 from pipeline.storage.notice_easy_text import EasyTextStorageError
 from pipeline.transform.gemini_prompt import GeminiConfigurationError, load_gemini_api_key
+
+
+def _report_failure(error: GeminiExecutionError, execution: ExecutionStats | None) -> int:
+    print(json.dumps({
+        "status": "failed",
+        "execution_failure": error.to_dict(),
+        "gemini_requests": execution.logical_requests if execution else 0,
+        "gemini_http_attempts": execution.http_attempts if execution else 0,
+    }), file=sys.stderr)
+    return 2 if error.reason_code == "configuration_error" else 1
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -54,6 +68,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Never overwrite input while producing output, including equivalent path spellings.
     if args.input and args.output and args.input.resolve() == args.output.resolve():
         parser.error("--output must differ from the input file.")
+    execution: ExecutionStats | None = None
     exit_code = 0
     try:
         if args.read_only:
@@ -74,12 +89,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 else:
                     with conn.transaction():
                         source = load_notice_glossary_input(conn, args.notice_id)
-                result = simplify_and_store_notice(
-                    conn,
-                    source,
-                    refresh=args.refresh,
-                    model=args.model,
-                )
+                with capture_execution_stats() as execution:
+                    result = simplify_and_store_notice(
+                        conn,
+                        source,
+                        refresh=args.refresh,
+                        model=args.model,
+                    )
             payload = enrich_notice_dictionary(database, source.notice_id)
             if payload is None:
                 raise EasyTextStorageError("공개할 최신 공지 결과가 없습니다.")
@@ -89,7 +105,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.output.write_text(rendered, encoding="utf-8")
         else:
             source = NoticeGlossaryInput.model_validate_json(args.input.read_text("utf-8-sig"))
-            result = simplify_notice(source, api_key=load_gemini_api_key(), model=args.model)
+            with capture_execution_stats() as execution:
+                result = simplify_notice(source, api_key=load_gemini_api_key(), model=args.model)
             rendered = result.model_dump_json(indent=2)
             if args.output:
                 args.output.write_text(rendered, encoding="utf-8")
@@ -107,9 +124,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return 2
         print(rendered)
         return 0
-    except (EasyLanguageAPIError, EasyLanguageValidationError):
-        print("API 응답 처리에 실패했습니다. 성공 결과를 만들지 않았습니다.", file=sys.stderr)
-        return 1
+    except GeminiExecutionError as error:
+        return _report_failure(error, execution)
+    except EasyLanguageValidationError:
+        return _report_failure(GeminiExecutionError("response_validation_failed"), execution)
     except (
         ValidationError,
         ValueError,
@@ -125,6 +143,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (OSError, UnicodeError):
         print("입력 또는 출력 파일을 처리하지 못했습니다.", file=sys.stderr)
         return 2
+    if execution is not None:
+        print(json.dumps({
+            "gemini_requests": execution.logical_requests,
+            "gemini_http_attempts": execution.http_attempts,
+        }), file=sys.stderr)
     print(rendered)
     return exit_code
 

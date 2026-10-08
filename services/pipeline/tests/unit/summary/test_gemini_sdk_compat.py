@@ -5,6 +5,7 @@ import json
 import subprocess
 import sys
 import tomllib
+from datetime import UTC, datetime, timedelta
 from importlib import metadata
 from types import SimpleNamespace
 from typing import Any
@@ -15,6 +16,8 @@ from google.genai import errors
 from support.gemini_multimodal import _media, _mock_sdk
 from support.paths import PIPELINE_DIR
 
+from pipeline.gemini_execution import GeminiExecutionError
+from pipeline.gemini_sdk_adapter import retry_at_from_headers
 from pipeline.transform import gemini_client
 from pipeline.transform.summary_schema import GeminiNoticeSummary
 
@@ -27,7 +30,9 @@ def _raise_from_client(monkeypatch: pytest.MonkeyPatch, error: Exception) -> Non
 
     class FakeClient:
         def __init__(self, **_kwargs: Any) -> None:
-            self.interactions = SimpleNamespace(create=self.create)
+            self.interactions = SimpleNamespace(
+                create=self.create, sdk_configuration=SimpleNamespace(retry_config=None)
+            )
 
         def __enter__(self) -> "FakeClient":
             return self
@@ -62,7 +67,7 @@ def _sdk_error(
 
 
 def _request() -> str:
-    return gemini_client.generate_summary_json(
+    return gemini_client._generate_summary_json_direct(
         prompt="instructions", notice_text=[_media("document")], api_key="test-key"
     )
 
@@ -345,3 +350,113 @@ print(version('google-genai'))
         check=True,
     )
     assert result.stdout.strip() == locked_version
+
+
+@pytest.mark.parametrize("status", [408, 429, 500, 502, 503, 504])
+@pytest.mark.parametrize("header", ["retry-after", "retry-after-ms"])
+def test_locked_interactions_sdk_sends_once_and_preserves_server_delay(
+    monkeypatch, status, header,
+) -> None:
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(
+            status, headers={header: "3600" if header == "retry-after" else "3600000"},
+            json={"error": {"code": status, "message": PRIVATE_MARKER}},
+        )
+
+    before = datetime.now(UTC)
+    _mock_sdk(monkeypatch, handler)
+    with pytest.raises(gemini_client.GeminiRequestError) as caught:
+        _request()
+    assert len(requests) == 1
+    assert caught.value.retryable
+    assert caught.value.failure_kind == "transient"
+    assert caught.value.retry_at >= before + timedelta(hours=1)
+
+
+def test_retry_after_date_and_milliseconds_keep_the_latest_valid_instant():
+    now = datetime(2026, 10, 8, 12, tzinfo=UTC)
+    assert retry_at_from_headers(httpx.Headers({
+        "retry-after": "Thu, 08 Oct 2026 13:00:00 GMT", "retry-after-ms": "500",
+    }), now=now) == now + timedelta(hours=1)
+    assert retry_at_from_headers(httpx.Headers({
+        "retry-after": "NaN", "retry-after-ms": "-1",
+    }), now=now) is None
+    assert retry_at_from_headers(httpx.Headers({
+        "retry-after": "1e100",
+    }), now=now) == datetime.max.replace(tzinfo=UTC)
+
+
+def test_summary_public_boundary_preserves_deferred_error_metadata(monkeypatch):
+    retry_at = datetime(2026, 10, 8, 13, tzinfo=UTC)
+    calls = []
+
+    def stopped(operation, payload):
+        calls.append((operation, payload))
+        raise GeminiExecutionError(
+            "api_error", failure_kind="deferred", retryable=True,
+            retry_at=retry_at, status_code=429,
+        )
+
+    monkeypatch.setattr(gemini_client, "run_gemini_request", stopped)
+    with pytest.raises(gemini_client.GeminiRequestError) as caught:
+        gemini_client.generate_summary_json(
+            prompt="instructions", notice_text="notice data", api_key="test-key",
+        )
+    assert len(calls) == 1 and calls[0][0] == "summary"
+    assert caught.value.failure_kind == "deferred"
+    assert caught.value.retryable and caught.value.retry_at == retry_at
+    assert caught.value.status_code == 429
+
+
+def test_summary_invalid_input_does_not_launch_the_worker(monkeypatch):
+    def forbidden(*_args):
+        pytest.fail("invalid input must not launch a worker")
+
+    monkeypatch.setattr(gemini_client, "run_gemini_request", forbidden)
+    with pytest.raises(gemini_client.GeminiRequestError):
+        gemini_client.generate_summary_json(prompt="", notice_text="notice", api_key="test-key")
+
+
+@pytest.mark.parametrize("operation", ["summary", "easy_language"])
+@pytest.mark.parametrize("status", [403, 429, 503])
+def test_error_headers_are_classified_without_reading_the_response_body(
+    monkeypatch, operation, status,
+):
+    from pipeline.glossary.easy_language_client import _generate_easy_language_json_direct
+
+    class WaitingBody(httpx.SyncByteStream):
+        closed = False
+
+        def __iter__(self):
+            pytest.fail("SDK must not wait for the body after an HTTP failure")
+            yield b""  # pragma: no cover - keep this a stream iterator
+
+        def close(self):
+            self.closed = True
+
+    stream = WaitingBody()
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(status, headers={"Retry-After": "3600"}, stream=stream)
+
+    before = datetime.now(UTC)
+    _mock_sdk(monkeypatch, handler)
+    generate = (
+        gemini_client._generate_summary_json_direct
+        if operation == "summary" else _generate_easy_language_json_direct
+    )
+    with pytest.raises(GeminiExecutionError) as caught:
+        generate(prompt="instructions", notice_text="notice", api_key="fake-test-key")
+    assert len(calls) == 1
+    assert stream.closed
+    assert caught.value.status_code == status
+    if status in {429, 503}:
+        assert caught.value.retry_at >= before + timedelta(hours=1)
+        assert caught.value.retryable
+    else:
+        assert not caught.value.retryable

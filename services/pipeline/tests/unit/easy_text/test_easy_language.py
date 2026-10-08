@@ -488,6 +488,77 @@ def test_failed_retry_after_invalid_json_remains_an_api_failure() -> None:
     assert calls == 2
 
 
+def test_retry_scheduling_metadata_survives_easy_language_error_redaction() -> None:
+    from pipeline.gemini_execution import GeminiExecutionError
+
+    retry_at = GENERATED_AT
+
+    def request(**kwargs: str) -> str:
+        raise GeminiExecutionError(
+            API_KEY,
+            failure_kind="deferred",
+            retryable=True,
+            retry_at=retry_at,
+            status_code=429,
+        )
+
+    with pytest.raises(EasyLanguageAPIError) as captured:
+        simplify_notice(NoticeGlossaryInput(text="검토 안내"), api_key=API_KEY, request=request)
+    assert captured.value.failure_kind == "deferred"
+    assert captured.value.retry_at == retry_at
+    assert captured.value.retryable is True
+    assert captured.value.status_code == 429
+    assert API_KEY not in "".join(traceback.format_exception(captured.value))
+
+
+def test_correction_uses_the_original_deadline_and_rejects_late_valid_response(monkeypatch) -> None:
+    from pipeline import gemini_execution
+
+    now = [0.0]
+    monkeypatch.setattr(gemini_execution.time, "monotonic", lambda: now[0])
+    budget = gemini_execution.ExecutionBudget(timeout_seconds=10)
+    calls = []
+
+    def request(**kwargs: str) -> str:
+        calls.append(kwargs)
+        now[0] += 6.0
+        return "{" if len(calls) == 1 else response_json()
+
+    with pytest.raises(EasyLanguageAPIError) as captured:
+        simplify_notice(
+            NoticeGlossaryInput(text="검토 안내"), api_key=API_KEY, request=request, budget=budget
+        )
+    assert len(calls) == 2
+    assert captured.value.reason_code == "api_timeout"
+    assert captured.value.failure_kind == "deadline"
+
+
+def test_expired_second_validation_is_reported_as_deadline_not_permanent_failure(monkeypatch):
+    from pipeline import gemini_execution
+    from pipeline.glossary import easy_language
+
+    now = [0.0]
+    monkeypatch.setattr(gemini_execution.time, "monotonic", lambda: now[0])
+    budget = gemini_execution.ExecutionBudget(timeout_seconds=10)
+    validations = []
+
+    def invalid_spans(*args):
+        validations.append(True)
+        if len(validations) == 2:
+            now[0] = 11.0
+        raise ValueError("invalid source span")
+
+    monkeypatch.setattr(easy_language, "_resolve_body_changes", invalid_spans)
+    with pytest.raises(EasyLanguageAPIError) as captured:
+        simplify_notice(
+            NoticeGlossaryInput(text="검토 안내"), api_key=API_KEY,
+            request=lambda **kwargs: response_json(), budget=budget,
+        )
+    assert len(validations) == 2
+    assert captured.value.failure_kind == "deadline"
+    assert captured.value.retryable is True
+
+
 def test_invalid_model_output_error_hides_response_and_credentials() -> None:
     with pytest.raises(EasyLanguageValidationError) as captured:
         run_response("검토 안내", response_json(proposal("검토", API_KEY + "\n", "검토 안내")))

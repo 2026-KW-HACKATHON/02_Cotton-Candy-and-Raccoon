@@ -16,6 +16,8 @@
       "complete": true,
       "attempted_count": 1,
       "successful_count": 0,
+      "gemini_requests": 0,
+      "gemini_http_attempts": 0,
       "skipped_count": 1,
       "failed_count": 0,
       "skipped": [
