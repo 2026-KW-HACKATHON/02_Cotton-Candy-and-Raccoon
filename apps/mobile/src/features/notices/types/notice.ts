@@ -1,5 +1,10 @@
-export type NoticeCategory = "주민 참여" | "생활" | "복지";
-export type GlossaryTerm = { plain: string; original: string };
+export type NoticeCategory = "주민 참여" | "생활" | "복지" | "민방위";
+export type GlossaryTerm = {
+  plain: string;
+  original: string;
+  meaning?: string;
+  example?: string;
+};
 export type Notice = {
   id: string;
   title: string;

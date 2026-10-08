@@ -7,7 +7,7 @@ import { Screen } from "@/shared/ui/Screen";
 import { Header } from "@/shared/ui/Header";
 import { IconButton } from "@/shared/ui/IconButton";
 import { AppText } from "@/shared/ui/AppText";
-import { COLORS, CARD_SHADOW, RADIUS, SPACE } from "@/shared/theme/tokens";
+import { COLORS, CARD_SHADOW, RADIUS } from "@/shared/theme/tokens";
 import { CategoryBadge } from "../components/CategoryBadge";
 import { NoticeState } from "../components/NoticeState";
 import { useNotice } from "../hooks/useNotices";
@@ -15,6 +15,9 @@ import { useBookmarkStore } from "../store/bookmarkStore";
 import { useDisplayPreferences } from "@/shared/accessibility/displayPreferences";
 import { EasyNoticeDetailScreen } from "./EasyNoticeDetailScreen";
 import { DetailCharacter } from "@/shared/ui/character/AnimatedCharacter";
+import { NoticeDocumentText } from "../components/NoticeDocumentText";
+import { NoticeTermOverlay } from "../components/NoticeTermOverlay";
+import { type GlossaryTerm } from "../types/notice";
 
 const SUMMARY_ICONS = [
   require("@/assets/figma/detail-imgIconSummaryCalendar.svg"),
@@ -47,6 +50,7 @@ function StandardNoticeDetailScreen() {
   // 쉬운말은 미리 작성된 예시 문구를 전환한다. 이 화면에서 AI 변환 요청을 실행하지 않는다.
   const [easy, setEasy] = useState(false);
   const [documentOpen, setDocumentOpen] = useState(false);
+  const [term, setTerm] = useState<GlossaryTerm | null>(null);
   const notice = query.data;
   const rows = notice
     ? [
@@ -59,6 +63,14 @@ function StandardNoticeDetailScreen() {
   return (
     <Screen
       headerBehavior="scroll"
+      contentStyle={{ paddingHorizontal: 20, gap: 20 }}
+      overlay={
+        <NoticeTermOverlay
+          term={term}
+          easy={easy}
+          onClose={() => setTerm(null)}
+        />
+      }
       header={
         <Header
           title=""
@@ -97,15 +109,20 @@ function StandardNoticeDetailScreen() {
         <>
           <View style={styles.metadata}>
             <CategoryBadge>{notice.category}</CategoryBadge>
-            <AppText secondary size={11.08} style={{ flexShrink: 1 }}>
-              {notice.provider} · {notice.publishedAt}
+            <AppText
+              secondary
+              size={14}
+              lineHeight={22}
+              style={{ flexShrink: 1 }}
+            >
+              {notice.provider} · 공고 {notice.publishedAt}
             </AppText>
           </View>
           <View style={styles.titleRow}>
             <AppText
               variant="display"
-              size={25.846}
-              lineHeight={35.077}
+              size={28}
+              lineHeight={38}
               style={{ flex: 1 }}
             >
               {notice.title}
@@ -113,7 +130,7 @@ function StandardNoticeDetailScreen() {
             <DetailCharacter active={animationActive} />
           </View>
           <View style={styles.summary}>
-            <AppText variant="bold" size={16.62}>
+            <AppText variant="bold" size={18} lineHeight={27}>
               핵심만 먼저 확인해요
             </AppText>
             {rows.map(([label, value], index) => (
@@ -121,16 +138,20 @@ function StandardNoticeDetailScreen() {
                 <View style={styles.iconBadge}>
                   <Image
                     source={SUMMARY_ICONS[index]}
-                    style={{ width: 25.8462, height: 25.8462 }}
+                    style={{ width: 28, height: 28 }}
                   />
                 </View>
-                <View style={{ flex: 1, gap: 3.692 }}>
-                  <AppText variant="bold">{label}</AppText>
-                  <AppText>{value}</AppText>
+                <View style={{ flex: 1, gap: 4 }}>
+                  <AppText variant="bold" size={16} lineHeight={26}>
+                    {label}
+                  </AppText>
+                  <AppText size={16} lineHeight={26}>
+                    {value}
+                  </AppText>
                 </View>
               </View>
             ))}
-            <AppText secondary size={11.08}>
+            <AppText secondary size={12} lineHeight={18}>
               화면 검토용 예시 요약입니다. 정확한 조건은 원문을 확인해요.
             </AppText>
           </View>
@@ -147,7 +168,10 @@ function StandardNoticeDetailScreen() {
                   accessibilityLabel={mode ? "쉬운말" : "원문"}
                   accessibilityState={{ selected: easy === mode }}
                   aria-selected={easy === mode}
-                  onPress={() => setEasy(mode)}
+                  onPress={() => {
+                    setTerm(null);
+                    setEasy(mode);
+                  }}
                   style={[
                     styles.segmentItem,
                     easy === mode && styles.segmentSelected,
@@ -166,32 +190,46 @@ function StandardNoticeDetailScreen() {
                 </Pressable>
               ))}
             </View>
-            <AppText secondary size={12.923}>
-              어려운 행정 단어를 쉬운말로 바꿔 읽어요.
+            <AppText secondary size={12} lineHeight={18}>
+              {easy
+                ? "원문 표현을 누르면 원래 단어를 볼 수 있어요."
+                : "밑줄 친 단어를 누르면 뜻을 볼 수 있어요."}
             </AppText>
-            <AppText variant="bold" size={16.615}>
+            <AppText variant="bold" size={18} lineHeight={27}>
               {notice.documentTitle}
             </AppText>
-            <AppText>{easy ? notice.easy : notice.original}</AppText>
-            <AppText>
-              • {easy ? "언제까지" : "접수 기한"}: {notice.deadline}
-              {"\n"}• {easy ? "누가" : "신청 대상"}: {notice.audience}
-              {"\n"}• {easy ? "해야 할 일" : "제출 방법"}: {notice.task}
-              {"\n"}• {easy ? "꼭 알아두세요" : "유의 사항"}: {notice.caution}
-            </AppText>
+            <NoticeDocumentText
+              text={easy ? notice.easy : notice.original}
+              terms={notice.terms}
+              easy={easy}
+              onTermPress={setTerm}
+            />
           </View>
           <Pressable
             accessibilityRole="button"
             onPress={() => setDocumentOpen(true)}
             style={styles.fileButton}
           >
-            <AppText variant="medium" style={{ color: COLORS.primary }}>
+            <AppText
+              variant="medium"
+              size={16}
+              lineHeight={24}
+              style={{ color: COLORS.primary }}
+            >
               원문 파일 보기
             </AppText>
           </Pressable>
           <AppText secondary size={12.923}>
             화면 검토용 예시 공문입니다. 실제 공고가 아닙니다.
           </AppText>
+          <View style={{ gap: 4, paddingTop: 12 }}>
+            <AppText secondary size={12} lineHeight={18}>
+              월계알리미는 노원구청의 공식 서비스가 아닙니다.
+            </AppText>
+            <AppText secondary size={12} lineHeight={18}>
+              공개된 공지 정보를 모아 쉽게 전달해요.
+            </AppText>
+          </View>
           {/* 첨부 파일 연동 전에는 다운로드 대신 로컬 예시 원문을 모달로 보여준다. */}
           <Modal
             visible={documentOpen}
@@ -235,31 +273,31 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 11.077,
     alignItems: "center",
-    minHeight: 108,
+    minHeight: 117,
   },
   summary: {
     backgroundColor: COLORS.soft,
     borderRadius: RADIUS.card,
-    paddingHorizontal: 29.538,
-    paddingVertical: 22.154,
-    gap: SPACE.xl,
+    paddingHorizontal: 32,
+    paddingVertical: 24,
+    gap: 20,
     ...CARD_SHADOW,
   },
-  summaryRow: { flexDirection: "row", gap: 14.769, alignItems: "center" },
+  summaryRow: { flexDirection: "row", gap: 16, alignItems: "center" },
   iconBadge: {
-    width: 36.923,
-    height: 36.923,
+    width: 40,
+    height: 40,
     borderRadius: RADIUS.control,
     backgroundColor: COLORS.surface,
     alignItems: "center",
     justifyContent: "center",
   },
   document: {
-    padding: SPACE.xl,
+    padding: 20,
     borderColor: COLORS.border,
     borderWidth: 0.923,
     borderRadius: RADIUS.card,
-    gap: SPACE.md,
+    gap: 12,
   },
   segment: {
     flexDirection: "row",
@@ -277,7 +315,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   fileButton: {
-    minHeight: 48,
+    minHeight: 52,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 0.923,
