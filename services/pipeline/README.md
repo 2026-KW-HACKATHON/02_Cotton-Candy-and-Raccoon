@@ -459,11 +459,11 @@ PDF·이미지 입력을 받는 요약 경로가 추가됐습니다. #13 준비 
 입력 검증 함수까지 실제 자료로 확인했으며, Gemini 전송·응답은 별도입니다. 추출 텍스트·파일을 DB에 다시
 저장하거나 새 테이블·환경 변수·예약 실행을 추가하지 않았습니다.
 
-현재 호환 회귀는 `test_summary_bundle_manifest.py`에서 중복 파일 연결, HWP 텍스트 해시,
+현재 호환 회귀는 `tests/unit/attachments/test_summary_bundle_manifest.py`에서 중복 파일 연결, HWP 텍스트 해시,
 본문 이미지 원문 링크, 준비 실패와 원문 버전 변경을 검증합니다. 전용 로컬 PostgreSQL에서
 실제 원본 조회→입력 준비→요약 job→결과·파일 연결 저장도 검증하며,
 이 테스트의 다운로드와 Gemini 응답은 대역을 사용합니다.
-추가 회귀는 `test_attachment_recovery.py`에서 URL 오류 격리, 캐시 공유, 이미지 합계 예산,
+추가 회귀는 `tests/unit/attachments/test_attachment_recovery.py`에서 URL 오류 격리, 캐시 공유, 이미지 합계 예산,
 시간 예산, 부분 요약 저장·재조회·복구·기존 결과 보존을 검증합니다.
 2026-10-08 검증: develop `edc975b` 통합 상태에서 pipeline **3559 passed**, DB 스키마
 **506 passed**, 모두 **0 skipped**. 공유 URL 정규화 변경 후 관련 회귀도 통과했습니다.
@@ -644,6 +644,14 @@ python -m uv run pytest
 
 공식 설치 프로그램으로 `uv` 실행 파일이 `PATH`에 등록된 환경에서는 위 명령의
 `python -m uv`를 `uv`로 줄여 실행할 수 있습니다.
+
+테스트는 `tests/unit/` 아래 영역별 폴더(`attachments`, `collect`, `easy_text`, `storage`,
+`summary`, `tooling`)에 있습니다. 개발 중에는 `python -m uv run pytest tests/unit/collect`처럼
+해당 영역만 실행할 수 있습니다. 여러 테스트 파일이 함께 쓰는 helper와 fixture는
+`tests/support/`에 두고, 테스트 파일끼리는 서로 import하지 않습니다. 경로는
+`support.paths`의 `TESTS_DIR`, `FIXTURES_DIR`, `PIPELINE_DIR`, `REPO_ROOT`를 사용합니다.
+`tests/unit/legacy_flow/`는 수집에서 저장까지의 흐름을 확인하는 테스트의 임시 위치이며,
+같은 내용을 e2e 케이스로 대체한 뒤 삭제합니다. 남길 테스트의 기준은 CONTRIBUTING.md를 따릅니다.
 
 CI는 임시 PostgreSQL에 전체 마이그레이션을 적용해 파이프라인의 DB 검사를 실행하고,
 별도의 빈 DB에서 스키마·권한을 검증합니다. 검사 결과가 없거나 건너뛴 검사가 있으면
