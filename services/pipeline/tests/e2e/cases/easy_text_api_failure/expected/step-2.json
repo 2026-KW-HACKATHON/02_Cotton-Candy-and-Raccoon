@@ -30,7 +30,10 @@
           "reason_code": "api_failed"
         }
       ]
-    }
+    },
+    "skipped": [],
+    "skipped_count": 0,
+    "failed_count": 1
   },
   "stderr": [],
   "http_calls": [

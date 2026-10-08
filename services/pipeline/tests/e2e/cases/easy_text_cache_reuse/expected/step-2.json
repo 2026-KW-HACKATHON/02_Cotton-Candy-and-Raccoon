@@ -20,7 +20,10 @@
       "failed_count": 0,
       "skipped": [],
       "failures": []
-    }
+    },
+    "skipped": [],
+    "skipped_count": 0,
+    "failed_count": 0
   },
   "stderr": [],
   "http_calls": [

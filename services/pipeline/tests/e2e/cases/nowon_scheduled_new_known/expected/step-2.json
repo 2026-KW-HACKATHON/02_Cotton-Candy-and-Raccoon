@@ -10,7 +10,10 @@
     "listing_complete": true,
     "failed_ranges": [],
     "complete": true,
-    "failures": []
+    "failures": [],
+    "skipped": [],
+    "skipped_count": 0,
+    "failed_count": 0
   },
   "stderr": [],
   "http_calls": [

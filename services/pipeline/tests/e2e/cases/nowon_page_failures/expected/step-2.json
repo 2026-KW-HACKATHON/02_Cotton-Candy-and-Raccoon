@@ -1,62 +1,79 @@
 {
   "exit_code": 0,
   "report": {
-    "mode": "new",
-    "total_count": 2,
-    "selected_count": 2,
-    "saved_count": 2,
+    "mode": "refresh",
+    "total_count": 3,
+    "selected_count": 3,
+    "saved_count": 0,
+    "skipped_count": 3,
+    "skipped": [
+      {
+        "post_sn": "900443",
+        "stage": "page_missing",
+        "reason_code": "source_page_missing"
+      },
+      {
+        "post_sn": "900442",
+        "stage": "page_missing",
+        "reason_code": "source_page_missing"
+      },
+      {
+        "post_sn": "900441",
+        "stage": "page_missing",
+        "reason_code": "source_page_missing"
+      }
+    ],
+    "failed_count": 0,
     "pages_read": 1,
-    "initial_baseline": true,
+    "initial_baseline": false,
     "listing_complete": true,
     "failed_ranges": [],
     "complete": true,
-    "failures": [],
-    "skipped": [],
-    "skipped_count": 0,
-    "failed_count": 0
+    "failures": []
   },
   "stderr": [],
   "http_calls": [
     "nowon_api 1-50",
-    "nowon_page 900472",
-    "nowon_page 900471"
+    "nowon_page 900443",
+    "nowon_page 900442",
+    "nowon_page 900441"
   ],
   "gemini_calls": {},
   "db": {
     "notices": {
-      "nowon/1001/900471": {
+      "nowon/1001/900441": {
         "dong_group": null,
         "is_pinned": false,
-        "title": "청소년 상담 프로그램 안내",
-        "department": "아동청소년과",
-        "registered_on": "2026-10-06",
-        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900471",
-        "body_html": "<p>상담 프로그램 안내</p>",
-        "license_type": "KOGL-4",
-        "is_modified": false,
-        "is_visible": true,
-        "created_at": "<set>",
-        "updated_at": "<set>",
-        "content_updated_at": "<set>",
-        "content_revision": 1,
-        "body_text": "상담 프로그램 안내"
-      },
-      "nowon/1001/900472": {
-        "dong_group": null,
-        "is_pinned": false,
-        "title": "어르신 일자리 사업 안내",
-        "department": "어르신복지과",
+        "title": "보건소 진료 시간 변경",
+        "department": "보건정책과",
         "registered_on": "2026-10-07",
-        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900472",
-        "body_html": "<p>일자리 사업 안내</p>",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900441",
+        "body_html": "<p>진료 시간이 변경됩니다.</p>",
         "license_type": "KOGL-4",
         "is_modified": false,
         "is_visible": true,
-        "created_at": "<set>",
-        "updated_at": "<set>",
-        "content_updated_at": "<set>",
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
         "content_revision": 1,
-        "body_text": "일자리 사업 안내"
+        "body_text": "진료 시간이 변경됩니다."
+      },
+      "nowon/1001/900443": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "도서관 휴관 안내",
+        "department": "문화체육과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900443",
+        "body_html": "<p>도서관 휴관을 안내합니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1,
+        "body_text": "도서관 휴관을 안내합니다."
       }
     },
     "notice_files": {},
@@ -74,53 +91,53 @@
   },
   "anon": {
     "notices": {
-      "nowon/1001/900471": {
+      "nowon/1001/900441": {
         "dong_group": null,
         "is_pinned": false,
-        "title": "청소년 상담 프로그램 안내",
-        "department": "아동청소년과",
-        "registered_on": "2026-10-06",
-        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900471",
-        "body_html": "<p>상담 프로그램 안내</p>",
-        "license_type": "KOGL-4",
-        "is_modified": false,
-        "is_visible": true,
-        "created_at": "<set>",
-        "updated_at": "<set>",
-        "content_updated_at": "<set>",
-        "content_revision": 1,
-        "body_text": "상담 프로그램 안내"
-      },
-      "nowon/1001/900472": {
-        "dong_group": null,
-        "is_pinned": false,
-        "title": "어르신 일자리 사업 안내",
-        "department": "어르신복지과",
+        "title": "보건소 진료 시간 변경",
+        "department": "보건정책과",
         "registered_on": "2026-10-07",
-        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900472",
-        "body_html": "<p>일자리 사업 안내</p>",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900441",
+        "body_html": "<p>진료 시간이 변경됩니다.</p>",
         "license_type": "KOGL-4",
         "is_modified": false,
         "is_visible": true,
-        "created_at": "<set>",
-        "updated_at": "<set>",
-        "content_updated_at": "<set>",
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
         "content_revision": 1,
-        "body_text": "일자리 사업 안내"
+        "body_text": "진료 시간이 변경됩니다."
+      },
+      "nowon/1001/900443": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "도서관 휴관 안내",
+        "department": "문화체육과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900443",
+        "body_html": "<p>도서관 휴관을 안내합니다.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1,
+        "body_text": "도서관 휴관을 안내합니다."
       }
     },
     "notice_files": {},
     "notice_summaries": {},
     "notice_easy_texts": {},
     "app_notice_list": {
-      "nowon/1001/900471": {
+      "nowon/1001/900441": {
         "source": "nowon",
         "dong_group": null,
         "is_pinned": false,
-        "title": "청소년 상담 프로그램 안내",
-        "department": "아동청소년과",
-        "registered_on": "2026-10-06",
-        "content_updated_at": "<set>",
+        "title": "보건소 진료 시간 변경",
+        "department": "보건정책과",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<unchanged>",
         "is_modified": false,
         "summary_status": null,
         "display_status": "none",
@@ -132,14 +149,14 @@
         "attachment_status": null,
         "has_easy_text": false
       },
-      "nowon/1001/900472": {
+      "nowon/1001/900443": {
         "source": "nowon",
         "dong_group": null,
         "is_pinned": false,
-        "title": "어르신 일자리 사업 안내",
-        "department": "어르신복지과",
-        "registered_on": "2026-10-07",
-        "content_updated_at": "<set>",
+        "title": "도서관 휴관 안내",
+        "department": "문화체육과",
+        "registered_on": "2026-10-08",
+        "content_updated_at": "<unchanged>",
         "is_modified": false,
         "summary_status": null,
         "display_status": "none",
@@ -153,14 +170,14 @@
       }
     },
     "app_notice_detail": {
-      "nowon/1001/900471": {
+      "nowon/1001/900441": {
         "source": "nowon",
         "dong_group": null,
         "is_pinned": false,
-        "title": "청소년 상담 프로그램 안내",
-        "department": "아동청소년과",
-        "registered_on": "2026-10-06",
-        "content_updated_at": "<set>",
+        "title": "보건소 진료 시간 변경",
+        "department": "보건정책과",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<unchanged>",
         "is_modified": false,
         "summary_status": null,
         "display_status": "none",
@@ -171,9 +188,9 @@
         "card_summaries": null,
         "attachment_status": null,
         "has_easy_text": false,
-        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900471",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900441",
         "license_type": "KOGL-4",
-        "body_text": "상담 프로그램 안내",
+        "body_text": "진료 시간이 변경됩니다.",
         "result": null,
         "generated_at": null,
         "file_references": null,
@@ -186,14 +203,14 @@
         "easy_attachment_content_included": null,
         "easy_generated_at": null
       },
-      "nowon/1001/900472": {
+      "nowon/1001/900443": {
         "source": "nowon",
         "dong_group": null,
         "is_pinned": false,
-        "title": "어르신 일자리 사업 안내",
-        "department": "어르신복지과",
-        "registered_on": "2026-10-07",
-        "content_updated_at": "<set>",
+        "title": "도서관 휴관 안내",
+        "department": "문화체육과",
+        "registered_on": "2026-10-08",
+        "content_updated_at": "<unchanged>",
         "is_modified": false,
         "summary_status": null,
         "display_status": "none",
@@ -204,9 +221,9 @@
         "card_summaries": null,
         "attachment_status": null,
         "has_easy_text": false,
-        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900472",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900443",
         "license_type": "KOGL-4",
-        "body_text": "일자리 사업 안내",
+        "body_text": "도서관 휴관을 안내합니다.",
         "result": null,
         "generated_at": null,
         "file_references": null,
