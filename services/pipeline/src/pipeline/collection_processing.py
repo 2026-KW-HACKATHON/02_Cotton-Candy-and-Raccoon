@@ -106,12 +106,14 @@ def create_easy_text_processing(database: DatabaseSettings) -> CollectionPostpro
 
 
 def create_ai_processing(
-    database: DatabaseSettings, *, source: str, limit: int = 100,
+    database: DatabaseSettings, *, source: str, limit: int | None = 100,
     features: tuple[Feature, ...] = ("summary", "easy_text"),
 ) -> CollectionPostprocessing:
     """Validate before collecting, then give each feature an independent batch."""
     categories = {"nowon": "nowon", "wolgye1": "dong", "seoul": "seoul"}
-    if source not in categories or type(limit) is not int or not 1 <= limit <= 10000:
+    if source not in categories or (
+        limit is not None and (type(limit) is not int or not 1 <= limit <= 10000)
+    ):
         raise ConfigError("후처리 출처 또는 작업 상한이 올바르지 않습니다.")
     if features not in (("summary", "easy_text"), ("summary",), ("easy_text",)):
         raise ConfigError("지원하지 않는 후처리 기능입니다.")
