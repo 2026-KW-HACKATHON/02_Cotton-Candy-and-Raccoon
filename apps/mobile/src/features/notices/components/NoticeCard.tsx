@@ -98,7 +98,7 @@ export function NoticeCard({
       {saved && (
         <Image
           pointerEvents="none"
-          source={require("@/assets/figma/postmark.png")}
+          source={require("@/assets/figma/postmark.svg")}
           style={grid ? styles.gridPostmark : styles.postmark}
           contentFit="contain"
         />
