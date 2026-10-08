@@ -38,6 +38,9 @@ def claim_for(feature="summary", *, attempts=1):
 
 @pytest.mark.parametrize(("failure", "retryable"), [
     ({"reason_code": "api_timeout"}, True),
+    ({"reason_code": "attachment_download_failed", "retryable": True}, True),
+    ({"reason_code": "attachment_download_failed"}, False),
+    ({"reason_code": "input_preparation_failed", "retryable": True}, False),
     ({"reason_code": "api_connection_error"}, True),
     ({"reason_code": "api_error"}, False),
     ({"reason_code": "api_error", "retryable": False}, False),  # e.g. HTTP 401

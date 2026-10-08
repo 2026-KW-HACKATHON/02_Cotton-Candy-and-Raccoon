@@ -262,3 +262,64 @@ def test_multiple_small_compressed_hwp_files_have_a_combined_text_limit() -> Non
     assert len(result.notice.attachments) == 1
     assert not result.complete
     assert any(item.reason_code == "total_size_limit" for item in result.failures)
+
+
+@pytest.mark.parametrize("failure,retryable", [
+    ("timeout", True), ("connection", True), (429, True), (503, True),
+    (404, False), (403, False), (200, False),
+])
+@pytest.mark.parametrize("inline", [False, True])
+def test_unavailable_only_input_preserves_download_retry_classification(failure, retryable, inline):
+    from pipeline.processing_runner import ProcessingOutcome, failure_outcome
+    from pipeline.transform.prepared_summary import SummaryPreparationError, prepare_gemini_request
+
+    def respond(request):
+        if failure == "timeout":
+            raise httpx.ReadTimeout("private URL", request=request)
+        if failure == "connection":
+            raise httpx.ConnectError("private URL", request=request)
+        return httpx.Response(failure, content=b"invalid content")
+
+    original = (source(html=f'<img src="{URL}1">') if inline
+                else source(file(1, "poster.pdf"), html=None))
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        prepared = prepare_summary_source(original, reference_datetime=NOW, client=client)
+    assert prepared.failures[0].reason_code == "no_content"
+    with pytest.raises(SummaryPreparationError) as caught:
+        prepare_gemini_request(prepared)
+    outcome = failure_outcome(caught.value, default_reason="input_preparation_failed")
+    assert outcome.retryable is retryable
+    assert ProcessingOutcome.parse(outcome.report()) == outcome
+    assert "private URL" not in str(outcome.report())
+
+
+def test_empty_input_is_not_retried():
+    from pipeline.processing_runner import failure_outcome
+    from pipeline.transform.prepared_summary import SummaryPreparationError, prepare_gemini_request
+
+    prepared = prepare_summary_source(source(html=None), reference_datetime=NOW)
+    with pytest.raises(SummaryPreparationError) as caught:
+        prepare_gemini_request(prepared)
+    assert not failure_outcome(caught.value, default_reason="input_preparation_failed").retryable
+
+
+@pytest.mark.parametrize("filename", ["poster.xlsx", "poster.pdf"])
+def test_permanent_input_and_integrity_failure_remain_blocked(filename):
+    from pipeline.attachments.summary_bundle import PreparationIssue
+    from pipeline.processing_runner import failure_outcome
+    from pipeline.transform.prepared_summary import SummaryPreparationError, prepare_gemini_request
+
+    def respond(request):
+        raise httpx.ReadTimeout("synthetic", request=request)
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        prepared = prepare_summary_source(
+            source(file(1, filename), html=None), reference_datetime=NOW, client=client,
+        )
+    if filename.endswith("pdf"):
+        prepared = replace(prepared, failures=prepared.failures + (
+            PreparationIssue("input", 0, "total_size_limit"),
+        ))
+    with pytest.raises(SummaryPreparationError) as caught:
+        prepare_gemini_request(prepared)
+    assert not failure_outcome(caught.value, default_reason="input_preparation_failed").retryable

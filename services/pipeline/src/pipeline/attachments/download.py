@@ -161,6 +161,8 @@ def _response_type(response: httpx.Response, expected_format: str, max_bytes: in
         raise AttachmentDownloadError("redirect")
     if response.status_code == 429:
         raise AttachmentDownloadError("rate_limited", status_code=429)
+    if 500 <= response.status_code <= 599:
+        raise AttachmentDownloadError("server_error", status_code=response.status_code)
     if response.status_code != 200:
         raise AttachmentDownloadError("http_error", status_code=response.status_code)
     length = response.headers.get("content-length", "")

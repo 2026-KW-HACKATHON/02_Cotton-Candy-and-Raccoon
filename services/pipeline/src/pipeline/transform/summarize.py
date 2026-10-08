@@ -44,6 +44,7 @@ from pipeline.transform.prepared_summary import (
     SummaryPreparationError,
     prepare_gemini_request,
     prepared_file_manifest,
+    validate_preparation,
 )
 from pipeline.transform.summary_files import PrivateSummaryFileManifest, manifest_snapshot
 from pipeline.transform.summary_schema import (
@@ -1018,8 +1019,7 @@ def _summarize_prepared_notice(
     api_key: str | None,
     file_manifest: PrivateSummaryFileManifest | None | object,
 ) -> PreparedSummaryResult:
-    if prepared.failures:
-        raise SummaryPreparationError("input_preparation_failed")
+    validate_preparation(prepared)
     try:
         notice = NoticeInput.model_validate(
             prepared.notice.model_dump(mode="python", warnings=False)

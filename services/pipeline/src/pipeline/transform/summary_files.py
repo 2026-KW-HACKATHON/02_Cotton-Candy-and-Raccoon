@@ -84,7 +84,7 @@ class PreparationOmission(FileModel):
     url: str
     reason_code: Literal[
         "unsupported_type", "invalid_name", "invalid_url", "redirect", "rate_limited",
-        "http_error", "too_large", "type_mismatch", "timeout", "request_failed",
+        "http_error", "server_error", "too_large", "type_mismatch", "timeout", "request_failed",
         "empty_file", "total_size_limit", "time_limit", "extraction_failed",
     ]
 
