@@ -14,12 +14,14 @@ from pipeline.glossary.easy_language import (
     DEFAULT_MODEL,
     PROMPT_VERSION,
     AppliedChange,
+    DictionaryCandidate,
     EasyLanguageAPIError,
     EasyLanguageConfigurationError,
     EasyLanguageResponse,
     EasyLanguageResult,
     EasyLanguageValidationError,
     ProposedChange,
+    ProposedDictionaryCandidate,
     apply_easy_language_changes,
     load_easy_language_prompt,
     simplify_notice,
@@ -30,12 +32,16 @@ GENERATED_AT = datetime(2026, 10, 7, 1, 2, 3, tzinfo=UTC)
 API_KEY = "test-secret-do-not-display"
 
 
-def response_json(*changes: dict[str, str]) -> str:
-    return json.dumps({"changes": changes}, ensure_ascii=False)
+def response_json(*changes: dict[str, str], candidates: tuple[dict[str, str], ...] = ()) -> str:
+    return json.dumps({"changes": changes, "dictionary_candidates": candidates}, ensure_ascii=False)
 
 
 def proposal(original: str, replacement: str, context: str) -> dict[str, str]:
     return {"original": original, "replacement": replacement, "context": context}
+
+
+def candidate(original: str, query_word: str, context: str) -> dict[str, str]:
+    return {"original": original, "query_word": query_word, "context": context}
 
 
 def run_response(source: str, output: str) -> EasyLanguageResult:
@@ -160,6 +166,7 @@ def test_successful_empty_changes_keeps_original_without_retry() -> None:
     result = simplify_notice(NoticeGlossaryInput(text=text), api_key=API_KEY, request=request)
     assert result.original_text == result.easy_text == text
     assert result.changes == ()
+    assert result.dictionary_candidates == ()
     assert result.attempt_count == 1
     assert result.generated_at.utcoffset() is not None
     assert len(calls) == 1
@@ -223,7 +230,7 @@ def test_partial_or_coerced_provenance_cannot_be_presented_as_a_known_result(met
 
 
 def test_model_cannot_claim_input_coverage_in_its_response() -> None:
-    output = json.dumps({"changes": [], "body_text_present": True})
+    output = json.dumps({"changes": [], "dictionary_candidates": [], "body_text_present": True})
     with pytest.raises(EasyLanguageValidationError):
         run_response("공지 제목", output)
 
@@ -232,6 +239,7 @@ def test_legacy_dictionary_field_is_rejected_even_if_changes_are_valid() -> None
     output = json.dumps(
         {
             "changes": [proposal("산정", "계산", "나이 산정 기준")],
+            "dictionary_candidates": [],
             "dictionary_terms": [],
         },
         ensure_ascii=False,
@@ -246,10 +254,14 @@ def test_legacy_dictionary_field_is_rejected_even_if_changes_are_valid() -> None
         "{",
         "```json\n{}\n```",
         "{}",
-        '{"changes":null}',
-        '{"changes":[{}]}',
-        '{"changes":[],"easy_text":"삭제"}',
-        '{"changes":[],"dictionary_terms":[]}',
+        '{"changes":[]}',
+        '{"dictionary_candidates":[]}',
+        '{"changes":null,"dictionary_candidates":[]}',
+        '{"changes":[{}],"dictionary_candidates":[]}',
+        '{"changes":[],"dictionary_candidates":null}',
+        '{"changes":[],"dictionary_candidates":[{}]}',
+        '{"changes":[],"dictionary_candidates":[],"easy_text":"삭제"}',
+        '{"changes":[],"dictionary_candidates":[],"dictionary_terms":[]}',
         response_json(proposal("산정", "산정", "나이 산정 기준")),
     ],
 )
@@ -630,14 +642,17 @@ def test_prompt_loads_exact_text_and_rejects_missing_or_empty_file(tmp_path, mon
     assert load_easy_language_prompt() == "  지시\n"
 
 
-def test_prompt_keeps_contextual_minimal_changes_without_dictionary_selection() -> None:
+def test_prompt_keeps_contextual_minimal_changes_and_independent_dictionary_candidates() -> None:
     prompt = load_easy_language_prompt()
-    assert PROMPT_VERSION == "easy-language-v7"
+    assert PROMPT_VERSION == "easy-language-v8"
     assert "문맥" in prompt
     assert "조사" in prompt and "어미" in prompt
     assert "최소" in prompt
     assert "원문" in prompt
     assert "dictionary_terms" not in prompt
+    assert "dictionary_candidates" in prompt
+    assert "query_word" in prompt
+    assert "두 목록은 독립적으로 판단" in prompt
 
 
 def test_models_are_immutable_and_require_all_response_fields() -> None:
@@ -646,11 +661,18 @@ def test_models_are_immutable_and_require_all_response_fields() -> None:
         change.replacement = "산꼭대기"
     with pytest.raises(ValidationError):
         EasyLanguageResponse.model_validate({})
-    assert EasyLanguageResponse.model_validate({"changes": []}).changes == ()
+    response = EasyLanguageResponse.model_validate({"changes": [], "dictionary_candidates": []})
+    assert response.changes == response.dictionary_candidates == ()
+    with pytest.raises(ValidationError):
+        EasyLanguageResponse.model_validate({"changes": []})
+    with pytest.raises(ValidationError):
+        EasyLanguageResponse.model_validate({"dictionary_candidates": []})
     with pytest.raises(ValidationError):
         EasyLanguageResponse.model_validate({"dictionary_terms": []})
     with pytest.raises(ValidationError):
-        EasyLanguageResponse.model_validate({"changes": [], "dictionary_terms": []})
+        EasyLanguageResponse.model_validate(
+            {"changes": [], "dictionary_candidates": [], "dictionary_terms": []}
+        )
     with pytest.raises(ValidationError):
         ProposedChange.model_validate({**change.model_dump(), "reason": "쉬운 말"})
 
@@ -710,6 +732,225 @@ def test_stored_result_rejects_removed_dictionary_field() -> None:
     payload["dictionary_terms"] = ["소명"]
     with pytest.raises(ValidationError):
         EasyLanguageResult.model_validate(payload)
+
+
+def test_dictionary_candidates_keep_distinct_occurrences_and_deduplicate_same_position() -> None:
+    text = "🦝e\u0301 소급 적용 안내\n소급 지급 안내"
+    first = candidate("소급", "소급", "소급 적용 안내")
+    second = candidate("소급", "소급", "소급 지급 안내")
+    result = run_response(
+        text,
+        response_json(candidates=(second, first, {**first, "context": "🦝e\u0301 소급 적용"})),
+    )
+    assert result.easy_text == result.original_text == text
+    assert result.changes == ()
+    assert result.dictionary_candidates is not None
+    assert [(item.start, item.end, item.query_word) for item in result.dictionary_candidates] == [
+        (text.index("소급"), text.index("소급") + 2, "소급"),
+        (text.rindex("소급"), text.rindex("소급") + 2, "소급"),
+    ]
+    assert EasyLanguageResult.model_validate_json(result.model_dump_json()) == result
+
+
+@pytest.mark.parametrize(
+    "original,query_word",
+    [
+        ("공종을", "공종"),
+        ("지참하시어", "지참하다"),
+        ("상이한", "상이하다"),
+        ("역", "역"),
+        ("e-메일", "e-메일"),
+        ("가압류·가처분", "가압류·가처분"),
+    ],
+)
+def test_dictionary_candidates_allow_inflections_single_characters_and_lexical_punctuation(
+    original: str, query_word: str
+) -> None:
+    text = f"안내: {original} 확인"
+    result = run_response(text, response_json(candidates=(candidate(original, query_word, text),)))
+    assert result.dictionary_candidates is not None
+    assert result.dictionary_candidates[0].query_word == query_word
+    assert result.easy_text == text
+
+
+def test_dictionary_candidate_can_overlap_a_change_with_a_different_query_form() -> None:
+    text = "공종을 확인하세요."
+    result = run_response(
+        text,
+        response_json(
+            proposal("공종을", "공사 종류를", text),
+            candidates=(candidate("공종을", "공종", text),),
+        ),
+    )
+    assert result.easy_text == "공사 종류를 확인하세요."
+    assert result.dictionary_candidates[0].start == result.changes[0].start
+    assert result.dictionary_candidates[0].original == "공종을"
+
+
+@pytest.mark.parametrize(
+    "text,candidates",
+    [
+        ("소급 적용", (candidate("없는말", "없는말", "소급 적용"),)),
+        ("소급 적용", (candidate("소급", "소급", "새 문맥"),)),
+        ("소급 적용\n소급 적용", (candidate("소급", "소급", "소급 적용"),)),
+        ("소급 및 소급", (candidate("소급", "소급", "소급 및 소급"),)),
+        ("공종을 확인", (candidate("공종", "공종", "공종을 확인"),)),
+        ("재검토 안내", (candidate("검토", "검토", "재검토 안내"),)),
+        (
+            "소급 적용",
+            (candidate("소급", "소급", "소급 적용"), candidate("소급", "소급하다", "소급 적용")),
+        ),
+        (
+            "소급 지급 안내",
+            (
+                candidate("소급 지급", "소급 지급", "소급 지급 안내"),
+                candidate("소급", "소급", "소급 지급 안내"),
+            ),
+        ),
+        ("소급 적용", ({**candidate("소급", "소급", "소급 적용"), "start": 0},)),
+        ("월요일 안내", (candidate("월요일", "요일", "월요일 안내"),)),
+        ("문의 abc@example.kr", (candidate("abc", "abc", "문의 abc@example.kr"),)),
+        (
+            "https://example.kr/소급 안내",
+            (candidate("소급", "소급", "https://example.kr/소급 안내"),),
+        ),
+    ],
+)
+def test_invalid_dictionary_candidate_spans_retry_once_then_fail(text, candidates) -> None:
+    calls = []
+
+    def request(**kwargs):
+        calls.append(kwargs)
+        return response_json(candidates=candidates)
+
+    with pytest.raises(EasyLanguageValidationError, match="two attempts"):
+        simplify_notice(NoticeGlossaryInput(text=text), api_key=API_KEY, request=request)
+    assert [item["notice_text"] for item in calls] == [text, text]
+    assert "changes와 dictionary_candidates를 모두 반환" in calls[1]["prompt"]
+
+
+@pytest.mark.parametrize(
+    "query_word",
+    [
+        "",
+        " 소급",
+        "소급 ",
+        "소급\n적용",
+        "소급\t적용",
+        "소\u200b급",
+        "소급\u00a0적용",
+        "https://example.kr",
+        "소급&key=secret",
+        "소급?start=1",
+        "소급*",
+        "site:소급",
+        "-소급",
+        '"소급"',
+        "소급 OR 공종",
+        "소급_적용",
+        "소급%20적용",
+        "2026년",
+    ],
+)
+def test_dictionary_query_rejects_formats_operators_and_hidden_characters(query_word) -> None:
+    with pytest.raises(EasyLanguageValidationError):
+        run_response(
+            "소급 적용", response_json(candidates=(candidate("소급", query_word, "소급 적용"),))
+        )
+
+
+@pytest.mark.parametrize("encoded", [False, True])
+@pytest.mark.parametrize("existing", [False, True])
+def test_candidate_query_credentials_are_rejected_even_if_source_contains_them(
+    encoded, existing, caplog
+) -> None:
+    key = "SyntheticGeminiCredential"
+    text = f"소급 적용\n{key}" if existing else "소급 적용"
+    output = response_json(candidates=(candidate("소급", key, "소급 적용"),))
+    if encoded:
+        output = output.replace(key, "".join(f"\\u{ord(char):04x}" for char in key))
+    calls = []
+
+    def request(**kwargs):
+        calls.append(kwargs)
+        return output
+
+    with pytest.raises(EasyLanguageValidationError) as caught:
+        simplify_notice(NoticeGlossaryInput(text=text), api_key=key, request=request)
+    assert len(calls) == 2
+    assert key not in "".join(traceback.format_exception(caught.value))
+    assert key not in calls[1]["prompt"] and key not in caplog.text
+
+
+def test_candidate_context_may_attest_an_existing_credential_but_not_select_it() -> None:
+    key = "SyntheticGeminiCredential"
+    text = f"{key}: 소급 적용"
+    result = simplify_notice(
+        NoticeGlossaryInput(text=text),
+        api_key=key,
+        request=lambda **kwargs: response_json(candidates=(candidate("소급", "소급", text),)),
+    )
+    assert result.dictionary_candidates[0].context == text
+    with pytest.raises(EasyLanguageValidationError):
+        simplify_notice(
+            NoticeGlossaryInput(text=text),
+            api_key=key,
+            request=lambda **kwargs: response_json(candidates=(candidate(key, "인증", text),)),
+        )
+
+
+@pytest.mark.parametrize("alteration", ["offset", "original", "context", "order", "duplicate"])
+def test_stored_candidates_revalidate_source_and_offsets_independently(alteration) -> None:
+    result = run_response(
+        "소급 적용\n직권처리 안내",
+        response_json(
+            candidates=(
+                candidate("소급", "소급", "소급 적용"),
+                candidate("직권처리", "직권처리", "직권처리 안내"),
+            )
+        ),
+    )
+    payload = result.model_dump(mode="json")
+    entries = payload["dictionary_candidates"]
+    if alteration == "offset":
+        entries[0]["start"] += 1
+        entries[0]["end"] += 1
+    elif alteration == "original":
+        entries[0]["original"] = "익일"
+    elif alteration == "context":
+        entries[0]["context"] = "원문에 없는 문맥"
+    elif alteration == "order":
+        entries.reverse()
+    else:
+        entries.append(entries[0].copy())
+    with pytest.raises(ValidationError):
+        EasyLanguageResult.model_validate(payload)
+
+
+@pytest.mark.parametrize("missing", [False, True])
+def test_legacy_result_candidates_remain_unknown_until_new_extraction(missing) -> None:
+    payload = run_response("소급 적용", response_json()).model_dump(mode="json")
+    payload["prompt_version"] = "easy-language-v7"
+    if missing:
+        del payload["dictionary_candidates"]
+    else:
+        payload["dictionary_candidates"] = None
+    assert EasyLanguageResult.model_validate(payload).dictionary_candidates is None
+    payload["dictionary_candidates"] = []
+    assert EasyLanguageResult.model_validate(payload).dictionary_candidates == ()
+
+
+def test_candidate_models_reject_coercion_extra_fields_and_invalid_offsets() -> None:
+    proposal_data = candidate("소급", "소급", "소급 적용")
+    proposed = ProposedDictionaryCandidate(**proposal_data)
+    with pytest.raises(ValidationError):
+        proposed.query_word = "소급하다"
+    for extra in ({"replacement": "쉬운말"}, {"start": 0}, {"query_word": 123}):
+        with pytest.raises(ValidationError):
+            ProposedDictionaryCandidate.model_validate({**proposal_data, **extra})
+    for start, end in ((True, 2), (0, 1), (2, 0), (-1, 1)):
+        with pytest.raises(ValidationError):
+            DictionaryCandidate(**proposal_data, start=start, end=end)
 
 
 def test_custom_model_is_kept_with_result() -> None:

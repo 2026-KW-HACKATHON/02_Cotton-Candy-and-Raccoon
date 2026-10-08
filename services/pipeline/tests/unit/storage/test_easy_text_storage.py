@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 from psycopg.pq import TransactionStatus
 from support.collect_easy_text_storage import committed_easy_db as committed_easy_db
-from support.easy_text_storage import _NOW, _notice, _request, _result
+from support.easy_text_storage import _NOW, _candidate_result, _notice, _request, _result
 from support.easy_text_storage import easy_db as easy_db
 from support.easy_text_storage import service_db as service_db
 
@@ -24,6 +24,7 @@ from pipeline.glossary.source import NoticeGlossaryInput, notice_content_revisio
 from pipeline.storage.notice_easy_text import (
     EasyTextStorageError,
     get_notice_easy_text,
+    get_notice_easy_text_cache_token,
     save_notice_easy_text,
 )
 
@@ -67,7 +68,9 @@ def test_new_prompt_replaces_old_cache_once_then_reuses_it(service_db, old_chang
     previous = simplify_notice(
         source,
         api_key="fake",
-        request=lambda **kwargs: json.dumps({"changes": old_changes}, ensure_ascii=False),
+        request=lambda **kwargs: json.dumps(
+            {"changes": old_changes, "dictionary_candidates": []}, ensure_ascii=False
+        ),
         clock=lambda: _NOW,
     )
     previous = EasyLanguageResult.model_validate(
@@ -226,3 +229,77 @@ def test_input_must_match_database_notice(service_db, with_revision):
             ),
             api_key="fake",
         )
+
+
+@pytest.mark.parametrize("populated", [False, True], ids=["empty", "populated"])
+@pytest.mark.parametrize("changed", ["source", "model", "prompt_version", "generated_at"])
+def test_successful_save_restores_identical_candidates_after_provenance_change(
+    easy_db, populated, changed
+):
+    source = _notice(easy_db)
+    build_result = _candidate_result if populated else _result
+    previous = build_result(source)
+    save_notice_easy_text(easy_db, previous)
+    token = get_notice_easy_text_cache_token(easy_db, source.notice_id)
+    if changed == "source":
+        # Markup changes advance the source revision while keeping candidate bytes.
+        easy_db.execute(
+            "update public.notices set body_html = replace(replace(body_html, '<p>', '<div>'), "
+            "'</p>', '</div>') where id = %s",
+            (source.notice_id,),
+        )
+        source = load_notice_glossary_input(easy_db, source.notice_id)
+    current = build_result(source, _NOW + timedelta(seconds=1))
+    if changed in {"model", "prompt_version"}:
+        current = EasyLanguageResult.model_validate(
+            {**current.model_dump(), changed: "new-generation"}
+        )
+    assert current.dictionary_candidates == previous.dictionary_candidates
+
+    save_notice_easy_text(easy_db, current, expected_cache_token=token)
+
+    assert get_notice_easy_text(easy_db, source.notice_id) == current
+    assert easy_db.execute(
+        "select dictionary_candidates from public.notice_easy_texts where notice_id = %s",
+        (source.notice_id,),
+    ).fetchone()[0] == [item.model_dump(mode="json") for item in current.dictionary_candidates]
+
+
+def test_legacy_null_candidates_remain_unknown_when_read(easy_db):
+    source = _notice(easy_db)
+    legacy = EasyLanguageResult.model_validate(
+        {**_result(source).model_dump(), "dictionary_candidates": None}
+    )
+    save_notice_easy_text(easy_db, legacy)
+
+    assert get_notice_easy_text(easy_db, source.notice_id) == legacy
+    assert easy_db.execute(
+        "select dictionary_candidates is null from public.notice_easy_texts where notice_id = %s",
+        (source.notice_id,),
+    ).fetchone() == (True,)
+
+
+def test_save_rejects_standalone_candidate_that_resolves_inside_database_title(easy_db):
+    source = _notice(easy_db)
+    standalone = NoticeGlossaryInput(
+        notice_id=source.notice_id, notice_revision=source.notice_revision, text=source.text
+    )
+    result = simplify_notice(
+        standalone,
+        api_key="fake",
+        request=lambda **kwargs: json.dumps(
+            {
+                "changes": [],
+                "dictionary_candidates": [
+                    {"original": "모집", "query_word": "모집", "context": "참가자 모집"}
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        clock=lambda: _NOW,
+    )
+
+    with pytest.raises(EasyTextStorageError, match="본문 범위"):
+        save_notice_easy_text(easy_db, result)
+
+    assert get_notice_easy_text(easy_db, source.notice_id) is None

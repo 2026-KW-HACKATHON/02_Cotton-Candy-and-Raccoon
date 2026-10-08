@@ -1,0 +1,203 @@
+{
+  "exit_code": 0,
+  "report": {
+    "mode": "refresh",
+    "total_count": 1,
+    "selected_count": 1,
+    "saved_count": 1,
+    "pages_read": 1,
+    "initial_baseline": false,
+    "listing_complete": true,
+    "failed_ranges": [],
+    "complete": true,
+    "failures": [],
+    "easy_text": {
+      "status": "complete",
+      "complete": true,
+      "attempted_count": 1,
+      "successful_count": 1,
+      "skipped_count": 0,
+      "failed_count": 0,
+      "skipped": [],
+      "failures": []
+    }
+  },
+  "stderr": [],
+  "http_calls": [
+    "nowon_api 1-50",
+    "nowon_page 900551"
+  ],
+  "gemini_calls": {
+    "easy_text": [
+      {
+        "model": "gemini-3.5-flash-lite",
+        "input": [
+          {
+            "type": "text",
+            "sha256": "d0486c342edbdca3",
+            "length": 71
+          }
+        ]
+      }
+    ]
+  },
+  "db": {
+    "notices": {
+      "nowon/1001/900551": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "구비서류 제출 안내",
+        "department": "문화체육과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900551",
+        "body_html": "<p>📢 익일에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<changed>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {
+      "nowon/1001/900551": {
+        "notice_revision": "a848d30a1de9490a85bad59064739fd8f6820e2d27c864f8d0a6c4e689f32b5f",
+        "source_hash": "a146c21250523fd2bc690af991f97da88235ffff58d0c9e53df417669977e317",
+        "original_text": "구비서류 제출 안내\n📢 익일에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.",
+        "easy_text": "구비서류 제출 안내\n📢 다음 날에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.",
+        "changes": [
+          {
+            "context": "익일에는 구비서류를 지참하시어 방문하세요.",
+            "end": 17,
+            "original": "익일에는",
+            "replacement": "다음 날에는",
+            "start": 13
+          }
+        ],
+        "model": "gemini-3.5-flash-lite",
+        "prompt_version": "easy-language-v8",
+        "attempt_count": 1,
+        "generated_at": "<changed>",
+        "body_text_present": true,
+        "attachment_content_included": false,
+        "dictionary_candidates": [
+          {
+            "context": "익일에는 구비서류를 지참하시어 방문하세요.",
+            "end": 23,
+            "original": "구비서류를",
+            "query_word": "구비서류",
+            "start": 18
+          },
+          {
+            "context": "익일에는 구비서류를 지참하시어 방문하세요.",
+            "end": 29,
+            "original": "지참하시어",
+            "query_word": "지참하다",
+            "start": 24
+          },
+          {
+            "context": "직권처리는 담당자가 진행합니다.",
+            "end": 42,
+            "original": "직권처리는",
+            "query_word": "직권처리",
+            "start": 37
+          },
+          {
+            "context": "재방문할 때에도 구비서류를 지참하시어 방문하세요.",
+            "end": 69,
+            "original": "구비서류를",
+            "query_word": "구비서류",
+            "start": 64
+          }
+        ]
+      }
+    },
+    "notice_summary_executions": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_easy_texts": 1,
+    "notice_files": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 1
+  },
+  "anon": {
+    "notices": {
+      "nowon/1001/900551": {
+        "dong_group": null,
+        "is_pinned": false,
+        "title": "구비서류 제출 안내",
+        "department": "문화체육과",
+        "registered_on": "2026-10-08",
+        "url": "https://www.nowon.kr/www/user/bbs/BD_selectBbs.do?q_bbsCode=1001&q_bbscttSn=900551",
+        "body_html": "<p>📢 익일에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.</p>",
+        "license_type": "KOGL-4",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<changed>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1
+      }
+    },
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {
+      "nowon/1001/900551": {
+        "notice_revision": "a848d30a1de9490a85bad59064739fd8f6820e2d27c864f8d0a6c4e689f32b5f",
+        "source_hash": "a146c21250523fd2bc690af991f97da88235ffff58d0c9e53df417669977e317",
+        "original_text": "구비서류 제출 안내\n📢 익일에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.",
+        "easy_text": "구비서류 제출 안내\n📢 다음 날에는 구비서류를 지참하시어 방문하세요. 직권처리는 담당자가 진행합니다. 재방문할 때에도 구비서류를 지참하시어 방문하세요.",
+        "changes": [
+          {
+            "context": "익일에는 구비서류를 지참하시어 방문하세요.",
+            "end": 17,
+            "original": "익일에는",
+            "replacement": "다음 날에는",
+            "start": 13
+          }
+        ],
+        "model": "gemini-3.5-flash-lite",
+        "prompt_version": "easy-language-v8",
+        "attempt_count": 1,
+        "generated_at": "<changed>",
+        "body_text_present": true,
+        "attachment_content_included": false,
+        "dictionary_candidates": [
+          {
+            "context": "익일에는 구비서류를 지참하시어 방문하세요.",
+            "end": 23,
+            "original": "구비서류를",
+            "query_word": "구비서류",
+            "start": 18
+          },
+          {
+            "context": "익일에는 구비서류를 지참하시어 방문하세요.",
+            "end": 29,
+            "original": "지참하시어",
+            "query_word": "지참하다",
+            "start": 24
+          },
+          {
+            "context": "직권처리는 담당자가 진행합니다.",
+            "end": 42,
+            "original": "직권처리는",
+            "query_word": "직권처리",
+            "start": 37
+          },
+          {
+            "context": "재방문할 때에도 구비서류를 지참하시어 방문하세요.",
+            "end": 69,
+            "original": "구비서류를",
+            "query_word": "구비서류",
+            "start": 64
+          }
+        ]
+      }
+    }
+  }
+}

@@ -36,7 +36,7 @@ ANON_COLUMNS: dict[str, tuple[str, ...]] = {
     "notice_easy_texts": (
         "notice_id", "notice_revision", "source_hash", "original_text", "easy_text", "changes",
         "model", "prompt_version", "attempt_count", "generated_at", "body_text_present",
-        "attachment_content_included",
+        "attachment_content_included", "dictionary_candidates",
     ),
 }
 

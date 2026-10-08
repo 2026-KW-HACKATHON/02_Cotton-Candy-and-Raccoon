@@ -1,0 +1,96 @@
+{
+  "title": "후보 추출·저장: 미치환 용어와 반복 위치를 보존하고, 재실행은 캐시를 쓰며 후보 미추출 행은 다시 처리한다",
+  "steps": [
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "nowon",
+        "--mode",
+        "new",
+        "--easy-text"
+      ],
+      "gemini": {
+        "easy_text": [
+          "input/easy_900551.json"
+        ]
+      },
+      "http": [
+        {
+          "route": "nowon_api",
+          "start": 1,
+          "end": 50,
+          "body": "input/nowon_list.xml"
+        },
+        {
+          "route": "nowon_page",
+          "post_sn": "900551",
+          "body": "input/nowon_page_900551.html"
+        }
+      ],
+      "expect_exit": 0
+    },
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "nowon",
+        "--mode",
+        "refresh",
+        "--easy-text"
+      ],
+      "gemini": {
+        "easy_text": []
+      },
+      "http": [
+        {
+          "route": "nowon_api",
+          "start": 1,
+          "end": 50,
+          "body": "input/nowon_list.xml"
+        },
+        {
+          "route": "nowon_page",
+          "post_sn": "900551",
+          "body": "input/nowon_page_900551.html"
+        }
+      ],
+      "expect_exit": 0
+    },
+    {
+      "type": "sql",
+      "reason": "이전 작업자가 남긴 후보 미추출 상태를 재현한다. 빈 배열과 구분하여 다시 생성해야 한다.",
+      "sql": "update public.notice_easy_texts set dictionary_candidates = null;"
+    },
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "nowon",
+        "--mode",
+        "refresh",
+        "--easy-text"
+      ],
+      "gemini": {
+        "easy_text": [
+          "input/easy_900551.json"
+        ]
+      },
+      "http": [
+        {
+          "route": "nowon_api",
+          "start": 1,
+          "end": 50,
+          "body": "input/nowon_list.xml"
+        },
+        {
+          "route": "nowon_page",
+          "post_sn": "900551",
+          "body": "input/nowon_page_900551.html"
+        }
+      ],
+      "expect_exit": 0
+    }
+  ],
+  "strict_unused": true
+}

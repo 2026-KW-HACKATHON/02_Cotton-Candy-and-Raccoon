@@ -103,11 +103,12 @@
           }
         ],
         "model": "gemini-3.5-flash-lite",
-        "prompt_version": "easy-language-v7",
+        "prompt_version": "easy-language-v8",
         "attempt_count": 1,
         "generated_at": "<set>",
         "body_text_present": true,
-        "attachment_content_included": false
+        "attachment_content_included": false,
+        "dictionary_candidates": []
       }
     },
     "notice_summary_executions": {}
@@ -171,11 +172,12 @@
           }
         ],
         "model": "gemini-3.5-flash-lite",
-        "prompt_version": "easy-language-v7",
+        "prompt_version": "easy-language-v8",
         "attempt_count": 1,
         "generated_at": "<set>",
         "body_text_present": true,
-        "attachment_content_included": false
+        "attachment_content_included": false,
+        "dictionary_candidates": []
       }
     }
   }
