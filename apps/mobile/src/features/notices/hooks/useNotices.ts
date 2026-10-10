@@ -5,11 +5,13 @@ import {
 } from "@tanstack/react-query";
 import {
   fetchNotice,
+  fetchNoticeDictionary,
   fetchNoticePage,
   fetchSavedNotices,
   type NoticeCursor,
   type NoticeListOptions,
 } from "../api/noticeApi";
+import { withNoticeDictionary } from "../domain/noticeDictionary";
 import { NoticeRequestError } from "../domain/noticeError";
 import { useNoticeScopeStore } from "../store/noticeScopeStore";
 
@@ -56,11 +58,61 @@ export function useSavedNotices(ids: readonly string[], enabled = true) {
   });
 }
 export function useNotice(id: string) {
-  return useQuery({
+  const query = useQuery({
     queryKey: NOTICE_KEYS.detail(id),
     queryFn: () => fetchNotice(id),
     retry: (count, error) =>
       !(error instanceof NoticeRequestError && error.code !== "connection") &&
       count < 1,
   });
+  const notice = query.data;
+  const dictionary = useQuery({
+    queryKey: [
+      ...NOTICE_KEYS.detail(id),
+      "dictionary",
+      notice?.title,
+      notice?.original,
+    ],
+    enabled: !!notice?.hasEasyText,
+    queryFn: () => fetchNoticeDictionary(id),
+    retry: (count, error) =>
+      error instanceof NoticeRequestError &&
+      error.code === "connection" &&
+      count < 1,
+    refetchInterval: (dictionaryQuery) => {
+      if (!notice?.hasEasyText || dictionaryQuery.state.status === "error")
+        return false;
+      const current = withNoticeDictionary(notice, dictionaryQuery.state.data);
+      return current.dictionaryStatus === "pending" ||
+        current.documentParts?.original.some(
+          (part) => part.term?.dictionary?.status === "pending",
+        )
+        ? 10_000
+        : false;
+    },
+    refetchIntervalInBackground: false,
+  });
+  return {
+    ...query,
+    refetch: async (...args: Parameters<typeof query.refetch>) => {
+      const [result] = await Promise.all([
+        query.refetch(...args),
+        notice?.hasEasyText ? dictionary.refetch() : Promise.resolve(),
+      ]);
+      return result;
+    },
+    data: notice
+      ? withNoticeDictionary(
+          notice,
+          dictionary.data,
+          !notice.hasEasyText
+            ? "unprocessed"
+            : dictionary.isError
+              ? "failed"
+              : dictionary.isPending
+                ? "loading"
+                : "complete",
+        )
+      : notice,
+  };
 }

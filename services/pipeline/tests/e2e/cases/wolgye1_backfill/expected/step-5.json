@@ -1,0 +1,373 @@
+{
+  "exit_code": 1,
+  "report": {
+    "source": "wolgye1",
+    "dry_run": false,
+    "start_page": 1,
+    "end_page": 2,
+    "since": null,
+    "until": null,
+    "limit": 1,
+    "board_total_count": 2,
+    "board_total_pages": 2,
+    "pages_read": [
+      1,
+      2
+    ],
+    "failed_pages": [],
+    "snapshot_stable": true,
+    "duplicate_count": 1,
+    "conflicting_post_sns": [],
+    "candidate_count": 3,
+    "selected_count": 1,
+    "selected_post_sns": [
+      "20261002090000102"
+    ],
+    "saved_count": 1,
+    "limited": true,
+    "scope_complete": false,
+    "before": {
+      "stored": 3,
+      "public": 3
+    },
+    "after": {
+      "stored": 3,
+      "public": 3
+    },
+    "delta": {
+      "stored": 0,
+      "public": 0
+    },
+    "failures": []
+  },
+  "stderr": [],
+  "http_calls": [
+    "wolgye1_list 1",
+    "wolgye1_list 2",
+    "wolgye1_list 1",
+    "wolgye1_detail 20261002090000102"
+  ],
+  "gemini_calls": {},
+  "db": {
+    "notices": {
+      "dong/1042/20261002090000102": {
+        "dong_group": "wolgye1",
+        "is_pinned": true,
+        "title": "월계1동 주민센터 운영 시간 안내",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-02",
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261002090000102&q_deptCode=1047",
+        "body_html": "<p>월계1동 주민센터 운영 시간 안내 내용입니다.</p>",
+        "license_type": "KOGL-1",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<changed>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1,
+        "body_text": "월계1동 주민센터 운영 시간 안내 내용입니다."
+      },
+      "dong/1042/20261006090000103": {
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 경로당 건강 체조 교실",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-06",
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261006090000103&q_deptCode=1047",
+        "body_html": "<p>월계1동 경로당 건강 체조 교실 내용입니다.</p>",
+        "license_type": "KOGL-1",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1,
+        "body_text": "월계1동 경로당 건강 체조 교실 내용입니다."
+      },
+      "dong/1042/20261007090000104": {
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 작은도서관 독서 모임 안내",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-07",
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261007090000104&q_deptCode=1047",
+        "body_html": "<p>월계1동 작은도서관 독서 모임 안내 내용입니다.</p>",
+        "license_type": "KOGL-1",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 2,
+        "body_text": "월계1동 작은도서관 독서 모임 안내 내용입니다."
+      }
+    },
+    "notice_files": {
+      "dong/1042/20261007090000104|attachment|id:5d2e0b3f-0000-4000-8000-000000000104": {
+        "kind": "attachment",
+        "file_sn": "7104",
+        "file_id": "5d2e0b3f-0000-4000-8000-000000000104",
+        "file_key": "id:5d2e0b3f-0000-4000-8000-000000000104",
+        "file_name": "안내문.pdf",
+        "url": "https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=7104&q_fileId=5d2e0b3f-0000-4000-8000-000000000104"
+      }
+    },
+    "notice_summaries": {},
+    "notice_easy_texts": {},
+    "notice_dictionary_links": {},
+    "standard_dictionary_cache": {},
+    "notice_summary_executions": {},
+    "notice_processing_jobs": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_dictionary_links": 0,
+    "notice_easy_texts": 0,
+    "notice_files": 1,
+    "notice_processing_jobs": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 3,
+    "standard_dictionary_cache": 0
+  },
+  "anon": {
+    "notices": {
+      "dong/1042/20261002090000102": {
+        "dong_group": "wolgye1",
+        "is_pinned": true,
+        "title": "월계1동 주민센터 운영 시간 안내",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-02",
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261002090000102&q_deptCode=1047",
+        "body_html": "<p>월계1동 주민센터 운영 시간 안내 내용입니다.</p>",
+        "license_type": "KOGL-1",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<changed>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1,
+        "body_text": "월계1동 주민센터 운영 시간 안내 내용입니다."
+      },
+      "dong/1042/20261006090000103": {
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 경로당 건강 체조 교실",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-06",
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261006090000103&q_deptCode=1047",
+        "body_html": "<p>월계1동 경로당 건강 체조 교실 내용입니다.</p>",
+        "license_type": "KOGL-1",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 1,
+        "body_text": "월계1동 경로당 건강 체조 교실 내용입니다."
+      },
+      "dong/1042/20261007090000104": {
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 작은도서관 독서 모임 안내",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-07",
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261007090000104&q_deptCode=1047",
+        "body_html": "<p>월계1동 작은도서관 독서 모임 안내 내용입니다.</p>",
+        "license_type": "KOGL-1",
+        "is_modified": false,
+        "is_visible": true,
+        "created_at": "<unchanged>",
+        "updated_at": "<unchanged>",
+        "content_updated_at": "<unchanged>",
+        "content_revision": 2,
+        "body_text": "월계1동 작은도서관 독서 모임 안내 내용입니다."
+      }
+    },
+    "notice_files": {
+      "dong/1042/20261007090000104|attachment|https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=7104&q_fileId=5d2e0b3f-0000-4000-8000-000000000104": {
+        "kind": "attachment",
+        "url": "https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=7104&q_fileId=5d2e0b3f-0000-4000-8000-000000000104"
+      }
+    },
+    "notice_summaries": {},
+    "notice_easy_texts": {},
+    "app_notice_list": {
+      "dong/1042/20261002090000102": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": true,
+        "title": "월계1동 주민센터 운영 시간 안내",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-02",
+        "content_updated_at": "<unchanged>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false
+      },
+      "dong/1042/20261006090000103": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 경로당 건강 체조 교실",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-06",
+        "content_updated_at": "<unchanged>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false
+      },
+      "dong/1042/20261007090000104": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 작은도서관 독서 모임 안내",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<unchanged>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false
+      }
+    },
+    "app_notice_detail": {
+      "dong/1042/20261002090000102": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": true,
+        "title": "월계1동 주민센터 운영 시간 안내",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-02",
+        "content_updated_at": "<unchanged>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false,
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261002090000102&q_deptCode=1047",
+        "license_type": "KOGL-1",
+        "body_text": "월계1동 주민센터 운영 시간 안내 내용입니다.",
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [],
+        "easy_original_text": null,
+        "easy_text": null,
+        "easy_changes": null,
+        "easy_body_text_present": null,
+        "easy_attachment_content_included": null,
+        "easy_generated_at": null
+      },
+      "dong/1042/20261006090000103": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 경로당 건강 체조 교실",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-06",
+        "content_updated_at": "<unchanged>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false,
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261006090000103&q_deptCode=1047",
+        "license_type": "KOGL-1",
+        "body_text": "월계1동 경로당 건강 체조 교실 내용입니다.",
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [],
+        "easy_original_text": null,
+        "easy_text": null,
+        "easy_changes": null,
+        "easy_body_text_present": null,
+        "easy_attachment_content_included": null,
+        "easy_generated_at": null
+      },
+      "dong/1042/20261007090000104": {
+        "source": "dong",
+        "dong_group": "wolgye1",
+        "is_pinned": false,
+        "title": "월계1동 작은도서관 독서 모임 안내",
+        "department": "월계1동 행정민원팀",
+        "registered_on": "2026-10-07",
+        "content_updated_at": "<unchanged>",
+        "is_modified": false,
+        "summary_status": null,
+        "display_status": "none",
+        "notice_type": null,
+        "category_code": null,
+        "deadline_on": null,
+        "headline": null,
+        "card_summaries": null,
+        "attachment_status": null,
+        "has_easy_text": false,
+        "url": "https://www.nowon.kr/dong/user/bbs/BD_selectBbs.do?q_bbsCode=1042&q_bbscttSn=20261007090000104&q_deptCode=1047",
+        "license_type": "KOGL-1",
+        "body_text": "월계1동 작은도서관 독서 모임 안내 내용입니다.",
+        "result": null,
+        "generated_at": null,
+        "file_references": null,
+        "preparation_omissions": null,
+        "files": [
+          {
+            "id": 1,
+            "kind": "attachment",
+            "url": "https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=7104&q_fileId=5d2e0b3f-0000-4000-8000-000000000104"
+          }
+        ],
+        "easy_original_text": null,
+        "easy_text": null,
+        "easy_changes": null,
+        "easy_body_text_present": null,
+        "easy_attachment_content_included": null,
+        "easy_generated_at": null
+      }
+    },
+    "get_notice_dictionary": {
+      "dong/1042/20261002090000102": {
+        "result": null
+      },
+      "dong/1042/20261006090000103": {
+        "result": null
+      },
+      "dong/1042/20261007090000104": {
+        "result": null
+      }
+    }
+  }
+}

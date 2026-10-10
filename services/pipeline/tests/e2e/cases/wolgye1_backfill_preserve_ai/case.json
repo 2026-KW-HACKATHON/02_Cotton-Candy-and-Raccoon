@@ -1,0 +1,58 @@
+{
+  "title": "동일 원문 보충 수집은 성공한 요약과 쉬운말 결과를 보존",
+  "steps": [
+    {
+      "type": "collect",
+      "args": [
+        "--source",
+        "wolgye1",
+        "--mode",
+        "refresh",
+        "--process-ai"
+      ],
+      "http": [
+        {
+          "route": "wolgye1_list",
+          "page": 1,
+          "body": "input/wolgye1_list_1.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261006090000501",
+          "body": "input/wolgye1_detail_20261006090000501.html"
+        }
+      ],
+      "gemini": {
+        "summary": [
+          "input/summary.json"
+        ],
+        "easy_text": [
+          "input/easy.json"
+        ]
+      },
+      "expect_exit": 0
+    },
+    {
+      "type": "backfill-wolgye1",
+      "args": [
+        "--end-page",
+        "1"
+      ],
+      "http": [
+        {
+          "route": "wolgye1_list",
+          "page": 1,
+          "body": "input/wolgye1_list_1.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261006090000501",
+          "body": "input/wolgye1_detail_20261006090000501.html"
+        }
+      ],
+      "expect_exit": 0
+    }
+  ],
+  "strict_unused": true,
+  "now": "2026-10-08T03:00:00+00:00"
+}

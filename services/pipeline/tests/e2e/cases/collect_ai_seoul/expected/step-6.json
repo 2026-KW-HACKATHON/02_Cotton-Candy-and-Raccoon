@@ -55,15 +55,61 @@
         "notice_revision": "ec725944ab1364f1a5c8068c5c763b81297582e8f55ed4dfecfe99aa9becbeee",
         "source_hash": "1dad85b2fd445f64e11251685c32ca83946fec27ad5bdd7c94daad5b0bef17df",
         "original_text": "지원 사업 신청 변경\n지원 사업 신청 변경\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
-        "easy_text": "지원 사업 신청 변경\n지원 사업 신청 변경\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
+        "easy_text": "지원 사업 신청 변경\n공지 내용을 쉽게 읽어 보세요.\n\n어떤 내용인가요?\n지원 사업 신청 안내가 바뀌었어요.\n월계1동 주민이 신청할 수 있어요.\n2026-10-03~2026-10-20 동안 신청해 주세요.\n월계1동 주민센터에 직접 가서 신청하세요.\n신분증을 가져오세요.",
         "changes": [],
         "model": "gemini-3.5-flash-lite",
-        "prompt_version": "easy-language-v8",
+        "prompt_version": "easy-rewrite-v3",
         "attempt_count": 1,
         "generated_at": "<unchanged>",
         "body_text_present": true,
         "attachment_content_included": false,
-        "dictionary_candidates": []
+        "dictionary_candidates": [],
+        "easy_result": {
+          "attachment_hint": null,
+          "headline": "공지 내용을 쉽게 읽어 보세요.",
+          "intro": [],
+          "review": {
+            "status": "passed"
+          },
+          "sections": [
+            {
+              "heading": "어떤 내용인가요?",
+              "sentences": [
+                {
+                  "evidence": [
+                    "지원 사업 신청 변경"
+                  ],
+                  "text": "지원 사업 신청 안내가 바뀌었어요."
+                },
+                {
+                  "evidence": [
+                    "대상: 월계1동 주민"
+                  ],
+                  "text": "월계1동 주민이 신청할 수 있어요."
+                },
+                {
+                  "evidence": [
+                    "신청 기간: 2026-10-03~2026-10-20"
+                  ],
+                  "text": "2026-10-03~2026-10-20 동안 신청해 주세요."
+                },
+                {
+                  "evidence": [
+                    "월계1동 주민센터 방문 신청"
+                  ],
+                  "text": "월계1동 주민센터에 직접 가서 신청하세요."
+                },
+                {
+                  "evidence": [
+                    "신분증 지참"
+                  ],
+                  "text": "신분증을 가져오세요."
+                }
+              ],
+              "style": "paragraph"
+            }
+          ]
+        }
       }
     },
     "notice_dictionary_links": {
@@ -84,7 +130,7 @@
       "seoul/25/000777|easy_text": {
         "feature": "easy_text",
         "input_version": "ec725944ab1364f1a5c8068c5c763b81297582e8f55ed4dfecfe99aa9becbeee",
-        "contract_key": "{\"model\":\"gemini-3.5-flash-lite\",\"prompt_version\":\"easy-language-v8\"}",
+        "contract_key": "{\"model\":\"gemini-3.5-flash-lite\",\"prompt_version\":\"easy-rewrite-v3\"}",
         "state": "succeeded",
         "attempts": 1,
         "next_attempt_at": null,
@@ -158,11 +204,57 @@
     "notice_easy_texts": {
       "seoul/25/000777": {
         "original_text": "지원 사업 신청 변경\n지원 사업 신청 변경\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
-        "easy_text": "지원 사업 신청 변경\n지원 사업 신청 변경\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
+        "easy_text": "지원 사업 신청 변경\n공지 내용을 쉽게 읽어 보세요.\n\n어떤 내용인가요?\n지원 사업 신청 안내가 바뀌었어요.\n월계1동 주민이 신청할 수 있어요.\n2026-10-03~2026-10-20 동안 신청해 주세요.\n월계1동 주민센터에 직접 가서 신청하세요.\n신분증을 가져오세요.",
         "changes": [],
         "generated_at": "<unchanged>",
         "body_text_present": true,
-        "attachment_content_included": false
+        "attachment_content_included": false,
+        "easy_result": {
+          "attachment_hint": null,
+          "headline": "공지 내용을 쉽게 읽어 보세요.",
+          "intro": [],
+          "review": {
+            "status": "passed"
+          },
+          "sections": [
+            {
+              "heading": "어떤 내용인가요?",
+              "sentences": [
+                {
+                  "evidence": [
+                    "지원 사업 신청 변경"
+                  ],
+                  "text": "지원 사업 신청 안내가 바뀌었어요."
+                },
+                {
+                  "evidence": [
+                    "대상: 월계1동 주민"
+                  ],
+                  "text": "월계1동 주민이 신청할 수 있어요."
+                },
+                {
+                  "evidence": [
+                    "신청 기간: 2026-10-03~2026-10-20"
+                  ],
+                  "text": "2026-10-03~2026-10-20 동안 신청해 주세요."
+                },
+                {
+                  "evidence": [
+                    "월계1동 주민센터 방문 신청"
+                  ],
+                  "text": "월계1동 주민센터에 직접 가서 신청하세요."
+                },
+                {
+                  "evidence": [
+                    "신분증 지참"
+                  ],
+                  "text": "신분증을 가져오세요."
+                }
+              ],
+              "style": "paragraph"
+            }
+          ]
+        }
       }
     },
     "app_notice_list": {
@@ -214,11 +306,57 @@
         "preparation_omissions": null,
         "files": [],
         "easy_original_text": "지원 사업 신청 변경\n지원 사업 신청 변경\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
-        "easy_text": "지원 사업 신청 변경\n지원 사업 신청 변경\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
+        "easy_text": "지원 사업 신청 변경\n공지 내용을 쉽게 읽어 보세요.\n\n어떤 내용인가요?\n지원 사업 신청 안내가 바뀌었어요.\n월계1동 주민이 신청할 수 있어요.\n2026-10-03~2026-10-20 동안 신청해 주세요.\n월계1동 주민센터에 직접 가서 신청하세요.\n신분증을 가져오세요.",
         "easy_changes": [],
         "easy_body_text_present": true,
         "easy_attachment_content_included": false,
-        "easy_generated_at": "<unchanged>"
+        "easy_generated_at": "<unchanged>",
+        "easy_result": {
+          "attachment_hint": null,
+          "headline": "공지 내용을 쉽게 읽어 보세요.",
+          "intro": [],
+          "review": {
+            "status": "passed"
+          },
+          "sections": [
+            {
+              "heading": "어떤 내용인가요?",
+              "sentences": [
+                {
+                  "evidence": [
+                    "지원 사업 신청 변경"
+                  ],
+                  "text": "지원 사업 신청 안내가 바뀌었어요."
+                },
+                {
+                  "evidence": [
+                    "대상: 월계1동 주민"
+                  ],
+                  "text": "월계1동 주민이 신청할 수 있어요."
+                },
+                {
+                  "evidence": [
+                    "신청 기간: 2026-10-03~2026-10-20"
+                  ],
+                  "text": "2026-10-03~2026-10-20 동안 신청해 주세요."
+                },
+                {
+                  "evidence": [
+                    "월계1동 주민센터 방문 신청"
+                  ],
+                  "text": "월계1동 주민센터에 직접 가서 신청하세요."
+                },
+                {
+                  "evidence": [
+                    "신분증 지참"
+                  ],
+                  "text": "신분증을 가져오세요."
+                }
+              ],
+              "style": "paragraph"
+            }
+          ]
+        }
       }
     },
     "get_notice_dictionary": {
@@ -229,13 +367,13 @@
           "changes": [],
           "dictionary_candidates": [],
           "dictionary_status": "complete",
-          "easy_text": "지원 사업 신청 변경\n지원 사업 신청 변경\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
+          "easy_text": "지원 사업 신청 변경\n공지 내용을 쉽게 읽어 보세요.\n\n어떤 내용인가요?\n지원 사업 신청 안내가 바뀌었어요.\n월계1동 주민이 신청할 수 있어요.\n2026-10-03~2026-10-20 동안 신청해 주세요.\n월계1동 주민센터에 직접 가서 신청하세요.\n신분증을 가져오세요.",
           "generated_at": "<unchanged>",
           "model": "gemini-3.5-flash-lite",
           "notice_id": 1,
           "notice_revision": "ec725944ab1364f1a5c8068c5c763b81297582e8f55ed4dfecfe99aa9becbeee",
           "original_text": "지원 사업 신청 변경\n지원 사업 신청 변경\n대상: 월계1동 주민\n신청 기간: 2026-10-03~2026-10-20\n월계1동 주민센터 방문 신청\n신분증 지참",
-          "prompt_version": "easy-language-v8"
+          "prompt_version": "easy-rewrite-v3"
         }
       }
     }

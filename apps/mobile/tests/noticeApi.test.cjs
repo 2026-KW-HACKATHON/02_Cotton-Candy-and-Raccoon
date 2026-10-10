@@ -11,6 +11,23 @@ const {
   fileDownloadName,
 } = require("../src/features/notices/domain/noticeFiles.ts");
 const originalFetch = global.fetch;
+
+test("사전은 공개 RPC를 조회하고 잘못된 ID로 요청하지 않는다", async () => {
+  let count = 0;
+  global.fetch = async (url, options) => {
+    count++;
+    assert.equal(new URL(url).pathname, "/rest/v1/rpc/get_notice_dictionary");
+    assert.equal(new URL(url).searchParams.get("notice_id"), "6");
+    assert.deepEqual(options.headers, { apikey: "sb_publishable_test" });
+    return new Response(
+      JSON.stringify({ notice_id: 6, dictionary_candidates: [] }),
+    );
+  };
+  assert.equal(await api.fetchNoticeDictionary("invalid"), null);
+  assert.equal(count, 0);
+  assert.equal((await api.fetchNoticeDictionary("6")).notice_id, 6);
+  assert.equal(count, 1);
+});
 const envNames = [
   "EXPO_PUBLIC_SUPABASE_URL",
   "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
@@ -202,29 +219,41 @@ test("카테고리와 오래된순은 서버 전체 범위에 적용하고 다�
   assert.equal(urls[2].searchParams.get("category_code"), "is.null");
 });
 
-test("상세는 근거 원본을 조회하지 않고 누락 첨부 안내는 유지한다", async () => {
+test("상세는 텍스트 근거를 조회하며 누락 첨부 안내를 유지한다", async () => {
   let url;
-  global.fetch = async (value) => { url = new URL(value); return new Response("[]"); };
+  global.fetch = async (value) => {
+    url = new URL(value);
+    return new Response("[]");
+  };
   await api.fetchNotice("1");
   const fields = url.searchParams.get("select").split(",");
   assert.ok(fields.includes("preparation_omissions"));
-  assert.ok(!fields.includes("result"));
+  assert.ok(fields.includes("result"));
   assert.ok(!fields.includes("file_references"));
-  const notice = parseNotice(row(1, {
-    display_status: "needs_review",
-    result: { evidence: [{ excerpt: "원문 근거" }] },
-    preparation_omissions: [{ reason_code: "unsupported_type", url: "https://example.test/file.xlsx" }],
-  }));
+  const notice = parseNotice(
+    row(1, {
+      display_status: "needs_review",
+      result: { evidence: [{ excerpt: "원문 근거" }] },
+      preparation_omissions: [
+        {
+          reason_code: "unsupported_type",
+          url: "https://example.test/file.xlsx",
+        },
+      ],
+    }),
+  );
   assert.equal("evidence" in notice, false);
   assert.match(notice.omissions[0].message, /지원하지 않는 파일/);
   assert.equal(notice.omissions[0].url, "https://example.test/file.xlsx");
 });
 
 test("누락 첨부의 잘못된 주소는 공식 원문으로 안내한다", () => {
-  const notice = parseNotice(row(1, {
-    url: "https://example.test/notice",
-    preparation_omissions: [null, { url: "javascript:bad" }],
-  }));
+  const notice = parseNotice(
+    row(1, {
+      url: "https://example.test/notice",
+      preparation_omissions: [null, { url: "javascript:bad" }],
+    }),
+  );
   assert.equal(notice.omissions.length, 1);
   assert.equal(notice.omissions[0].url, "https://example.test/notice");
 });
@@ -262,4 +291,34 @@ test("전체·기타·카테고리·정렬은 서로 다른 Query 캐시를 사�
     "seoul",
     { category: 26, oldestFirst: true },
   ]);
+});
+
+
+test("본문 재작성은 문단을 보존하고 단어 치환 위치를 적용하지 않는다", () => {
+  const easyBody = "누가 신청하나요?\n65세 이상 주민이 신청할 수 있어요.\n\n무엇을 가져가나요?\n신분증을 가져오세요.";
+  const notice = parseNotice(row(1, {
+    body_text: "65세 이상 주민은 신분증 지참",
+    has_easy_text: true,
+    easy_body_text_present: true,
+    easy_original_text: "공문\n65세 이상 주민은 신분증 지참",
+    easy_text: "공문\n" + easyBody,
+    easy_changes: [],
+    easy_result: { headline: "신청 안내", intro: [], sections: [] },
+  }));
+  assert.equal(notice.hasEasyText, true);
+  assert.equal(notice.easyIsRewrite, true);
+  assert.equal(notice.easy, easyBody);
+  assert.deepEqual(notice.documentParts.easy, [{ text: easyBody }]);
+  assert.deepEqual(notice.documentParts.original, [{ text: notice.original }]);
+});
+
+test("재생성 전 기존 쉬운말과 본문 없는 공지를 구별한다", () => {
+  const input = row(1, {
+    body_text: "안내", has_easy_text: true, easy_body_text_present: true,
+    easy_original_text: "공문\n안내", easy_text: "공문\n안내", easy_changes: [],
+    easy_result: null,
+  });
+  assert.equal(parseNotice(input).hasEasyText, true);
+  assert.equal(parseNotice(input).easyIsRewrite, false);
+  assert.equal(parseNotice({ ...input, easy_body_text_present: false }).hasEasyText, false);
 });

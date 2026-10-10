@@ -1,5 +1,10 @@
+import { CARD_KEYS, type SummaryCardKey } from "../domain/summaryEvidence";
+import {
+  currentDictionaryTerm,
+  dictionaryHint,
+} from "../domain/noticeDictionary";
 import { useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
 import { useLocalSearchParams } from "expo-router";
 import { Screen } from "@/shared/ui/Screen";
@@ -15,7 +20,11 @@ import { NoticeTermOverlay } from "../components/NoticeTermOverlay";
 import { NoticeOmissions } from "../components/NoticeOmissions";
 import { NoticeFiles } from "../components/NoticeFiles";
 import { NoticeSummaryStatus } from "../components/NoticeSummaryStatus";
-import { getSummaryRows, isNoticeExpired } from "../domain/noticePresentation";
+import {
+  formatSummaryText,
+  getSummaryRows,
+  isNoticeExpired,
+} from "../domain/noticePresentation";
 import { type GlossaryTerm } from "../types/notice";
 
 // Figma QYCEBzvJCSX22QZ1VmJn8Q, 460:955/1231 및 연결 오버레이, 조회 2026-10-08.
@@ -28,6 +37,18 @@ export function EasyNoticeDetailScreen() {
   const [easyRequested, setEasy] = useState(false);
   const [term, setTerm] = useState<GlossaryTerm | null>(null);
   const notice = query.data;
+  const [selection, setSelection] = useState<{
+    card: SummaryCardKey;
+    notice: typeof notice;
+  } | null>(null);
+  const selectedCard =
+    selection?.notice === notice ? selection?.card : undefined;
+  const selectCard = (label: string) => {
+    const card = CARD_KEYS[label];
+    setTerm(null);
+    setEasy(false);
+    setSelection(selectedCard === card ? null : { card, notice });
+  };
   // 재조회로 쉬운말이 무효화되면 즉시 원문을 표시하고 이전 선택과 단어 설명을 해제한다.
   const easy = easyRequested && notice?.hasEasyText === true;
   if (easyRequested && notice && !notice.hasEasyText) {
@@ -42,7 +63,7 @@ export function EasyNoticeDetailScreen() {
       overlay={
         <NoticeTermOverlay
           comfortable
-          term={term}
+          term={currentDictionaryTerm(notice, term)}
           easy={easy}
           onClose={() => setTerm(null)}
         />
@@ -130,7 +151,16 @@ export function EasyNoticeDetailScreen() {
                 핵심 내용
               </AppText>
               {rows.map((row) => (
-                <View key={row.label} style={{ gap: 4 }}>
+                <Pressable
+                  key={row.label}
+                  style={{ gap: 4 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${row.label}: ${row.value}. 원문 근거 강조`}
+                  accessibilityState={{
+                    selected: selectedCard === CARD_KEYS[row.label],
+                  }}
+                  onPress={() => selectCard(row.label)}
+                >
                   <AppText
                     size={EASY.body}
                     variant="bold"
@@ -138,8 +168,10 @@ export function EasyNoticeDetailScreen() {
                   >
                     {row.label}
                   </AppText>
-                  <AppText size={EASY.body}>{row.value}</AppText>
-                </View>
+                  <AppText size={EASY.body}>
+                    {formatSummaryText(row.value)}
+                  </AppText>
+                </Pressable>
               ))}
             </View>
           )}
@@ -154,14 +186,15 @@ export function EasyNoticeDetailScreen() {
               onPress={() => {
                 setTerm(null);
                 setEasy((value) => !value);
+                setSelection(null);
               }}
             />
             <AppText size={EASY.body} secondary>
-              {!notice.hasEasyText
-                ? "쉬운말이 아직 준비되지 않았어요. 원문으로 확인해 주세요."
-                : easy
-                  ? "점선 표현을 누르면 원문 단어를 볼 수 있어요."
-                  : "점선 단어를 누르면 뜻을 볼 수 있어요."}
+              {easy
+                ? notice.easyIsRewrite
+                  ? "본문을 읽기 쉽게 다시 썼어요. 정확한 내용은 원문도 확인해 주세요."
+                  : "점선 표현을 누르면 원문 단어를 볼 수 있어요."
+                : dictionaryHint(notice)}
             </AppText>
             {easy && !notice.easyAttachmentContentIncluded && (
               <AppText size={EASY.body} secondary>
@@ -182,6 +215,11 @@ export function EasyNoticeDetailScreen() {
               }
               terms={notice.terms}
               easy={easy}
+              highlights={
+                !easy && selectedCard
+                  ? notice.summaryEvidence?.[selectedCard]
+                  : undefined
+              }
               onTermPress={setTerm}
             />
           </View>

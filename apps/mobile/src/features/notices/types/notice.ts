@@ -1,3 +1,4 @@
+import { type SummaryEvidence } from "../domain/summaryEvidence";
 export type NoticeCategory =
   | "주민 참여"
   | "생활"
@@ -16,12 +17,29 @@ export type NoticeFile = {
   kind: "attachment" | "inline_image";
   url: string;
 };
-export type DocumentPart = { text: string; term?: GlossaryTerm };
+export type DocumentPart = {
+  text: string;
+  highlighted?: boolean;
+  term?: GlossaryTerm;
+};
+export type DictionaryEntry = {
+  headword: string;
+  sourceUrl: string;
+  senses: { partOfSpeech: string; definition: string }[];
+};
+export type DictionaryState =
+  "loading" | "complete" | "pending" | "partial" | "unprocessed" | "failed";
 export type GlossaryTerm = {
   plain: string;
   original: string;
   meaning?: string;
   example?: string;
+  dictionary?: {
+    key: string;
+    queryWord: string;
+    status: "found" | "not_found" | "pending" | "failed";
+    entries: DictionaryEntry[];
+  };
 };
 export type Notice = {
   id: string;
@@ -39,11 +57,14 @@ export type Notice = {
   easy: string;
   deadlineDate?: string;
   terms?: GlossaryTerm[];
+  dictionaryStatus?: DictionaryState;
   sourceUrl?: string;
   files?: NoticeFile[];
   omissions?: { message: string; url?: string }[];
   hasEasyText?: boolean;
+  easyIsRewrite?: boolean;
   easyAttachmentContentIncluded?: boolean;
+  summaryEvidence?: SummaryEvidence;
   summaryStatus?: "none" | "pending" | "failed" | "summarized" | "needs_review";
   documentParts?: { original: DocumentPart[]; easy: DocumentPart[] };
 };

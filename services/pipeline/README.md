@@ -16,6 +16,8 @@ Python·uv 기반 공지 수집 파이프라인입니다. 노원구 `NowonNewsNo
 8. `20261008190000_notice_dictionary_links.sql`: 공지별 사전 뜻풀이 연결과 조회
 9. `20261008210000_notice_processing_jobs.sql`: 기능별 재처리 상태와 점유 기한
 10. `20261008220000_app_notice_views.sql`: backend 앱 조회 계약 호환 재적용
+11. `20261009100000_notice_easy_rewrite.sql`: 쉬운말 질문형 재작성 결과(`easy_result`)와 앱 조회 반영
+12. `20261010090000_easy_rewrite_compatibility.sql`: 재생성 중 기존 쉬운말 가용성 유지
 
 재구성 전 마이그레이션 14개를 적용한 로컬 DB는 다시 만들어야 합니다(`npx supabase db reset`).
 
@@ -220,6 +222,8 @@ python -m uv run pipeline collect-one --source wolgye1 --post-sn 게시물번호
 `collect-one`은 월계1동 전체 수집이 아니라 첫 페이지 한 건 확인용입니다. 원문 HTML의 외부 이미지·링크가 모두 다운로드 가능한지도 보장하지 않습니다.
 
 ## 월계1동 공지 여러 건 수집·저장
+
+과거 공지를 특정 페이지·등록일 범위로 보충하려면 `pipeline backfill-wolgye1 --end-page N --dry-run`으로 먼저 확인합니다. 범위 지정, 저장·공개 건수 비교 및 실제 검증 결과는 [월계1동 보충 수집 절차](../../docs/wolgye1-backfill.md)를 참고하세요.
 
 `collect --source wolgye1`은 목록에 표시된 총 페이지 수까지 순회한 뒤, 각 공지의 상세 본문과 첨부 정보를 확인하여 **공지 한 건씩 독립된 트랜잭션**으로 저장합니다. 월계1동 게시판의 고정 공지에는 다른 동 글도 섞이므로 `dong_group=other`, `is_pinned=true`로 구분합니다. 같은 `post_sn`이 여러 페이지나 고정·일반 행에 나타나면 한 건으로 합칩니다. 완전 수집에는 많은 HTTP 요청이 필요하므로 먼저 전용 DB에서 `--limit`으로 시험하세요.
 
@@ -1102,6 +1106,98 @@ from public.notice_processing_jobs
 order by updated_at, notice_id, feature;
 ```
 
+## 쉬운말 본문 재작성 (#106)
+
+쉬운말은 단어 치환 대신 Gemini가 공지를 질문형 섹션으로 다시 씁니다. 프롬프트는
+`glossary/prompts/gemini_easy_rewrite.md`, 버전은 `easy-rewrite-v3`입니다. 응답은
+`{rewrite, dictionary_candidates}`이며 `dictionary_candidates` 처리는 이전과 같습니다.
+
+| 항목 | 형식 |
+| --- | --- |
+| `rewrite` | `headline`, `intro`(0~3문장), `sections`(1~6개), `attachment_hint`(null 가능) |
+| 섹션 | `heading`(25자 이하, `?`로 끝남), `style`(`paragraph`/`steps`), `sentences`(1~8개) |
+| 문장 | `text`(한 줄, 80자 이하), `evidence`(본문에서 그대로 인용한 구절 1개 이상) |
+
+저장 전에는 JSON 구조·빈 응답·완료된 모델 응답·인증정보 노출 여부를 검사합니다.
+형식 오류는 한 번 재생성하며, 두 번 실패하면 기존 결과를 보존합니다. 문장 길이와 섹션 구조는 위 응답 계약을 따릅니다.
+숫자 구성요소·URL·원문 인용의 문자열 일치 여부로 새 결과를 거부하지 않습니다.
+
+생성 후 `glossary/prompts/gemini_easy_review.md`로 원문과 재작성 전체를 Gemini에 한 번 더 보냅니다.
+대상·날짜·금액·연락처·신청 방법·필수 서류·부정·예외 조건의 변경과 누락을 검토합니다.
+10,000원과 1만 원처럼 동등한 표현은 허용합니다. 오류가 있으면 같은 검토 응답에서 전체 수정본을 한 번 받습니다.
+수정본은 형식과 인증정보 검사를 다시 거치며 별도의 세 번째 의미 검토 호출은 하지 않습니다.
+
+`easy_result.review.status`에 `passed`(검토 통과), `corrected`(검토자가 수정),
+`incomplete`(검토 API·형식·시간 또는 호출 예산 문제)를 저장합니다. 검토 실패 시에는 이미 생성된 쉬운말을
+보존합니다. 이 상태는 기존 JSON 컬럼에 저장하며 화면 디자인이나 별도 DB 컬럼은 변경하지 않습니다.
+검토 미완료도 캐시되므로 다시 검토하려면 명시적 refresh가 필요합니다.
+정상 경로는 생성 1회 + 검토 1회이며 기존 전체 시간·호출 예산을 공유합니다. 생성 재시도 등으로 예산이 소진되면 검토 미완료가 될 수 있습니다.
+Gemini 검토 통과도 의미 정확성을 보증하지 않으며, 고정 응답 테스트와 실제 모델 검토 결과를 구분합니다.
+
+사전 후보의 원문 위치·검색어 검증은 별도로 유지합니다. 잘못된 후보만 제외하고, 모두 제외돼도 쉬운말을 저장합니다.
+검토자가 쉬운말을 수정해도 원문 기준 사전 후보는 유지합니다. 4카드 요약 검증은 변경하지 않습니다.
+본문만 처리하며 첨부 내용을 읽었다고 표시하지 않습니다. 이전 버전 결과는 해당 버전의 검증 방식으로 읽습니다.
+
+`notice_easy_texts`에는 두 형식이 함께 있습니다.
+
+- 이전 단어 치환 행: `easy_result`가 null이고 `changes`로 `easy_text`를 재현합니다.
+- 재작성 행: `changes`는 `[]`, `easy_result`는 재작성 객체, `easy_text`는 제목 + 줄바꿈 + 평문입니다.
+  평문은 `headline`과 `intro` 다음 빈 줄, 섹션마다 제목과 문장(`steps`는 `1. ` 번호), 마지막에 첨부 안내 순서입니다.
+
+`get_notice_easy_text`와 `map_dictionary_candidates`는 두 형식을 모두 읽습니다. 재작성 행의 사전
+후보는 모두 `original_only`(쉬운말 위치 null)로 연결됩니다. 원문 오프셋을 재작성 문장에 적용하지 않습니다.
+앱 목록의 `has_easy_text`는 현재 원문 버전의 기존 치환 결과에도 true입니다. 새 결과 저장에 성공하기
+전까지 기존 결과를 보여 주며, 원문이 바뀐 오래된 결과는 기존 RLS 규칙대로 숨깁니다.
+
+`easy_result`를 모르는 구버전 작업자가 변환 컬럼만 바꾸면 trigger가 `easy_result`를 비웁니다. 새 저장
+코드는 같은 트랜잭션에서 검증한 결과를 다시 씁니다.
+
+### 쉬운말 미표시 원인 구분
+
+운영 DB 점검은 먼저 아래 읽기 전용 집계로 구분합니다. `no_body_or_attachment_only`는 이 작업에서
+파일 OCR로 채우지 않습니다. `unchanged`는 생성 실패와 다르며 이미 쉬운 문장이면 정상일 수 있습니다.
+`legacy`와 `stale_source`는 새 버전 재처리 대상입니다. 생성 실패 사유는 아래 job 상태를 함께 봅니다.
+
+```sql
+select reason, count(*)
+from (
+  select case
+    when btrim(coalesce(d.body_text, '')) = '' then 'no_body_or_attachment_only'
+    when e.notice_id is null then 'missing_result'
+    when e.notice_revision <> public.notice_easy_text_revision(n.title, n.body_html)
+      then 'stale_source'
+    when e.easy_text = e.original_text then 'unchanged'
+    when e.prompt_version <> 'easy-rewrite-v3' or e.easy_result is null then 'legacy'
+    else 'rewrite'
+  end as reason
+  from public.app_notice_detail d
+  join public.notices n on n.id = d.id
+  left join public.notice_easy_texts e on e.notice_id = n.id
+) classified
+group by reason order by reason;
+
+select state, last_error_code, count(*)
+from public.notice_processing_jobs where feature = 'easy_text'
+group by state, last_error_code order by state, last_error_code;
+```
+
+### 마이그레이션 후 재처리
+
+프롬프트 버전이 바뀌었으므로 기존 쉬운말은 모두 재처리 대상입니다. 컬럼 추가로 쉬운말 상태 토큰도
+모든 행에서 바뀌어, 사전 조회 RPC는 다시 연결할 때까지 `dictionary_status=pending`을 반환합니다.
+`process-stored`는 쉬운말 재생성 뒤 사전 링크까지 다시 만듭니다.
+
+```bash
+uv run pipeline process-stored --source nowon --feature easy_text --limit 100
+uv run pipeline process-stored --source wolgye1 --feature easy_text --limit 100
+uv run pipeline process-stored --source seoul --feature easy_text --limit 100
+```
+
+대상이 남으면 같은 명령을 반복합니다. 운영 DB에는 #76 스크립트가 이 migration을 적용하지 않습니다.
+`20261009100000_notice_easy_rewrite.sql`과 `20261010090000_easy_rewrite_compatibility.sql`을
+새 코드 배포 전에 순서대로 적용해야 하며, 적용하지 않은 DB에서
+새 저장 코드는 `easy_result` 컬럼이 없어 실패합니다.
+
 ## 표준국어대사전 조회와 공유 캐시 (#53)
 
 `pipeline.glossary.dictionary_service.lookup_dictionary()`는 검색용 표제형인
@@ -1404,3 +1500,21 @@ exit code, 외부 요청 순서, Gemini 호출 수, 테이블별 행 수, 저장
 원문 변경 시 이전 버전 결과 보존(#26)은 이번 운영 검증 범위에서 제외한다.
 현재 정책에서는 원문 변경 시 이전 요약이 무효화될 수 있다. 같은 원문의 재처리 실패 시 정상 결과 보존은
 계속 검증한다. DB migration 적용, 플래그 변경, main 배포는 서로 다른 단계다.
+
+
+### 웹 원문 사전 연결 (#105)
+
+공지 상세는 공개 `get_notice_dictionary(notice_id)` RPC로 **이미 저장된** 사전 후보와
+표준국어대사전 뜻풀이를 읽습니다. 원문에서는 치환 여부와 관계없이 검증된 후보 위치에 밑줄을
+표시하고, 기존 단어 팝업에 뜻풀이·품사·사전 출처를 표시합니다. 쉬운말 탭의 원문 표현 보기는
+기존 동작을 유지합니다. 여러 뜻이 있으면 문맥에 맞는 뜻 하나로 추정하지 않고 반환된 뜻을 표시합니다.
+
+사전 조회는 공지 상세 조회와 분리되어 있어 실패해도 원문·요약·쉬운말은 계속 표시합니다.
+후보가 대기/실패/뜻 없음 상태이면 해당 상태를 안내하며 대체 표현을 사전 정의로 사용하지 않습니다.
+제목+본문이 RPC의 원문과 다르거나 후보 위치가 유효하지 않으면 밑줄을 표시하지 않습니다.
+
+새 migration이나 외부 사전 API 키를 웹에 추가할 필요는 없습니다. 기존 #54 migration과
+`EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`를 사용합니다.
+현재 RPC는 유효한 쉬운말 결과의 사전 후보를 읽으므로, 쉬운말/사전 후처리를 아직 실행하지 않은
+공지에는 준비 중 안내만 표시됩니다. 웹 배포 자체가 후보 추출이나 사전 후처리를 실행하지 않습니다.
+운영 반영 전 저장된 후보·뜻풀이가 있는 공지, 후보 없음, 조회 실패를 실제 웹에서 확인하세요.

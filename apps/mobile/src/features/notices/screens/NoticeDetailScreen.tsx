@@ -1,3 +1,8 @@
+import { CARD_KEYS, type SummaryCardKey } from "../domain/summaryEvidence";
+import {
+  currentDictionaryTerm,
+  dictionaryHint,
+} from "../domain/noticeDictionary";
 import { useCallback, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
@@ -21,6 +26,7 @@ import { NoticeOmissions } from "../components/NoticeOmissions";
 import { NoticeFiles } from "../components/NoticeFiles";
 import { NoticeSummaryStatus } from "../components/NoticeSummaryStatus";
 import { type GlossaryTerm } from "../types/notice";
+import { formatSummaryText } from "../domain/noticePresentation";
 
 const SUMMARY_ICONS = [
   require("@/assets/figma/detail-imgIconSummaryCalendar.svg"),
@@ -69,6 +75,18 @@ function StandardNoticeContent({
   const [easyRequested, setEasy] = useState(false);
   const [term, setTerm] = useState<GlossaryTerm | null>(null);
   const notice = query.data;
+  const [selection, setSelection] = useState<{
+    card: SummaryCardKey;
+    notice: typeof notice;
+  } | null>(null);
+  const selectedCard =
+    selection?.notice === notice ? selection?.card : undefined;
+  const selectCard = (label: string) => {
+    const card = CARD_KEYS[label];
+    setTerm(null);
+    setEasy(false);
+    setSelection(selectedCard === card ? null : { card, notice });
+  };
   const easy = easyRequested && notice?.hasEasyText === true;
   const rows = notice
     ? [
@@ -84,7 +102,7 @@ function StandardNoticeContent({
       contentStyle={{ paddingHorizontal: 20, gap: 20 }}
       overlay={
         <NoticeTermOverlay
-          term={notice?.hasEasyText ? term : null}
+          term={currentDictionaryTerm(notice, term)}
           easy={easy}
           onClose={() => setTerm(null)}
         />
@@ -166,7 +184,16 @@ function StandardNoticeContent({
                 핵심만 먼저 확인해요
               </AppText>
               {rows.map(([label, value], index) => (
-                <View key={label} style={styles.summaryRow}>
+                <Pressable
+                  key={label}
+                  style={styles.summaryRow}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${label}: ${value}. 원문 근거 강조`}
+                  accessibilityState={{
+                    selected: selectedCard === CARD_KEYS[label],
+                  }}
+                  onPress={() => selectCard(label)}
+                >
                   <View style={styles.iconBadge}>
                     <Image
                       source={SUMMARY_ICONS[index]}
@@ -178,10 +205,10 @@ function StandardNoticeContent({
                       {label}
                     </AppText>
                     <AppText size={16} lineHeight={26}>
-                      {value}
+                      {formatSummaryText(value)}
                     </AppText>
                   </View>
-                </View>
+                </Pressable>
               ))}
             </View>
           )}
@@ -205,6 +232,7 @@ function StandardNoticeContent({
                   onPress={() => {
                     setTerm(null);
                     setEasy(mode);
+                    setSelection(null);
                   }}
                   style={[
                     styles.segmentItem,
@@ -225,11 +253,11 @@ function StandardNoticeContent({
               ))}
             </View>
             <AppText secondary size={12} lineHeight={18}>
-              {!notice.hasEasyText
-                ? "쉬운말이 아직 준비되지 않았어요. 원문으로 확인해 주세요."
-                : easy
-                  ? "점선 표현을 누르면 원문 단어를 볼 수 있어요."
-                  : "밑줄 친 단어를 누르면 뜻을 볼 수 있어요."}
+              {easy
+                ? notice.easyIsRewrite
+                  ? "본문을 읽기 쉽게 다시 썼어요. 정확한 내용은 원문도 확인해 주세요."
+                  : "점선 표현을 누르면 원문 단어를 볼 수 있어요."
+                : dictionaryHint(notice)}
             </AppText>
             <AppText variant="bold" size={18} lineHeight={27}>
               {notice.documentTitle}
@@ -252,6 +280,11 @@ function StandardNoticeContent({
               }
               terms={notice.terms}
               easy={easy}
+              highlights={
+                !easy && selectedCard
+                  ? notice.summaryEvidence?.[selectedCard]
+                  : undefined
+              }
               onTermPress={setTerm}
             />
           </View>

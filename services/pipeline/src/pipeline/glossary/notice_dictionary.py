@@ -17,6 +17,20 @@ def map_dictionary_candidates(result: EasyLanguageResult) -> list[dict[str, obje
     result = EasyLanguageResult.model_validate(result.model_dump(mode="python"))
     if result.dictionary_candidates is None:
         raise ValueError("사전 후보를 추출한 결과가 필요합니다.")
+    if result.easy_result is not None:
+        # A rewrite has no word-level alignment to the original; candidates are
+        # shown only on the original text.
+        return [
+            {
+                **candidate.model_dump(),
+                "cache_key": DictionaryQuery(candidate.query_word).cache_key,
+                "easy_start": None,
+                "easy_end": None,
+                "easy_expression": None,
+                "mapping_status": "original_only",
+            }
+            for candidate in result.dictionary_candidates
+        ]
     starts = [change.start for change in result.changes]
     ends = [change.end for change in result.changes]
     deltas = [0]

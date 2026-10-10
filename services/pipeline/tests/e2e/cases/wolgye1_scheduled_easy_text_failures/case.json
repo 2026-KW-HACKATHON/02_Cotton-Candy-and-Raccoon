@@ -41,7 +41,7 @@
         "easy_text": [
           "input/easy_602_error.json",
           "input/easy_602_error.json",
-          "input/easy_601.json"
+          "input/rewrite_step_2_2.json"
         ]
       },
       "expect_exit": 1

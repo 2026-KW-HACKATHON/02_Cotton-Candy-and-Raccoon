@@ -138,6 +138,7 @@ from notices n where n.post_sn in ('20260901000000003', '20260901000000005');
 --   9  노원구   failed (Gemini 오류)
 --   10 월계1동  요약 없음(display_status = none), 쉬운말 있음
 --   11 노원구   요약 없음, 쉬운말은 이전 본문 기준이라 앱에 보이지 않음
+-- 쉬운말 행(6, 10, 11번)은 #85의 질문형 재작성 결과다. 같은 방법으로 다시 만들었다.
 -- ============================================================================
 
 insert into notices (category, source_board, dong_group, is_pinned, post_sn, title, department,
@@ -206,7 +207,7 @@ insert into notice_summaries (notice_id, status, result, category, category_code
 select n.id, 'failed', null, null, null, null, 'none', '44c30f3059446738211cccdf5b115d589c6782bfdf5525a008c6728580491d21', 'gemini-3.5-flash-lite', 'notice-summary-v6-card-grounding', 1, 'api_error', null, null
 from notices n where n.post_sn = '20260901000000009';
 
-insert into notice_easy_texts (notice_id, notice_revision, source_hash, original_text, easy_text, changes, model, prompt_version, attempt_count, generated_at, body_text_present, attachment_content_included)
+insert into notice_easy_texts (notice_id, notice_revision, source_hash, original_text, easy_text, changes, model, prompt_version, attempt_count, generated_at, body_text_present, attachment_content_included, dictionary_candidates, easy_result)
 select n.id, '91426dd1b2c7890e36363d34e73d5ad4416f1d489b146ad0a17965c317bfbc2c', '6ceaf57e617c4f564c7c76655bfc28e66331678a7ed089d28b169344315ee2d1', '가을 독서 프로그램 참가자 모집
 가을 독서 프로그램 참가자 모집
 ■ 모집대상 : 노원구 거주 성인
@@ -214,26 +215,38 @@ select n.id, '91426dd1b2c7890e36363d34e73d5ad4416f1d489b146ad0a17965c317bfbc2c',
 ■ 운영장소 : 노원구립도서관 강의실
 ■ 신청방법 : 도서관 홈페이지에서 신청
 ■ 참가비 : 무료', '가을 독서 프로그램 참가자 모집
-가을 독서 프로그램 참가자 모집
-■ 모집대상 : 노원구 거주 성인
-■ 신청기간 : 2026. 9. 1. ~ 9. 30.
-■ 운영장소 : 노원구립도서관 강의실
-■ 신청방법 : 도서관 홈페이지에서 신청
-■ 내는 돈 : 무료', '[{"context": "■ 참가비 : 무료", "end": 134, "original": "참가비", "replacement": "내는 돈", "start": 131}]'::jsonb, 'gemini-3.5-flash-lite', 'easy-language-v7', 1, '2026-09-06T00:00:00+00:00'::timestamptz, true, false
+가을 독서 프로그램 참가자를 모집해요.
+
+누가 신청하나요?
+노원구에 사는 성인이 신청할 수 있어요.
+
+언제까지 신청하나요?
+9월 1일부터 9월 30일까지 신청해요.
+
+어떻게 신청하나요?
+1. 도서관 홈페이지에서 신청해요.
+2. 노원구립도서관 강의실에서 진행해요.
+
+돈이 드나요?
+참가비는 없어요.', '[]'::jsonb, 'gemini-3.5-flash-lite', 'easy-rewrite-v1', 1, '2026-09-06T00:00:00+00:00'::timestamptz, true, false, '[]'::jsonb, '{"attachment_hint": null, "headline": "가을 독서 프로그램 참가자를 모집해요.", "intro": [], "sections": [{"heading": "누가 신청하나요?", "sentences": [{"evidence": ["■ 모집대상 : 노원구 거주 성인"], "text": "노원구에 사는 성인이 신청할 수 있어요."}], "style": "paragraph"}, {"heading": "언제까지 신청하나요?", "sentences": [{"evidence": ["■ 신청기간 : 2026. 9. 1. ~ 9. 30."], "text": "9월 1일부터 9월 30일까지 신청해요."}], "style": "paragraph"}, {"heading": "어떻게 신청하나요?", "sentences": [{"evidence": ["■ 신청방법 : 도서관 홈페이지에서 신청"], "text": "도서관 홈페이지에서 신청해요."}, {"evidence": ["■ 운영장소 : 노원구립도서관 강의실"], "text": "노원구립도서관 강의실에서 진행해요."}], "style": "steps"}, {"heading": "돈이 드나요?", "sentences": [{"evidence": ["■ 참가비 : 무료"], "text": "참가비는 없어요."}], "style": "paragraph"}]}'::jsonb
 from notices n where n.post_sn = '20260901000000006';
 
-insert into notice_easy_texts (notice_id, notice_revision, source_hash, original_text, easy_text, changes, model, prompt_version, attempt_count, generated_at, body_text_present, attachment_content_included)
+insert into notice_easy_texts (notice_id, notice_revision, source_hash, original_text, easy_text, changes, model, prompt_version, attempt_count, generated_at, body_text_present, attachment_content_included, dictionary_candidates, easy_result)
 select n.id, '5318461043ffe0c755ac618a6a4abbda933c642cfc1c5deb55b1ccb44e56337d', '7589acfcf2f595c6dffc9a417dc086fa40cc01127f90cd588ff47698437b02ea', '월계1동 경로당 프로그램 안내
 월계1동 경로당 프로그램 참가자를 모집합니다.
 ■ 대상 : 월계1동 어르신', '월계1동 경로당 프로그램 안내
-월계1동 경로당 프로그램 참가자를 모집합니다.
-■ 대상 : 월계1동 노인', '[{"context": "■ 대상 : 월계1동 어르신", "end": 58, "original": "어르신", "replacement": "노인", "start": 55}]'::jsonb, 'gemini-3.5-flash-lite', 'easy-language-v7', 1, '2026-09-06T00:00:00+00:00'::timestamptz, true, false
+경로당 프로그램 참가자를 모집해요.
+
+누가 참여하나요?
+월계1동 어르신이 참여할 수 있어요.', '[]'::jsonb, 'gemini-3.5-flash-lite', 'easy-rewrite-v1', 1, '2026-09-06T00:00:00+00:00'::timestamptz, true, false, '[]'::jsonb, '{"attachment_hint": null, "headline": "경로당 프로그램 참가자를 모집해요.", "intro": [], "sections": [{"heading": "누가 참여하나요?", "sentences": [{"evidence": ["■ 대상 : 월계1동 어르신"], "text": "월계1동 어르신이 참여할 수 있어요."}], "style": "paragraph"}]}'::jsonb
 from notices n where n.post_sn = '20260901000000010';
 
-insert into notice_easy_texts (notice_id, notice_revision, source_hash, original_text, easy_text, changes, model, prompt_version, attempt_count, generated_at, body_text_present, attachment_content_included)
+insert into notice_easy_texts (notice_id, notice_revision, source_hash, original_text, easy_text, changes, model, prompt_version, attempt_count, generated_at, body_text_present, attachment_content_included, dictionary_candidates, easy_result)
 select n.id, '86e0613449bf6bee54aefad951855b1ceef2d363ed5b3134b901f7013a13e2e9', 'f25eaa230863345394c50c304efb8a137c4720bb57e6d84cbf9c77e17bcf311a', '공영주차장 이용 안내
 공영주차장 이용 시간을 안내합니다.
 ■ 이용 시간 : 08:00 ~ 21:00', '공영주차장 이용 안내
-공영주차장 이용 시간을 안내합니다.
-■ 쓸 수 있는 시간 : 08:00 ~ 21:00', '[{"context": "■ 이용 시간 : 08:00 ~ 21:00", "end": 39, "original": "이용 시간", "replacement": "쓸 수 있는 시간", "start": 34}]'::jsonb, 'gemini-3.5-flash-lite', 'easy-language-v7', 1, '2026-09-06T00:00:00+00:00'::timestamptz, true, false
+공영주차장 이용 시간 안내예요.
+
+언제 이용할 수 있나요?
+8시부터 21시까지 이용할 수 있어요.', '[]'::jsonb, 'gemini-3.5-flash-lite', 'easy-rewrite-v1', 1, '2026-09-06T00:00:00+00:00'::timestamptz, true, false, '[]'::jsonb, '{"attachment_hint": null, "headline": "공영주차장 이용 시간 안내예요.", "intro": [], "sections": [{"heading": "언제 이용할 수 있나요?", "sentences": [{"evidence": ["■ 이용 시간 : 08:00 ~ 21:00"], "text": "8시부터 21시까지 이용할 수 있어요."}], "style": "paragraph"}]}'::jsonb
 from notices n where n.post_sn = '20260901000000011';

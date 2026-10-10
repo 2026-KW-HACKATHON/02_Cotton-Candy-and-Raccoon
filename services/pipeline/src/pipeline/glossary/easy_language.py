@@ -1,11 +1,21 @@
-"""Attest contextual easy-language swaps and dictionary candidates against the notice."""
+"""Rewrite a notice as attested question sections and attest dictionary candidates.
 
+The current generation (easy-rewrite-v3) rewrites the body into question-headed
+sections whose every sentence quotes its source. Results of the earlier
+term-replacement generation remain readable: their changes still reproduce
+easy_text exactly, and ProposedChange/apply_easy_language_changes serve only
+that legacy validation.
+"""
+
+import json
+import logging
 import re
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
+from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Self
+from typing import Annotated, Literal, Self
 from urllib.parse import quote, quote_plus
 
 from pydantic import (
@@ -24,17 +34,36 @@ from pipeline.gemini_execution import (
     current_execution,
     execution_budget,
 )
+from pipeline.glossary.rewrite_validation import validate_minimal_rewrite
 from pipeline.glossary.source import (
     MAX_SOURCE_CHARACTERS,
     NoticeGlossaryInput,
     StoredNoticeInput,
     source_hash,
 )
+from pipeline.transform.summary_schema import Evidence, evidence_reference_valid
 
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
-PROMPT_VERSION = "easy-language-v8"
-PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "gemini_easy_language.md"
+PROMPT_VERSION = "easy-rewrite-v3"
+PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "gemini_easy_rewrite.md"
 MAX_TERM_CHARACTERS = 100
+# Rewrite limits. The prompt asks for 60-character sentences; 80 is the hard cap.
+MAX_SENTENCE_CHARACTERS = 80
+MAX_EVIDENCE_CHARACTERS = MAX_SOURCE_CHARACTERS
+# A shorter quote ("1", "다") attests nothing; a whole body shorter than this is exempt.
+MIN_EVIDENCE_CHARACTERS = 5
+MAX_HEADING_CHARACTERS = 25
+# Copy and length checks are meaningful only for bodies of at least this length.
+REWRITE_CHECK_MIN_BODY_CHARACTERS = 300
+MAX_COPY_RATIO = 0.8
+# The whole-text ratio shrinks as the body grows, so each sentence is also compared
+# with its own quotes and, from this length, searched for verbatim in the body.
+MAX_SENTENCE_COPY_RATIO = 0.9
+MIN_COPIED_SENTENCE_CHARACTERS = 10
+_FORBIDDEN_SYMBOLS = ("「", "」", "·", "*", "※")
+# Official names such as '청소년 역사·평화·환경 캠프' may keep their symbols in quotes.
+_QUOTED_SPAN = re.compile(r"'[^'\n]*'|‘[^’\n]*’")
+_NUMBER_TOKEN = re.compile(r"\d+")
 
 # These recognize literal data formats, rather than guessing a Korean sentence's meaning.
 _PROTECTED_PATTERNS = (
@@ -156,6 +185,227 @@ class EasyLanguageResponse(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
     changes: tuple[ProposedChange, ...]
     dictionary_candidates: tuple[ProposedDictionaryCandidate, ...]
+
+
+def _one_line(value: str) -> str:
+    if not value.strip() or value != value.strip() or "\n" in value or "\r" in value:
+        raise ValueError("쉬운말 문장은 앞뒤 공백 없는 한 줄이어야 합니다.")
+    return value
+
+
+class EasySentence(BaseModel):
+    """One rewritten line and the exact body quotes that support it."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+    text: str = Field(min_length=1, max_length=MAX_SENTENCE_CHARACTERS, strict=True)
+    evidence: tuple[
+        Annotated[str, Field(min_length=1, max_length=MAX_EVIDENCE_CHARACTERS, strict=True)], ...
+    ] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_line(self) -> Self:
+        _one_line(self.text)
+        if any(not quote.strip() for quote in self.evidence):
+            raise ValueError("근거 문장은 비어 있을 수 없습니다.")
+        return self
+
+
+class EasySection(BaseModel):
+    """A question heading and its sentences, read as prose or numbered steps."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+    heading: str = Field(min_length=2, max_length=MAX_HEADING_CHARACTERS, strict=True)
+    style: Literal["paragraph", "steps"]
+    sentences: tuple[EasySentence, ...] = Field(min_length=1, max_length=8)
+
+    @model_validator(mode="after")
+    def validate_heading(self) -> Self:
+        _one_line(self.heading)
+        if not self.heading.endswith("?"):
+            raise ValueError("섹션 제목은 물음표로 끝나는 질문이어야 합니다.")
+        return self
+
+
+class EasyRewrite(BaseModel):
+    """The whole rewritten body; the notice title stays outside Gemini output."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+    headline: str = Field(min_length=1, max_length=MAX_SENTENCE_CHARACTERS, strict=True)
+    intro: tuple[EasySentence, ...] = Field(max_length=3)
+    sections: tuple[EasySection, ...] = Field(min_length=1, max_length=6)
+    attachment_hint: str | None = Field(
+        default=None, min_length=1, max_length=MAX_SENTENCE_CHARACTERS, strict=True
+    )
+
+    @model_validator(mode="after")
+    def validate_lines(self) -> Self:
+        _one_line(self.headline)
+        if self.attachment_hint is not None:
+            _one_line(self.attachment_hint)
+        return self
+
+    def sentences(self) -> Iterator[EasySentence]:
+        yield from self.intro
+        for section in self.sections:
+            yield from section.sentences
+
+
+class EasyRewriteResponse(BaseModel):
+    """Gemini output: one rewrite and the original-text dictionary candidates."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+    rewrite: EasyRewrite
+    dictionary_candidates: tuple[ProposedDictionaryCandidate, ...]
+
+
+class RewriteReview(BaseModel):
+    """Application-owned review state, persisted in easy_result JSON."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+    status: Literal["passed", "corrected", "incomplete"]
+
+
+class ReviewedRewrite(EasyRewrite):
+    review: RewriteReview | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_rewrite(cls, value: object) -> object:
+        return value.model_dump() if isinstance(value, EasyRewrite) else value
+
+
+
+class RewriteReviewResponse(BaseModel):
+    """One semantic review, optionally correcting the complete rewrite once."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
+    issues: tuple[Annotated[str, Field(min_length=1, max_length=1000)], ...]
+    corrected_rewrite: EasyRewrite | None
+
+    @model_validator(mode="after")
+    def require_correction(self) -> Self:
+        if bool(self.issues) != (self.corrected_rewrite is not None):
+            raise ValueError("Problems require a corrected rewrite; a pass must not replace it.")
+        return self
+
+
+def _default_review_request(
+    *, prompt: str, notice_text: str, api_key: str, model: str, review: bool,
+) -> str:
+    from pipeline.glossary.easy_language_client import generate_easy_language_json
+
+    return generate_easy_language_json(
+        prompt=prompt, notice_text=notice_text, api_key=api_key, model=model, review=review,
+    )
+
+
+def _review_rewrite(
+    response: EasyRewriteResponse, *, body: str, api_key: str, model: str,
+    request: Callable[..., str], credentials: tuple[str, ...],
+) -> ReviewedRewrite:
+    """A failed reviewer never discards a structurally usable generation."""
+    original = response.rewrite
+    status: Literal["passed", "corrected", "incomplete"] = "incomplete"
+    chosen = original
+    try:
+        prompt = (PROMPT_PATH.parent / "gemini_easy_review.md").read_text(encoding="utf-8")
+        output = request(
+            prompt=prompt,
+            notice_text=json.dumps({"source": body, "rewrite": original.model_dump()},
+                                   ensure_ascii=False),
+            api_key=api_key, model=model, review=True,
+        )
+        _validate_raw_credentials(output, body, credentials)
+        review = RewriteReviewResponse.model_validate_json(output)
+        if review.corrected_rewrite is not None:
+            corrected = EasyRewriteResponse(
+                rewrite=review.corrected_rewrite,
+                dictionary_candidates=response.dictionary_candidates,
+            )
+            _validate_rewrite_credentials(corrected, body, credentials)
+            chosen = corrected.rewrite
+            status = "corrected"
+        else:
+            status = "passed"
+    except Exception:
+        # Fixed text only: never log provider errors, feedback, or credentials.
+        logging.getLogger(__name__).warning("Easy-language semantic review incomplete.")
+    return ReviewedRewrite(**chosen.model_dump(), review=RewriteReview(status=status))
+
+
+def flatten_easy_rewrite(rewrite: EasyRewrite) -> str:
+    """Plain text of a rewrite: headline, intro, then each section after a blank line.
+
+    Steps sections number their sentences "1. ", "2. ". An attachment hint, when
+    present, closes the text as its own paragraph.
+    """
+    blocks = ["\n".join([rewrite.headline, *(item.text for item in rewrite.intro)])]
+    for section in rewrite.sections:
+        lines = [
+            f"{number}. {item.text}" if section.style == "steps" else item.text
+            for number, item in enumerate(section.sentences, 1)
+        ]
+        blocks.append("\n".join([section.heading, *lines]))
+    if rewrite.attachment_hint is not None:
+        blocks.append(rewrite.attachment_hint)
+    return "\n\n".join(blocks)
+
+
+def _numbers(text: str) -> set[int]:
+    # Compare values so "09:00" in a quote supports "9시" in the sentence.
+    return {int(token) for token in _NUMBER_TOKEN.findall(text)}
+
+
+def _display_texts(rewrite: EasyRewrite) -> Iterator[str]:
+    yield rewrite.headline
+    for section in rewrite.sections:
+        yield section.heading
+    for item in rewrite.sentences():
+        yield item.text
+    if rewrite.attachment_hint is not None:
+        yield rewrite.attachment_hint
+
+
+def validate_easy_rewrite(rewrite: EasyRewrite, body: str) -> None:
+    """Reject the whole rewrite on any failure; sentences are never accepted one by one.
+
+    Accepting a subset could silently drop a sentence that carries a condition.
+    Each message is fixed so retry guidance never echoes model output.
+    """
+    whole_body = body.strip()
+    for item in rewrite.sentences():
+        for excerpt in item.evidence:
+            if len(excerpt) < MIN_EVIDENCE_CHARACTERS and excerpt != whole_body:
+                raise ValueError("근거 구절이 너무 짧습니다.")
+            if not evidence_reference_valid(
+                Evidence(field="notes", excerpt=excerpt, source_type="text"), sources=[body]
+            ):
+                raise ValueError("근거 문장이 원문에 그대로 있지 않습니다.")
+        if not _numbers(item.text) <= _numbers(" ".join(item.evidence)):
+            raise ValueError("근거에 없는 숫자가 문장에 있습니다.")
+    body_numbers = _numbers(body)
+    others = [rewrite.headline, *(section.heading for section in rewrite.sections)]
+    if rewrite.attachment_hint is not None:
+        others.append(rewrite.attachment_hint)
+    if any(not _numbers(text) <= body_numbers for text in others):
+        raise ValueError("근거에 없는 숫자가 문장에 있습니다.")
+    for text in _display_texts(rewrite):
+        unquoted = _QUOTED_SPAN.sub("", text)
+        if any(symbol in unquoted for symbol in _FORBIDDEN_SYMBOLS):
+            raise ValueError("쉬운말 문장에 쓰지 않는 기호가 있습니다.")
+    if len(body) >= REWRITE_CHECK_MIN_BODY_CHARACTERS:
+        rewritten = "\n".join(item.text for item in rewrite.sentences())
+        if SequenceMatcher(None, rewritten, body).ratio() >= MAX_COPY_RATIO or any(
+            len(item.text) >= MIN_COPIED_SENTENCE_CHARACTERS and item.text in body
+            or any(
+                SequenceMatcher(None, item.text, excerpt).ratio() >= MAX_SENTENCE_COPY_RATIO
+                for excerpt in item.evidence
+            )
+            for item in rewrite.sentences()
+        ):
+            raise ValueError("원문을 거의 그대로 옮겼습니다.")
+        if len(rewritten) > len(body):
+            raise ValueError("다시 쓴 글이 원문보다 깁니다.")
 
 
 class AppliedChange(BaseModel):
@@ -323,6 +573,41 @@ def _resolve_dictionary_candidates(
     return ordered
 
 
+def _parse_rewrite_response(output: str) -> EasyRewriteResponse:
+    """Discard individually malformed candidates, retaining the strict rewrite schema."""
+    raw = json.loads(output)
+    if isinstance(raw, dict) and isinstance(raw.get("dictionary_candidates"), list):
+        valid = []
+        for item in raw["dictionary_candidates"]:
+            try:
+                valid.append(ProposedDictionaryCandidate.model_validate(item).model_dump())
+            except (ValidationError, ValueError):
+                continue
+        raw["dictionary_candidates"] = valid
+    return EasyRewriteResponse.model_validate(raw)
+
+
+def _resolve_valid_dictionary_candidates(
+    text: str, proposals: tuple[ProposedDictionaryCandidate, ...], title: str | None
+) -> tuple[DictionaryCandidate, ...]:
+    """Keep valid independent candidates; the first valid occurrence wins conflicts.
+
+    Stored results still use the strict resolver, so only validated positions can
+    enter the DB. A rejected candidate cannot discard an otherwise valid rewrite.
+    """
+    accepted: list[DictionaryCandidate] = []
+    for proposal in proposals:
+        try:
+            candidate, = _resolve_dictionary_candidates(text, (proposal,), title)
+        except (ValidationError, ValueError):
+            continue
+        if any(candidate.start < previous.end and previous.start < candidate.end
+               for previous in accepted):
+            continue
+        accepted.append(candidate)
+    return tuple(sorted(accepted, key=lambda item: item.start))
+
+
 def _credential_forms(api_key: str) -> tuple[str, ...]:
     secret = api_key.strip()
     return tuple({secret, quote(secret, safe=""), quote_plus(secret)})
@@ -394,7 +679,11 @@ class EasyLanguageResult(BaseModel):
     model: str = Field(min_length=1, strict=True)
     prompt_version: str = Field(min_length=1, strict=True)
     generated_at: AwareDatetime
+    # Legacy replacement generation only. Rewrite results keep an empty tuple.
     changes: tuple[AppliedChange, ...]
+    # None is a legacy replacement result; otherwise easy_text is the title, a line
+    # break and flatten_easy_rewrite(easy_result).
+    easy_result: ReviewedRewrite | None = None
     # None is legacy/unknown; an empty tuple means extraction completed with no candidates.
     dictionary_candidates: tuple[DictionaryCandidate, ...] | None = None
     attempt_count: int = Field(ge=1, le=2, strict=True)
@@ -414,6 +703,39 @@ class EasyLanguageResult(BaseModel):
             raise ValueError("모델과 프롬프트 버전이 필요합니다.")
         if self.source_hash != source_hash(source):
             raise ValueError("보관한 원문과 원문 해시가 일치하지 않습니다.")
+        if self.easy_result is not None:
+            if self.changes:
+                raise ValueError("다시 쓴 결과에는 단어 치환 목록이 없어야 합니다.")
+            body, _ = _body_text(source.text, self.original_title)
+            if self.prompt_version == "easy-rewrite-v3":
+                pass  # Structure is checked by Pydantic; Gemini reviews semantics.
+            elif self.prompt_version == "easy-rewrite-v2":
+                validate_minimal_rewrite(self.easy_result, body)
+            else:
+                validate_easy_rewrite(self.easy_result, body)
+            prefix = "" if self.original_title is None else self.original_title + "\n"
+            if self.easy_text != prefix + flatten_easy_rewrite(self.easy_result):
+                raise ValueError("보관한 재작성 결과로 쉬운 공지를 재현할 수 없습니다.")
+        else:
+            self._validate_legacy_changes(source)
+        if self.dictionary_candidates is not None:
+            candidates = _resolve_dictionary_candidates(
+                source.text,
+                tuple(
+                    ProposedDictionaryCandidate(
+                        original=candidate.original,
+                        query_word=candidate.query_word,
+                        context=candidate.context,
+                    )
+                    for candidate in self.dictionary_candidates
+                ),
+                self.original_title,
+            )
+            if self.dictionary_candidates != candidates:
+                raise ValueError("보관한 사전 후보와 원문 위치가 일치하지 않습니다.")
+        return self
+
+    def _validate_legacy_changes(self, source: NoticeGlossaryInput) -> None:
         resolved = _resolve_body_changes(
             source.text,
             EasyLanguageResponse(
@@ -434,22 +756,69 @@ class EasyLanguageResult(BaseModel):
             or apply_easy_language_changes(source.text, resolved) != self.easy_text
         ):
             raise ValueError("보관한 변경 목록으로 쉬운 공지를 재현할 수 없습니다.")
-        if self.dictionary_candidates is not None:
-            candidates = _resolve_dictionary_candidates(
-                source.text,
-                tuple(
-                    ProposedDictionaryCandidate(
-                        original=candidate.original,
-                        query_word=candidate.query_word,
-                        context=candidate.context,
-                    )
-                    for candidate in self.dictionary_candidates
-                ),
-                self.original_title,
-            )
-            if self.dictionary_candidates != candidates:
-                raise ValueError("보관한 사전 후보와 원문 위치가 일치하지 않습니다.")
-        return self
+
+
+def _validate_rewrite_credentials(
+    response: EasyRewriteResponse, body: str, credentials: tuple[str, ...]
+) -> None:
+    # Quotes may copy a credential that the body already contains; written text
+    # and lookup words may never contain one.
+    written = list(_display_texts(response.rewrite)) + [
+        text
+        for candidate in response.dictionary_candidates
+        for text in (candidate.original, candidate.query_word)
+    ]
+    copied = [text for item in response.rewrite.sentences() for text in item.evidence] + [
+        candidate.context for candidate in response.dictionary_candidates
+    ]
+    if any(secret in text for text in written for secret in credentials) or any(
+        secret in text and secret not in body for text in copied for secret in credentials
+    ):
+        raise ValueError("Gemini response failed credential validation.")
+    if any(secret in flatten_easy_rewrite(response.rewrite) for secret in credentials):
+        raise ValueError("Gemini response failed credential validation.")
+
+
+_RETRY_GENERAL = (
+    "\n\n이전 응답은 JSON 형식 또는 원문 검사에 실패했습니다. 같은 전체 원문을 다시 읽고 "
+    "rewrite와 dictionary_candidates를 모두 반환하세요. 모든 문장의 evidence에는 원문에서 "
+    "글자를 그대로 복사한 구절을 넣고, 원문에 없는 내용이나 예시의 내용을 넣지 마세요."
+)
+# Fixed local hints keyed by our own validation messages; never model output.
+_RETRY_HINTS = {
+    "사전 후보와 조회어에는 실제 용어만 사용할 수 있습니다.": (
+        " 사전 후보의 original과 query_word에는 콜론, 쉼표, 마침표를 넣지 마세요. "
+        "예: '구비서류:'의 original은 '구비서류'입니다."
+    ),
+    "사전 후보는 조사·어미를 포함한 원문 단어 전체여야 합니다.": (
+        " dictionary_candidates.original에서 조사·어미를 떼지 마세요. 예: 원문 '수혜자는'의 "
+        "original은 '수혜자는', query_word는 '수혜자'입니다. 전체 원문 단어를 복사하세요."
+    ),
+    "근거 문장이 원문에 그대로 있지 않습니다.": (
+        " evidence 중 원문과 글자가 다른 구절이 있었습니다. 공백, 기호, 줄바꿈까지 원문을 "
+        "그대로 복사하세요."
+    ),
+    "원문에 없는 숫자가 있습니다.": (
+        " 원문에 없는 숫자를 추가하지 마세요. 날짜, 금액, 연락처의 값을 확인하세요."
+    ),
+    "원문과 다른 URL이 있습니다.": (
+        " URL을 원문 그대로 별도 text 항목에 쓰고 조사나 마침표를 붙이지 마세요."
+    ),
+    "첨부 안내는 원문에서 그대로 인용하거나 null이어야 합니다.": (
+        " attachment_hint는 null로 두고 본문의 첨부 안내를 근거와 함께 문장으로 쓰세요."
+    ),
+}
+
+
+def _retry_guidance(error: Exception) -> str:
+    if isinstance(error, ValidationError):
+        details = error.errors(include_input=False)
+        messages = [str(detail.get("ctx", {}).get("error", "")) for detail in details]
+    else:
+        messages = [str(error)]
+    return _RETRY_GENERAL + "".join(
+        dict.fromkeys(_RETRY_HINTS[message] for message in messages if message in _RETRY_HINTS)
+    )
 
 
 def load_easy_language_prompt() -> str:
@@ -472,16 +841,17 @@ def simplify_notice(
     model: str = DEFAULT_MODEL,
     request: Callable[..., str] | None = None,
     clock: Callable[[], datetime] | None = None,
+    review_request: Callable[..., str] | None = None,
     budget: ExecutionBudget | None = None,
 ) -> EasyLanguageResult:
     """Share one execution deadline across generation, validation and correction."""
     with execution_budget(budget) as active:
         try:
             result = _simplify_notice(
-                source, api_key=api_key, model=model, request=request, clock=clock
+                source, api_key=api_key, model=model, request=request, clock=clock,
+                review_request=review_request
             )
-            active.check()
-            return result
+            return result  # A review timeout must not discard an already usable rewrite.
         except GeminiExecutionError as error:
             # Preserve scheduling metadata, but never an injected client's message.
             safe_error = EasyLanguageAPIError(
@@ -503,14 +873,14 @@ def _simplify_notice(
     model: str,
     request: Callable[..., str] | None,
     clock: Callable[[], datetime] | None,
+    review_request: Callable[..., str] | None,
 ) -> EasyLanguageResult:
-    """Retry invalid JSON/spans once; API failures never become successful empty work.
+    """Retry an invalid rewrite once; API failures never become successful empty work.
 
     DB inputs send the same body on both attempts; the title stays outside Gemini.
-    Direct text inputs have no known title boundary and are treated as body text. The model
-    chooses contextual equivalents and dictionary lookup forms; local validation
-    checks literal spans and protected formats, but cannot prove Korean semantic
-    equivalence or dictionary membership.
+    Direct text inputs have no known title boundary and are treated as body text.
+    Local validation checks structure and credentials. Gemini reviews meaning
+    and may correct the rewrite once; unavailable review is persisted as incomplete.
     """
     if not isinstance(source, NoticeGlossaryInput):
         raise EasyLanguageConfigurationError("A validated notice source is required.")
@@ -551,82 +921,37 @@ def _simplify_notice(
             if not isinstance(output, str):
                 raise ValueError("Gemini JSON must be text.")
             _validate_raw_credentials(output, request_text, credentials)
-            response = EasyLanguageResponse.model_validate_json(output)
-            _validate_decoded_credentials(response, request_text, credentials)
-            changes = _resolve_body_changes(source.text, response, title)
-            dictionary_candidates = _resolve_dictionary_candidates(
+            response = _parse_rewrite_response(output)
+            _validate_rewrite_credentials(response, request_text, credentials)
+            dictionary_candidates = _resolve_valid_dictionary_candidates(
                 source.text, response.dictionary_candidates, title
             )
-            easy_text = apply_easy_language_changes(source.text, changes)
-            _validate_generated_credentials(easy_text, changes, credentials)
         except (ValidationError, ValueError) as error:
             active.check()
             if attempt == 2:
                 raise EasyLanguageValidationError(
                     "Gemini easy-language JSON or source validation failed after two attempts."
                 ) from None
-            unchanged_term = isinstance(error, ValidationError) and any(
-                str(detail.get("ctx", {}).get("error", ""))
-                in {
-                    "바꿀 말은 원래 용어와 달라야 합니다.",
-                    "띄어쓰기만 바꾼 항목은 쉬운말 변경이 아닙니다.",
-                }
-                for detail in error.errors(include_input=False)
-            )
-            prompt += (
-                "\n\n이전 응답은 JSON 형식 또는 원문 위치 검사에 실패했습니다. "
-                "같은 전체 원문을 다시 읽고, 정확히 복사한 문맥과 용어만 반환하세요. "
-                "changes와 dictionary_candidates를 모두 반환하세요. "
-                "각 목록은 독립적으로 고르고 없으면 빈 배열로 반환하세요. "
-                "원문에 없는 말이나 예시의 용어를 넣지 마세요. "
-                "확신할 수 없는 변경은 제외하고, 앞뒤 문맥에 맞는 조사·어미를 포함한 "
-                "최소 구간을 고르세요. 바꾼 문장을 실제로 이어 읽어 확인하세요."
-            )
-            if unchanged_term:
-                # Send a fixed local hint, never model output or exception details.
-                prompt += (
-                    " original과 replacement가 같거나 띄어쓰기만 다른 항목이 있어 "
-                    "실패했습니다. 이 항목은 제외하고, 실제로 쉬워진 다른 변경은 유지하세요."
-                )
-            if isinstance(error, ValidationError) and any(
-                str(detail.get("ctx", {}).get("error", ""))
-                == "용어에는 글자와 일반 공백만 사용할 수 있습니다."
-                for detail in error.errors(include_input=False)
-            ):
-                prompt += (
-                    " 교체 구간에 문장부호·특수 공백이 들어 있어 실패했습니다. "
-                    "괄호·가운뎃점·줄바꿈은 context에만 복사하고 original/replacement에서는 "
-                    "빼세요. 실제 원문에서 해당 부호를 포함하지 않는 더 짧은 구간을 "
-                    "새로 고르세요. 원문 문자열 자체를 고쳐 복사하지 마세요."
-                )
-            if not isinstance(error, ValidationError):
-                # Explain a known local source failure without echoing its payload.
-                prompt += {
-                    "단어의 일부만 떼어 바꿀 수 없습니다.": (
-                        " 이전 응답의 original이 원문 단어의 일부만 포함해 실패했습니다. "
-                        "원문에 붙어 있는 조사·어미·복합어 전체를 original에 포함하세요. "
-                        "예를 들어 원문이 공종을이면 original은 공종을, "
-                        "replacement는 공사 종류를입니다. 공종만 반환하지 마세요."
-                    ),
-                    "원문과 문맥에 하나의 정확한 용어 위치가 필요합니다.": (
-                        " 이전 응답의 original 또는 context를 원문에서 한 곳으로 "
-                        "확정하지 못했습니다. 실제 입력에서 공백과 줄바꿈까지 그대로 "
-                        "복사하고, 원문에 없는 말이나 예시의 용어는 제외하세요. "
-                        "context 안에는 original이 정확히 한 번 있어야 합니다."
-                    ),
-                }.get(str(error), "")
+            prompt += _retry_guidance(error)
             continue
+        active.check()
+        reviewed = _review_rewrite(
+            response, body=request_text, api_key=api_key, model=model,
+            request=review_request or _default_review_request, credentials=credentials,
+        )
+        prefix = "" if title is None else title + "\n"
         return EasyLanguageResult(
             notice_id=source.notice_id,
             notice_revision=source.notice_revision,
             original_text=source.text,
             original_title=title,
-            easy_text=easy_text,
+            easy_text=prefix + flatten_easy_rewrite(reviewed),
             source_hash=source_hash(source),
             model=model,
             prompt_version=PROMPT_VERSION,
             generated_at=clock() if clock else datetime.now(UTC),
-            changes=changes,
+            changes=(),
+            easy_result=reviewed,
             dictionary_candidates=dictionary_candidates,
             attempt_count=attempt,
             body_text_present=source.body_text_present

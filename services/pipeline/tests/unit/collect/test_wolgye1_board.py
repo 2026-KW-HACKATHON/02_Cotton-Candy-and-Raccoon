@@ -220,3 +220,90 @@ def test_fetch_rate_limit_is_not_immediately_retried() -> None:
         fetch_list_page(WolgyeSettings(1, 2), transport=transport)
     assert error.value.rate_limited is True
     assert error.value.retryable is False
+
+
+@pytest.mark.parametrize("args", [
+    ["--end-page", "0"], ["--start-page", "3", "--end-page", "2"],
+    ["--end-page", "1", "--limit", "0"],
+    ["--end-page", "1", "--since", "2026-10-10", "--until", "2026-10-01"],
+])
+def test_backfill_rejects_invalid_bounds_before_io(args, monkeypatch):
+    from pipeline import backfill_wolgye1
+    from pipeline.cli import main
+
+    def unexpected(*args):
+        pytest.fail("invalid bounds must not access the DB")
+    monkeypatch.setattr(backfill_wolgye1, "_counts", unexpected)
+    assert main(["backfill-wolgye1", *args]) == 2
+
+
+def test_backfill_reports_failed_snapshot_and_conflicting_pinned_posts(monkeypatch, capsys):
+    import json
+
+    from pipeline import backfill_wolgye1
+    from pipeline.cli import main
+    from pipeline.sources.wolgye1_board import BoardPage
+
+    entry = BoardEntry("123", "공지", "월계1동", "2026-10-01", True)
+    first = BoardPage(1, 2, 2, 1, (entry,), ("100",))
+    second = BoardPage(2, 2, 2, 1, (replace(entry, title="수정"),), ("101",))
+    pages = iter([first, second, WolgyeSourceError("snapshot unavailable")])
+    def fetch(*args):
+        value = next(pages)
+        if isinstance(value, Exception):
+            raise value
+        return value
+    monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
+    monkeypatch.setattr(backfill_wolgye1, "_fetch_list_with_retry", fetch)
+    monkeypatch.setattr(backfill_wolgye1, "_counts", lambda _: {"stored": 0, "public": 0})
+    monkeypatch.setattr(backfill_wolgye1, "sleep", lambda _: None)
+    assert main(["backfill-wolgye1", "--end-page", "2", "--dry-run"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["failed_pages"] == [1]
+    assert report["conflicting_post_sns"] == ["123"]
+    assert report["duplicate_count"] == 1
+    assert report["saved_count"] == 0 and report["snapshot_stable"] is False
+
+
+def test_backfill_invalid_calendar_date_does_not_discard_other_candidates(monkeypatch, capsys):
+    import json
+
+    from pipeline import backfill_wolgye1
+    from pipeline.cli import main
+    from pipeline.sources.wolgye1_board import BoardPage
+
+    good = BoardEntry("123", "공지", "월계1동", "2026-10-01", False)
+    bad = replace(good, post_sn="456", registered_on="2026-02-31")
+    page = BoardPage(1, 2, 1, 10, (bad, good), ("456", "123"))
+    monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
+    monkeypatch.setattr(backfill_wolgye1, "_fetch_list_with_retry", lambda *_: page)
+    monkeypatch.setattr(backfill_wolgye1, "_counts", lambda _: {"stored": 0, "public": 0})
+    monkeypatch.setattr(backfill_wolgye1, "sleep", lambda _: None)
+    assert main(["backfill-wolgye1", "--end-page", "1", "--dry-run"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["selected_post_sns"] == ["123"]
+    assert report["failures"] == [
+        {"post_sn": "456", "stage": "listing", "reason_code": "invalid_registered_on"},
+    ]
+
+
+def test_backfill_repeated_regular_rows_cannot_report_complete(monkeypatch, capsys):
+    import json
+
+    from pipeline import backfill_wolgye1
+    from pipeline.cli import main
+    from pipeline.sources.wolgye1_board import BoardPage
+
+    entry = BoardEntry("123", "공지", "월계1동", "2026-10-01", False)
+    first = BoardPage(1, 2, 2, 1, (entry,), ("123",))
+    second = replace(first, number=2)
+    pages = iter([first, second, first])
+    monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
+    monkeypatch.setattr(backfill_wolgye1, "_fetch_list_with_retry", lambda *_: next(pages))
+    monkeypatch.setattr(backfill_wolgye1, "_counts", lambda _: {"stored": 0, "public": 0})
+    monkeypatch.setattr(backfill_wolgye1, "sleep", lambda _: None)
+    assert main(["backfill-wolgye1", "--end-page", "2", "--dry-run"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["failed_pages"] == [2]
+    assert report["snapshot_stable"] is True
+    assert report["scope_complete"] is False
