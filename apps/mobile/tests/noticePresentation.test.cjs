@@ -17,7 +17,12 @@ const compiled = ts.transpileModule(source, {
 }).outputText;
 const loaded = { exports: {} };
 new Function("module", "exports", compiled)(loaded, loaded.exports);
-const { getSummaryRows, isNoticeExpired, splitGlossaryText } = loaded.exports;
+const {
+  formatSummaryText,
+  getSummaryRows,
+  isNoticeExpired,
+  splitGlossaryText,
+} = loaded.exports;
 
 test("원문 용어도 반복·중첩 표현을 보존하며 같은 뜻풀이에 연결한다", () => {
   const terms = [
@@ -80,4 +85,52 @@ test("겹치는 용어는 긴 표현을 우선하고 반복된 표현도 원문�
   );
   assert.deepEqual(splitGlossaryText("안내", terms), [{ text: "안내" }]);
   assert.deepEqual(splitGlossaryText("", terms), []);
+});
+
+test("카드 문장과 명확한 목록만 줄바꿈하고 내용과 기존 개행을 보존한다", () => {
+  const cases = [
+    [
+      "신분증을 지참하세요. 대리 신청은 불가능합니다.",
+      "신분증을 지참하세요.\n대리 신청은 불가능합니다.",
+    ],
+    ["신청하셨나요? 결과를 확인하세요!", "신청하셨나요?\n결과를 확인하세요!"],
+    [
+      "“방문하세요.” 신분증이 필요합니다.",
+      "“방문하세요.”\n신분증이 필요합니다.",
+    ],
+    ["준비물 • 신분증 • 신청서", "준비물\n• 신분증\n• 신청서"],
+    ["1. 서류 준비 2. 방문 신청", "1. 서류 준비\n2. 방문 신청"],
+    ["(1) 서류 준비 (2) 방문 신청", "(1) 서류 준비\n(2) 방문 신청"],
+    ["1) 서류 준비 2) 방문 신청", "1) 서류 준비\n2) 방문 신청"],
+    [
+      "신청하세요.\n\n  방문하세요.\r\n문의하세요.",
+      "신청하세요.\n\n  방문하세요.\r\n문의하세요.",
+    ],
+  ];
+  for (const [input, expected] of cases) {
+    const result = formatSummaryText(input);
+    assert.equal(result, expected);
+    assert.equal(result.replace(/\s/g, ""), input.replace(/\s/g, ""));
+    assert.equal(formatSummaryText(result), result);
+  }
+});
+
+test("날짜·소수·시간·URL·연락처·애매한 구간을 줄바꿈하지 않는다", () => {
+  for (const text of [
+    "2026.10.10. 09:00 ~ 18:00",
+    "2026. 10. 10. 오후 6시까지",
+    "1.5 배, 2.0% 할인",
+    "전화 02-2116-1234",
+    "준비물: 신분증·신청서",
+    "https://example.com/안내. 다음 항목",
+    "www.example.com/확인! 다음 항목",
+    "문의: help@example.com 다음 항목",
+    "신청... 추가 안내",
+    "신청 대상: 주민",
+    "1. 서류 준비 3. 방문 신청",
+    "",
+    "  ",
+    "안내합니다.  ",
+  ])
+    assert.equal(formatSummaryText(text), text);
 });

@@ -9,6 +9,52 @@ export function getSummaryRows(notice: Notice) {
   ].filter(({ value }) => typeof value === "string" && value.trim().length > 0);
 }
 
+/** 저장된 문구는 그대로 두고 명확한 한국어 문장 끝과 목록 앞의 공백만 줄바꿈한다. */
+export function formatSummaryText(text: string): string {
+  // URL·메일 주소의 경로/쿼리에 한글과 문장부호가 있어도 분리하지 않는다.
+  const protectedSpans = Array.from(
+    text.matchAll(/(?:https?:\/\/|www\.)\S+|[^\s@]+@[^\s@]+/gi),
+    (match) => [match.index, match.index + match[0].length],
+  );
+  const listStarts = new Set<number>();
+  // 번호는 같은 줄에 1부터 순서대로 나온 목록만 인정한다. 날짜/숫자는 추측하지 않는다.
+  let lineOffset = 0;
+  for (const line of text.split(/(\r\n|\n|\r)/)) {
+    const markers = Array.from(
+      line.matchAll(/(?:^|[ \t]+)(\((\d+)\)|(\d+)[.)])[ \t]+(?=\S)/g),
+    );
+    if (
+      markers.length > 1 &&
+      markers.every(
+        (match, index) => Number(match[2] ?? match[3]) === index + 1,
+      )
+    ) {
+      for (const match of markers) {
+        listStarts.add(lineOffset + match.index + match[0].indexOf(match[1]));
+      }
+    }
+    lineOffset += line.length;
+  }
+  return text.replace(/[ \t]+/g, (space, offset: number) => {
+    const next = offset + space.length;
+    const before = text.slice(0, offset);
+    // 기존 개행과 들여쓰기, 행 끝 공백은 건드리지 않는다.
+    if (
+      !before ||
+      /[\r\n][ \t]*$/.test(before) ||
+      !text[next] ||
+      /[\r\n]/.test(text[next])
+    ) {
+      return space;
+    }
+    if (protectedSpans.some(([start, end]) => offset > start && offset <= end))
+      return space;
+    const sentenceEnd = /[가-힣][.!?]["'”’」』)]?$/.test(before);
+    const bullet = /^[•●■▶※][ \t]+\S/.test(text.slice(next));
+    return sentenceEnd || bullet || listStarts.has(next) ? "\n" : space;
+  });
+}
+
 /** 표시 문구를 파싱하지 않고 API의 명시적 날짜가 있을 때만 종료 여부를 판단한다. */
 export function isNoticeExpired(
   notice: Pick<Notice, "deadlineDate">,
