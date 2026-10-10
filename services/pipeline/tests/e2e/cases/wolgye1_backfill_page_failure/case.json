@@ -1,0 +1,47 @@
+{
+  "title": "두 번째 목록 페이지가 실패해도 세 번째 페이지는 저장",
+  "steps": [
+    {
+      "type": "backfill-wolgye1",
+      "args": [
+        "--end-page",
+        "3"
+      ],
+      "http": [
+        {
+          "route": "wolgye1_list",
+          "page": 1,
+          "body": "input/list_1.html"
+        },
+        {
+          "route": "wolgye1_list",
+          "page": 2,
+          "body": "input/list_2.html",
+          "status": 500
+        },
+        {
+          "route": "wolgye1_list",
+          "page": 3,
+          "body": "input/list_3.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261002090000102",
+          "body": "input/wolgye1_detail_20261002090000102.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261007090000104",
+          "body": "input/wolgye1_detail_20261007090000104.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261006090000105",
+          "body": "input/wolgye1_detail_20261006090000105.html"
+        }
+      ],
+      "expect_exit": 1
+    }
+  ],
+  "strict_unused": true
+}

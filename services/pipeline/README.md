@@ -223,6 +223,8 @@ python -m uv run pipeline collect-one --source wolgye1 --post-sn 게시물번호
 
 ## 월계1동 공지 여러 건 수집·저장
 
+과거 공지를 특정 페이지·등록일 범위로 보충하려면 `pipeline backfill-wolgye1 --end-page N --dry-run`으로 먼저 확인합니다. 범위 지정, 저장·공개 건수 비교 및 실제 검증 결과는 [월계1동 보충 수집 절차](../../docs/wolgye1-backfill.md)를 참고하세요.
+
 `collect --source wolgye1`은 목록에 표시된 총 페이지 수까지 순회한 뒤, 각 공지의 상세 본문과 첨부 정보를 확인하여 **공지 한 건씩 독립된 트랜잭션**으로 저장합니다. 월계1동 게시판의 고정 공지에는 다른 동 글도 섞이므로 `dong_group=other`, `is_pinned=true`로 구분합니다. 같은 `post_sn`이 여러 페이지나 고정·일반 행에 나타나면 한 건으로 합칩니다. 완전 수집에는 많은 HTTP 요청이 필요하므로 먼저 전용 DB에서 `--limit`으로 시험하세요.
 
 ```powershell
