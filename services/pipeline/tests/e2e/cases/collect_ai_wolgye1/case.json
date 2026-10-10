@@ -29,7 +29,7 @@
           "input/summary.json"
         ],
         "easy_text": [
-          "input/easy.json"
+          "input/rewrite_step_1_0.json"
         ]
       },
       "expect_exit": 0
@@ -90,7 +90,7 @@
           "input/summary_timeout.json"
         ],
         "easy_text": [
-          "input/easy.json"
+          "input/rewrite_step_4_0.json"
         ]
       },
       "expect_exit": 1
@@ -214,7 +214,7 @@
       ],
       "gemini": {
         "easy_text": [
-          "input/easy.json"
+          "input/rewrite_step_11_0.json"
         ]
       },
       "expect_exit": 0

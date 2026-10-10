@@ -168,7 +168,9 @@ export function EasyNoticeDetailScreen() {
             />
             <AppText size={EASY.body} secondary>
               {easy
-                ? "점선 표현을 누르면 원문 단어를 볼 수 있어요."
+                ? notice.easyIsRewrite
+                  ? "본문을 읽기 쉽게 다시 썼어요. 정확한 내용은 원문도 확인해 주세요."
+                  : "점선 표현을 누르면 원문 단어를 볼 수 있어요."
                 : dictionaryHint(notice)}
             </AppText>
             {easy && !notice.easyAttachmentContentIncluded && (

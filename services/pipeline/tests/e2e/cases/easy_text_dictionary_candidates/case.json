@@ -12,7 +12,7 @@
       ],
       "gemini": {
         "easy_text": [
-          "input/easy_900551.json"
+          "input/rewrite_step_1_0.json"
         ]
       },
       "http": [
@@ -104,7 +104,7 @@
       ],
       "gemini": {
         "easy_text": [
-          "input/easy_900551.json"
+          "input/rewrite_step_4_0.json"
         ]
       },
       "http": [
