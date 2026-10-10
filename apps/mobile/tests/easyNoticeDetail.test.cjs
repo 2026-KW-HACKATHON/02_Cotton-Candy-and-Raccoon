@@ -4,6 +4,10 @@ const fs = require("node:fs");
 const path = require("node:path");
 const ts = require("typescript");
 require("./loadTypeScript.cjs");
+const { loadTs } = require("./support/loadTs.cjs");
+const presentation = loadTs(
+  path.join(__dirname, "../src/features/notices/domain/noticePresentation.ts"),
+);
 
 // 화면을 실행하지 않고 재조회 전후의 본문·버튼·단어 설명 연결을 검증한다.
 function loadDetail(initialNotice, standard = false) {
@@ -59,11 +63,7 @@ function loadDetail(initialNotice, standard = false) {
         select({ savedIds: [], toggleBookmark() {} }),
     },
     "../domain/noticePresentation": {
-      getSummaryRows: (n) =>
-        [
-          { label: "대상", value: n.audience },
-          { label: "할 일", value: n.task },
-        ].filter((r) => r.value),
+      ...presentation,
       isNoticeExpired: () => false,
     },
   };
@@ -152,6 +152,9 @@ function loadDetail(initialNotice, standard = false) {
             node.props.accessibilityLabel?.endsWith("원문 근거 강조"),
         )
         .map((node) => node.props),
+      texts: nodes
+        .filter((node) => node.type === "AppText")
+        .map((node) => node.props.children),
       omissions: nodes.find((node) => node.type === "NoticeOmissions").props,
       document: nodes.find((node) => node.type === "NoticeDocumentText").props,
       toggle: standard
@@ -328,3 +331,16 @@ for (const standard of [false, true]) {
     assert.equal(screen.render().cards[0].accessibilityLabel, cards[0].accessibilityLabel);
   });
 }
+test("일반·편한 화면의 요약만 줄바꿈하고 원문과 저장된 카드 내용은 유지한다", () => {
+  const caution = "신분증을 지참하세요. 대리 신청은 불가능합니다.";
+  const notice = { ...NOTICE, caution, deadline: "2026.10.10. 18:00까지" };
+  for (const standard of [true, false]) {
+    const view = loadDetail(notice, standard).render();
+    assert.ok(
+      view.texts.includes("신분증을 지참하세요.\n대리 신청은 불가능합니다."),
+    );
+    assert.ok(view.texts.includes(notice.deadline));
+    assert.equal(view.document.text, NOTICE.original);
+    assert.equal(notice.caution, caution);
+  }
+});

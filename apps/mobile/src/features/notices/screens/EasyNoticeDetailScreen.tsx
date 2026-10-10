@@ -16,7 +16,11 @@ import { NoticeTermOverlay } from "../components/NoticeTermOverlay";
 import { NoticeOmissions } from "../components/NoticeOmissions";
 import { NoticeFiles } from "../components/NoticeFiles";
 import { NoticeSummaryStatus } from "../components/NoticeSummaryStatus";
-import { getSummaryRows, isNoticeExpired } from "../domain/noticePresentation";
+import {
+  formatSummaryText,
+  getSummaryRows,
+  isNoticeExpired,
+} from "../domain/noticePresentation";
 import { type GlossaryTerm } from "../types/notice";
 
 // Figma QYCEBzvJCSX22QZ1VmJn8Q, 460:955/1231 및 연결 오버레이, 조회 2026-10-08.
@@ -160,7 +164,9 @@ export function EasyNoticeDetailScreen() {
                   >
                     {row.label}
                   </AppText>
-                  <AppText size={EASY.body}>{row.value}</AppText>
+                  <AppText size={EASY.body}>
+                    {formatSummaryText(row.value)}
+                  </AppText>
                 </Pressable>
               ))}
             </View>

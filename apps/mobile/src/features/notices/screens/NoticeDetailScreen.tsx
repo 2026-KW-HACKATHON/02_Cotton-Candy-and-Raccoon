@@ -22,6 +22,7 @@ import { NoticeOmissions } from "../components/NoticeOmissions";
 import { NoticeFiles } from "../components/NoticeFiles";
 import { NoticeSummaryStatus } from "../components/NoticeSummaryStatus";
 import { type GlossaryTerm } from "../types/notice";
+import { formatSummaryText } from "../domain/noticePresentation";
 
 const SUMMARY_ICONS = [
   require("@/assets/figma/detail-imgIconSummaryCalendar.svg"),
@@ -200,7 +201,7 @@ function StandardNoticeContent({
                       {label}
                     </AppText>
                     <AppText size={16} lineHeight={26}>
-                      {value}
+                      {formatSummaryText(value)}
                     </AppText>
                   </View>
                 </Pressable>
