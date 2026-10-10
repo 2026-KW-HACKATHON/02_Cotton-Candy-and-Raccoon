@@ -1,4 +1,8 @@
 import { CARD_KEYS, type SummaryCardKey } from "../domain/summaryEvidence";
+import {
+  currentDictionaryTerm,
+  dictionaryHint,
+} from "../domain/noticeDictionary";
 import { useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
@@ -59,7 +63,7 @@ export function EasyNoticeDetailScreen() {
       overlay={
         <NoticeTermOverlay
           comfortable
-          term={term}
+          term={currentDictionaryTerm(notice, term)}
           easy={easy}
           onClose={() => setTerm(null)}
         />
@@ -186,13 +190,11 @@ export function EasyNoticeDetailScreen() {
               }}
             />
             <AppText size={EASY.body} secondary>
-              {!notice.hasEasyText
-                ? "쉬운말이 아직 준비되지 않았어요. 원문으로 확인해 주세요."
-                : easy
-                  ? notice.easyIsRewrite
-                    ? "본문을 읽기 쉽게 다시 썼어요. 정확한 내용은 원문도 확인해 주세요."
-                    : "점선 표현을 누르면 원문 단어를 볼 수 있어요."
-                  : "점선 단어를 누르면 뜻을 볼 수 있어요."}
+              {easy
+                ? notice.easyIsRewrite
+                  ? "본문을 읽기 쉽게 다시 썼어요. 정확한 내용은 원문도 확인해 주세요."
+                  : "점선 표현을 누르면 원문 단어를 볼 수 있어요."
+                : dictionaryHint(notice)}
             </AppText>
             {easy && !notice.easyAttachmentContentIncluded && (
               <AppText size={EASY.body} secondary>

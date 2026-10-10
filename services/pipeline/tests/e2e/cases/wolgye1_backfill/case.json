@@ -1,0 +1,148 @@
+{
+  "title": "범위 보충: dry-run, 기간, 뒤 페이지, 중복 및 건수 제한",
+  "steps": [
+    {
+      "type": "backfill-wolgye1",
+      "args": [
+        "--end-page",
+        "2",
+        "--dry-run"
+      ],
+      "http": [
+        {
+          "route": "wolgye1_list",
+          "page": 1,
+          "body": "input/list_1.html"
+        },
+        {
+          "route": "wolgye1_list",
+          "page": 2,
+          "body": "input/list_2.html"
+        }
+      ],
+      "expect_exit": 0
+    },
+    {
+      "type": "backfill-wolgye1",
+      "args": [
+        "--end-page",
+        "2",
+        "--since",
+        "2026-10-07"
+      ],
+      "http": [
+        {
+          "route": "wolgye1_list",
+          "page": 1,
+          "body": "input/list_1.html"
+        },
+        {
+          "route": "wolgye1_list",
+          "page": 2,
+          "body": "input/list_2.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261007090000104",
+          "body": "input/wolgye1_detail_20261007090000104.html"
+        }
+      ],
+      "expect_exit": 0
+    },
+    {
+      "type": "backfill-wolgye1",
+      "args": [
+        "--start-page",
+        "2",
+        "--end-page",
+        "2"
+      ],
+      "http": [
+        {
+          "route": "wolgye1_list",
+          "page": 1,
+          "body": "input/list_1.html"
+        },
+        {
+          "route": "wolgye1_list",
+          "page": 2,
+          "body": "input/list_2.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261002090000102",
+          "body": "input/wolgye1_detail_20261002090000102.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261006090000103",
+          "body": "input/wolgye1_detail_20261006090000103.html"
+        }
+      ],
+      "expect_exit": 0
+    },
+    {
+      "type": "backfill-wolgye1",
+      "args": [
+        "--end-page",
+        "2"
+      ],
+      "http": [
+        {
+          "route": "wolgye1_list",
+          "page": 1,
+          "body": "input/list_1.html"
+        },
+        {
+          "route": "wolgye1_list",
+          "page": 2,
+          "body": "input/list_2.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261002090000102",
+          "body": "input/wolgye1_detail_20261002090000102.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261007090000104",
+          "body": "input/wolgye1_detail_20261007090000104.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261006090000103",
+          "body": "input/wolgye1_detail_20261006090000103.html"
+        }
+      ],
+      "expect_exit": 0
+    },
+    {
+      "type": "backfill-wolgye1",
+      "args": [
+        "--end-page",
+        "2",
+        "--limit",
+        "1"
+      ],
+      "http": [
+        {
+          "route": "wolgye1_list",
+          "page": 1,
+          "body": "input/list_1.html"
+        },
+        {
+          "route": "wolgye1_list",
+          "page": 2,
+          "body": "input/list_2.html"
+        },
+        {
+          "route": "wolgye1_detail",
+          "post_sn": "20261002090000102",
+          "body": "input/wolgye1_detail_20261002090000102.html"
+        }
+      ],
+      "expect_exit": 1
+    }
+  ],
+  "strict_unused": true
+}

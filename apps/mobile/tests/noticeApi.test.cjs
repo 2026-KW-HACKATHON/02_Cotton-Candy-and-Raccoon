@@ -11,6 +11,23 @@ const {
   fileDownloadName,
 } = require("../src/features/notices/domain/noticeFiles.ts");
 const originalFetch = global.fetch;
+
+test("사전은 공개 RPC를 조회하고 잘못된 ID로 요청하지 않는다", async () => {
+  let count = 0;
+  global.fetch = async (url, options) => {
+    count++;
+    assert.equal(new URL(url).pathname, "/rest/v1/rpc/get_notice_dictionary");
+    assert.equal(new URL(url).searchParams.get("notice_id"), "6");
+    assert.deepEqual(options.headers, { apikey: "sb_publishable_test" });
+    return new Response(
+      JSON.stringify({ notice_id: 6, dictionary_candidates: [] }),
+    );
+  };
+  assert.equal(await api.fetchNoticeDictionary("invalid"), null);
+  assert.equal(count, 0);
+  assert.equal((await api.fetchNoticeDictionary("6")).notice_id, 6);
+  assert.equal(count, 1);
+});
 const envNames = [
   "EXPO_PUBLIC_SUPABASE_URL",
   "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY",

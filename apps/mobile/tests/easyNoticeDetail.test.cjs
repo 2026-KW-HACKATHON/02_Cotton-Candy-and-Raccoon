@@ -8,6 +8,7 @@ const { loadTs } = require("./support/loadTs.cjs");
 const presentation = loadTs(
   path.join(__dirname, "../src/features/notices/domain/noticePresentation.ts"),
 );
+require("./loadTypeScript.cjs");
 
 // 화면을 실행하지 않고 재조회 전후의 본문·버튼·단어 설명 연결을 검증한다.
 function loadDetail(initialNotice, standard = false) {
@@ -55,6 +56,7 @@ function loadDetail(initialNotice, standard = false) {
       RADIUS: {},
       CARD_SHADOW: {},
     },
+    "../domain/noticeDictionary": require("../src/features/notices/domain/noticeDictionary.ts"),
     "../hooks/useNotices": {
       useNotice: () => ({ data: notice, isError: false, isPending: false }),
     },
@@ -342,5 +344,38 @@ test("일반·편한 화면의 요약만 줄바꿈하고 원문과 저장된 카
     assert.ok(view.texts.includes(notice.deadline));
     assert.equal(view.document.text, NOTICE.original);
     assert.equal(notice.caution, caution);
+  }
+});
+
+test("두 상세 화면은 같은 팝업으로 사전 후보를 열고 원문 갱신 시 이전 뜻을 닫는다", () => {
+  const term = {
+    original: "지참",
+    plain: "",
+    dictionary: {
+      key: "3:5:지참",
+      queryWord: "지참",
+      status: "not_found",
+      entries: [],
+    },
+  };
+  for (const standard of [false, true]) {
+    const value = {
+      ...NOTICE,
+      documentParts: {
+        ...NOTICE.documentParts,
+        original: [{ text: "지참", term }],
+      },
+    };
+    const screen = loadDetail(value, standard);
+    screen.render().document.onTermPress(term);
+    assert.equal(screen.render().overlay.term.dictionary.status, "not_found");
+    screen.update({
+      ...value,
+      documentParts: {
+        ...value.documentParts,
+        original: [{ text: "변경된 원문" }],
+      },
+    });
+    assert.equal(screen.render().overlay.term, null);
   }
 });
