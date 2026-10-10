@@ -27,3 +27,12 @@ def mock_collect_db(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     monkeypatch.setattr("pipeline.cli.psycopg.connect", lambda *args, **kwargs: conn)
     monkeypatch.setattr("pipeline.cli.save_notice_with_files", lambda *args: 42)
     return conn
+
+
+@pytest.fixture(autouse=True)
+def isolate_easy_language_reviewer(monkeypatch):
+    """Legacy generation tests stay offline; review tests inject their own reviewer."""
+    monkeypatch.setattr(
+        "pipeline.glossary.easy_language._default_review_request",
+        lambda **kwargs: '{"issues": [], "corrected_rewrite": null}',
+    )

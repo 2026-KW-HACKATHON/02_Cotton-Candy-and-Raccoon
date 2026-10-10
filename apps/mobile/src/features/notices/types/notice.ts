@@ -48,6 +48,7 @@ export type Notice = {
   files?: NoticeFile[];
   omissions?: { message: string; url?: string }[];
   hasEasyText?: boolean;
+  easyIsRewrite?: boolean;
   easyAttachmentContentIncluded?: boolean;
   summaryEvidence?: SummaryEvidence;
   summaryStatus?: "none" | "pending" | "failed" | "summarized" | "needs_review";

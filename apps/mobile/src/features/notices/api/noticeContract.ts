@@ -12,7 +12,7 @@ export const LIST_COLUMNS =
   "id,source,title,department,registered_on,display_status,category_code,deadline_on,headline,card_summaries,has_easy_text";
 export const DETAIL_COLUMNS =
   LIST_COLUMNS +
-  ",result,url,body_text,preparation_omissions,files,easy_original_text,easy_text,easy_changes,easy_body_text_present,easy_attachment_content_included";
+  ",result,url,body_text,preparation_omissions,files,easy_original_text,easy_text,easy_changes,easy_body_text_present,easy_attachment_content_included,easy_result";
 const CATEGORIES: Record<number, NoticeCategory> = {
   21: "교통",
   22: "안전",
@@ -200,6 +200,18 @@ export function parseNotice(value: unknown): Notice {
     }
     notice.easy = easyTitleLength > 0 ? easy.slice(easyTitleLength) : easy;
     notice.hasEasyText = true;
+    notice.easyIsRewrite =
+      row.easy_result !== null &&
+      typeof row.easy_result === "object" &&
+      !Array.isArray(row.easy_result);
+    if (notice.easyIsRewrite) {
+      // Rewrite paragraphs have no replacement offsets. #105 may independently
+      // attach dictionary candidates to the original, never to this rewritten text.
+      notice.documentParts = {
+        original: [{ text: notice.original }],
+        easy: [{ text: notice.easy }],
+      };
+    }
   }
   return notice;
 }

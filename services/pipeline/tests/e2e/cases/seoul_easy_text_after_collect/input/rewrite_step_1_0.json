@@ -1,0 +1,22 @@
+{
+  "rewrite": {
+    "headline": "공지 내용을 쉽게 읽어 보세요.",
+    "intro": [],
+    "sections": [
+      {
+        "heading": "어떤 내용인가요?",
+        "style": "paragraph",
+        "sentences": [
+          {
+            "text": "환경 캠페인에 참여해 주세요.",
+            "evidence": [
+              "환경 캠페인에 참여하세요."
+            ]
+          }
+        ]
+      }
+    ],
+    "attachment_hint": null
+  },
+  "dictionary_candidates": []
+}

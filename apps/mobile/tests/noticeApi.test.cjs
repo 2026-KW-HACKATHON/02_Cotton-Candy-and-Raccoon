@@ -275,3 +275,33 @@ test("전체·기타·카테고리·정렬은 서로 다른 Query 캐시를 사�
     { category: 26, oldestFirst: true },
   ]);
 });
+
+
+test("본문 재작성은 문단을 보존하고 단어 치환 위치를 적용하지 않는다", () => {
+  const easyBody = "누가 신청하나요?\n65세 이상 주민이 신청할 수 있어요.\n\n무엇을 가져가나요?\n신분증을 가져오세요.";
+  const notice = parseNotice(row(1, {
+    body_text: "65세 이상 주민은 신분증 지참",
+    has_easy_text: true,
+    easy_body_text_present: true,
+    easy_original_text: "공문\n65세 이상 주민은 신분증 지참",
+    easy_text: "공문\n" + easyBody,
+    easy_changes: [],
+    easy_result: { headline: "신청 안내", intro: [], sections: [] },
+  }));
+  assert.equal(notice.hasEasyText, true);
+  assert.equal(notice.easyIsRewrite, true);
+  assert.equal(notice.easy, easyBody);
+  assert.deepEqual(notice.documentParts.easy, [{ text: easyBody }]);
+  assert.deepEqual(notice.documentParts.original, [{ text: notice.original }]);
+});
+
+test("재생성 전 기존 쉬운말과 본문 없는 공지를 구별한다", () => {
+  const input = row(1, {
+    body_text: "안내", has_easy_text: true, easy_body_text_present: true,
+    easy_original_text: "공문\n안내", easy_text: "공문\n안내", easy_changes: [],
+    easy_result: null,
+  });
+  assert.equal(parseNotice(input).hasEasyText, true);
+  assert.equal(parseNotice(input).easyIsRewrite, false);
+  assert.equal(parseNotice({ ...input, easy_body_text_present: false }).hasEasyText, false);
+});

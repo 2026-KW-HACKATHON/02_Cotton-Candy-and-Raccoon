@@ -291,7 +291,8 @@
         "easy_changes": null,
         "easy_body_text_present": null,
         "easy_attachment_content_included": null,
-        "easy_generated_at": null
+        "easy_generated_at": null,
+        "easy_result": null
       },
       "dong/1042/20261006090000103": {
         "source": "dong",
@@ -324,7 +325,8 @@
         "easy_changes": null,
         "easy_body_text_present": null,
         "easy_attachment_content_included": null,
-        "easy_generated_at": null
+        "easy_generated_at": null,
+        "easy_result": null
       },
       "dong/1042/20261007090000104": {
         "source": "dong",
@@ -363,7 +365,8 @@
         "easy_changes": null,
         "easy_body_text_present": null,
         "easy_attachment_content_included": null,
-        "easy_generated_at": null
+        "easy_generated_at": null,
+        "easy_result": null
       }
     },
     "get_notice_dictionary": {

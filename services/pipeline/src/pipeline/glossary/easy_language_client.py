@@ -1,4 +1,4 @@
-"""Public Gemini Generate Content API for contextual notice term replacements."""
+"""Public Gemini Generate Content API for question-section notice rewrites."""
 
 from google import genai
 from google.genai import types
@@ -14,7 +14,8 @@ from pipeline.glossary.easy_language import (
     DEFAULT_MODEL,
     EasyLanguageAPIError,
     EasyLanguageConfigurationError,
-    EasyLanguageResponse,
+    EasyRewriteResponse,
+    RewriteReviewResponse,
 )
 from pipeline.transform.gemini_logging import private_gemini_logging
 
@@ -26,13 +27,15 @@ def _enum_value(value: object) -> object:
 
 
 def generate_easy_language_json(
-    *, prompt: str, notice_text: str, api_key: str, model: str = DEFAULT_MODEL
+    *, prompt: str, notice_text: str, api_key: str, model: str = DEFAULT_MODEL,
+    review: bool = False,
 ) -> str:
     """Run this logical request inside the caller's shared execution budget."""
     _validate_request(prompt, notice_text, api_key, model)
     try:
         return run_gemini_request("easy_language", {
             "prompt": prompt, "notice_text": notice_text, "api_key": api_key, "model": model,
+            **({"review": True} if review else {}),
         })
     except GeminiExecutionError as error:
         raise _api_error(error) from None
@@ -61,7 +64,8 @@ def _validate_request(prompt: str, notice_text: str, api_key: str, model: str) -
 
 
 def _generate_easy_language_json_direct(
-    *, prompt: str, notice_text: str, api_key: str, model: str = DEFAULT_MODEL
+    *, prompt: str, notice_text: str, api_key: str, model: str = DEFAULT_MODEL,
+    review: bool = False,
 ) -> str:
     """One SDK attempt inside the worker, including its response contract check."""
     _validate_request(prompt, notice_text, api_key, model)
@@ -82,7 +86,9 @@ def _generate_easy_language_json_direct(
                 config=types.GenerateContentConfig(
                     system_instruction=prompt,
                     response_mime_type="application/json",
-                    response_json_schema=EasyLanguageResponse.model_json_schema(),
+                    response_json_schema=(
+                        RewriteReviewResponse if review else EasyRewriteResponse
+                    ).model_json_schema(),
                     candidate_count=1,
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
                 ),

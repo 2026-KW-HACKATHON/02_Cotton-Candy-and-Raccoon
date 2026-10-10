@@ -1,0 +1,22 @@
+{
+  "rewrite": {
+    "headline": "공지 내용을 쉽게 읽어 보세요.",
+    "intro": [],
+    "sections": [
+      {
+        "heading": "어떤 내용인가요?",
+        "style": "paragraph",
+        "sentences": [
+          {
+            "text": "월계1동 탁구 교실 참여할 분을 모집해요.",
+            "evidence": [
+              "월계1동 탁구 교실 참가자를 모집합니다."
+            ]
+          }
+        ]
+      }
+    ],
+    "attachment_hint": null
+  },
+  "dictionary_candidates": []
+}
