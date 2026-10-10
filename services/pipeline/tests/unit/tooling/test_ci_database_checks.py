@@ -186,7 +186,7 @@ def test_raw_collection_is_independent_of_ai_credentials():
 
 def test_all_raw_sources_precede_independently_bounded_features():
     workflow = (REPO_ROOT / ".github" / "workflows" / "collect.yml").read_text("utf-8")
-    steps = re.split(r"(?m)^      - ", workflow)
+    steps = re.split(r"(?m)^      - ", workflow.split("\n  migrate_ai_db:")[0])
     raw = [i for i, step in enumerate(steps) if "pipeline collect --source" in step]
     processing = [i for i, step in enumerate(steps) if "pipeline process-stored" in step]
     assert len(raw) == 3 and len(processing) == 6

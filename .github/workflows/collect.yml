@@ -16,11 +16,11 @@ on:
           - new
           - refresh
       operation:
-        description: "collect or apply the verified issue-76 DB upgrade"
+        description: "collect, bounded Wolgye 1 backfill, or verified issue-76 DB upgrade"
         required: false
         default: collect
         type: choice
-        options: [collect, migrate-ai-db]
+        options: [collect, migrate-ai-db, backfill-wolgye1]
 
 permissions:
   contents: read
@@ -32,7 +32,7 @@ concurrency:
 jobs:
   collect:
     # This opt-in gate prevents writes when the workflow is first merged.
-    if: vars.PIPELINE_PRODUCTION_ENABLED == 'true' && inputs.operation != 'migrate-ai-db'
+    if: vars.PIPELINE_PRODUCTION_ENABLED == 'true' && (inputs.operation == '' || inputs.operation == 'collect')
     runs-on: ubuntu-latest
     timeout-minutes: 360
     defaults:
@@ -304,3 +304,33 @@ jobs:
           if-no-files-found: error
       - name: Apply missing migrations and verify before commit
         run: uv run --no-dev --frozen python scripts/production_ai_migrations.py apply --backup "$RUNNER_TEMP/issue76-backup.enc"
+
+  backfill_wolgye1:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'backfill-wolgye1' && vars.PIPELINE_PRODUCTION_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: services/pipeline
+    env:
+      DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
+      - run: uv sync --no-dev --frozen
+      - name: Inspect bounded Wolgye 1 historical range without writes
+        run: uv run --no-dev --frozen pipeline backfill-wolgye1 --start-page 1 --end-page 3 --since 2026-01-01 --dry-run
+      - name: Backfill the inspected range and report counts
+        id: backfill
+        run: uv run --no-dev --frozen pipeline backfill-wolgye1 --start-page 1 --end-page 3 --since 2026-01-01
+      - name: Process Wolgye 1 summaries after backfill
+        if: vars.PIPELINE_AI_PROCESSING_ENABLED == 'true'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: uv run --no-dev --frozen pipeline process-stored --source wolgye1 --feature summary --limit 100
+      - name: Process Wolgye 1 easy text after backfill
+        if: ${{ !cancelled() && steps.backfill.outcome == 'success' && (vars.PIPELINE_AI_PROCESSING_ENABLED == 'true' || vars.PIPELINE_EASY_TEXT_ENABLED == 'true') }}
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          STDICT_API_KEY: ${{ secrets.STDICT_API_KEY }}
+        run: uv run --no-dev --frozen pipeline process-stored --source wolgye1 --feature easy_text --limit 100
