@@ -4,6 +4,7 @@ import {
   Animated,
   Easing,
   Modal,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -28,6 +29,8 @@ export function NoticeTermOverlay({
   onClose: () => void;
   comfortable?: boolean;
 }) {
+  const dictionary = !easy ? term?.dictionary : undefined;
+  const [sourceError, setSourceError] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const bottomPadding = Math.max(comfortable ? 24 : 54, insets.bottom + 16);
@@ -143,7 +146,25 @@ export function NoticeTermOverlay({
                 size={comfortable ? 20 : 16}
                 lineHeight={comfortable ? 30 : 26}
               >
-                {term?.meaning ?? term?.plain}
+                {dictionary
+                  ? dictionary.status === "found"
+                    ? dictionary.entries
+                        .map(
+                          (entry) =>
+                            `${entry.headword}\n${entry.senses
+                              .map(
+                                (sense, index) =>
+                                  `${index + 1}. [${sense.partOfSpeech}] ${sense.definition}`,
+                              )
+                              .join("\n")}`,
+                        )
+                        .join("\n\n")
+                    : dictionary.status === "not_found"
+                      ? "표준국어대사전에서 이 단어의 뜻을 찾지 못했어요."
+                      : dictionary.status === "pending"
+                        ? "이 단어의 사전 뜻을 아직 준비 중이에요."
+                        : "이 단어의 사전 뜻을 불러오지 못했어요."
+                  : (term?.meaning ?? term?.plain)}
               </AppText>
             )}
             <View style={styles.example}>
@@ -153,14 +174,62 @@ export function NoticeTermOverlay({
                 lineHeight={comfortable ? 30 : 22}
                 style={{ color: COLORS.primary }}
               >
-                {easy ? "쉬운말 표현" : term?.example ? "예시" : "쉬운말 표현"}
+                {dictionary
+                  ? "출처"
+                  : easy
+                    ? "쉬운말 표현"
+                    : term?.example
+                      ? "예시"
+                      : "쉬운말 표현"}
               </AppText>
-              <AppText
-                size={comfortable ? 20 : 16}
-                lineHeight={comfortable ? 30 : 26}
-              >
-                {easy ? term?.plain : (term?.example ?? term?.plain)}
-              </AppText>
+              {dictionary ? (
+                dictionary.status === "found" ? (
+                  <>
+                    {dictionary.entries.map((entry) => (
+                      <Pressable
+                        key={entry.sourceUrl}
+                        accessibilityRole="link"
+                        accessibilityLabel={`표준국어대사전 ${entry.headword} 보기`}
+                        onPress={() => {
+                          setSourceError(null);
+                          void Linking.openURL(entry.sourceUrl).catch(() =>
+                            setSourceError(entry.sourceUrl),
+                          );
+                        }}
+                      >
+                        <AppText
+                          size={comfortable ? 20 : 16}
+                          lineHeight={comfortable ? 30 : 26}
+                          style={{ color: COLORS.primary }}
+                        >
+                          {`국립국어원 표준국어대사전 · ${entry.headword}`}
+                        </AppText>
+                      </Pressable>
+                    ))}
+                    {dictionary.entries.some(
+                      (entry) => entry.sourceUrl === sourceError,
+                    ) && (
+                      <AppText size={comfortable ? 20 : 16}>
+                        사전 페이지를 열지 못했어요. 잠시 후 다시 눌러 주세요.
+                      </AppText>
+                    )}
+                  </>
+                ) : (
+                  <AppText
+                    size={comfortable ? 20 : 16}
+                    lineHeight={comfortable ? 30 : 26}
+                  >
+                    {`국립국어원 표준국어대사전 · 조회어: ${dictionary.queryWord}`}
+                  </AppText>
+                )
+              ) : (
+                <AppText
+                  size={comfortable ? 20 : 16}
+                  lineHeight={comfortable ? 30 : 26}
+                >
+                  {easy ? term?.plain : (term?.example ?? term?.plain)}
+                </AppText>
+              )}
             </View>
           </ScrollView>
         </Animated.View>

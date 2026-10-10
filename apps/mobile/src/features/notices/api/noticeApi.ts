@@ -26,18 +26,15 @@ function connection() {
   }
   return { url: url.replace(/\/$/, ""), key };
 }
-async function request(
-  view: "app_notice_list" | "app_notice_detail",
-  params: URLSearchParams,
-): Promise<unknown[]> {
+async function requestValue(path: string): Promise<unknown> {
   const { url, key } = connection();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15_000);
   try {
-    const response = await fetch(
-      url + "/rest/v1/" + view + "?" + params.toString(),
-      { headers: { apikey: key }, signal: controller.signal },
-    );
+    const response = await fetch(url + "/rest/v1/" + path, {
+      headers: { apikey: key },
+      signal: controller.signal,
+    });
     if (!response.ok)
       throw new NoticeRequestError(
         response.status === 401 || response.status === 403
@@ -47,7 +44,6 @@ async function request(
             : "connection",
       );
     const data: unknown = await response.json();
-    if (!Array.isArray(data)) throw new NoticeRequestError("contract");
     return data;
   } catch (error) {
     if (error instanceof NoticeRequestError) throw error;
@@ -55,6 +51,22 @@ async function request(
   } finally {
     clearTimeout(timer);
   }
+}
+async function request(
+  view: "app_notice_list" | "app_notice_detail",
+  params: URLSearchParams,
+): Promise<unknown[]> {
+  const data = await requestValue(view + "?" + params.toString());
+  if (!Array.isArray(data)) throw new NoticeRequestError("contract");
+  return data;
+}
+/** Read saved dictionary results through the existing public RPC; no provider calls. */
+export async function fetchNoticeDictionary(id: string): Promise<unknown> {
+  if (!/^\d+$/.test(id) || Number(id) <= 0 || !Number.isSafeInteger(Number(id)))
+    return null;
+  return requestValue(
+    "rpc/get_notice_dictionary?" + new URLSearchParams({ notice_id: id }),
+  );
 }
 export async function fetchNoticePage(
   cursor: NoticeCursor | null = null,

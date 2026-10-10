@@ -11,6 +11,23 @@ const {
   fileDownloadName,
 } = require("../src/features/notices/domain/noticeFiles.ts");
 const originalFetch = global.fetch;
+
+test("사전은 공개 RPC를 조회하고 잘못된 ID로 요청하지 않는다", async () => {
+  let count = 0;
+  global.fetch = async (url, options) => {
+    count++;
+    assert.equal(new URL(url).pathname, "/rest/v1/rpc/get_notice_dictionary");
+    assert.equal(new URL(url).searchParams.get("notice_id"), "6");
+    assert.deepEqual(options.headers, { apikey: "sb_publishable_test" });
+    return new Response(
+      JSON.stringify({ notice_id: 6, dictionary_candidates: [] }),
+    );
+  };
+  assert.equal(await api.fetchNoticeDictionary("invalid"), null);
+  assert.equal(count, 0);
+  assert.equal((await api.fetchNoticeDictionary("6")).notice_id, 6);
+  assert.equal(count, 1);
+});
 const envNames = [
   "EXPO_PUBLIC_SUPABASE_URL",
   "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
@@ -204,27 +221,39 @@ test("카테고리와 오래된순은 서버 전체 범위에 적용하고 다�
 
 test("상세는 근거 원본을 조회하지 않고 누락 첨부 안내는 유지한다", async () => {
   let url;
-  global.fetch = async (value) => { url = new URL(value); return new Response("[]"); };
+  global.fetch = async (value) => {
+    url = new URL(value);
+    return new Response("[]");
+  };
   await api.fetchNotice("1");
   const fields = url.searchParams.get("select").split(",");
   assert.ok(fields.includes("preparation_omissions"));
   assert.ok(!fields.includes("result"));
   assert.ok(!fields.includes("file_references"));
-  const notice = parseNotice(row(1, {
-    display_status: "needs_review",
-    result: { evidence: [{ excerpt: "원문 근거" }] },
-    preparation_omissions: [{ reason_code: "unsupported_type", url: "https://example.test/file.xlsx" }],
-  }));
+  const notice = parseNotice(
+    row(1, {
+      display_status: "needs_review",
+      result: { evidence: [{ excerpt: "원문 근거" }] },
+      preparation_omissions: [
+        {
+          reason_code: "unsupported_type",
+          url: "https://example.test/file.xlsx",
+        },
+      ],
+    }),
+  );
   assert.equal("evidence" in notice, false);
   assert.match(notice.omissions[0].message, /지원하지 않는 파일/);
   assert.equal(notice.omissions[0].url, "https://example.test/file.xlsx");
 });
 
 test("누락 첨부의 잘못된 주소는 공식 원문으로 안내한다", () => {
-  const notice = parseNotice(row(1, {
-    url: "https://example.test/notice",
-    preparation_omissions: [null, { url: "javascript:bad" }],
-  }));
+  const notice = parseNotice(
+    row(1, {
+      url: "https://example.test/notice",
+      preparation_omissions: [null, { url: "javascript:bad" }],
+    }),
+  );
   assert.equal(notice.omissions.length, 1);
   assert.equal(notice.omissions[0].url, "https://example.test/notice");
 });
