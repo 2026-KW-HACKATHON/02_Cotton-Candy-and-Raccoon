@@ -1,3 +1,4 @@
+import { CARD_KEYS, type SummaryCardKey } from "../domain/summaryEvidence";
 import { useCallback, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
@@ -69,6 +70,18 @@ function StandardNoticeContent({
   const [easyRequested, setEasy] = useState(false);
   const [term, setTerm] = useState<GlossaryTerm | null>(null);
   const notice = query.data;
+  const [selection, setSelection] = useState<{
+    card: SummaryCardKey;
+    notice: typeof notice;
+  } | null>(null);
+  const selectedCard =
+    selection?.notice === notice ? selection?.card : undefined;
+  const selectCard = (label: string) => {
+    const card = CARD_KEYS[label];
+    setTerm(null);
+    setEasy(false);
+    setSelection(selectedCard === card ? null : { card, notice });
+  };
   const easy = easyRequested && notice?.hasEasyText === true;
   const rows = notice
     ? [
@@ -166,7 +179,16 @@ function StandardNoticeContent({
                 핵심만 먼저 확인해요
               </AppText>
               {rows.map(([label, value], index) => (
-                <View key={label} style={styles.summaryRow}>
+                <Pressable
+                  key={label}
+                  style={styles.summaryRow}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${label}: ${value}. 원문 근거 강조`}
+                  accessibilityState={{
+                    selected: selectedCard === CARD_KEYS[label],
+                  }}
+                  onPress={() => selectCard(label)}
+                >
                   <View style={styles.iconBadge}>
                     <Image
                       source={SUMMARY_ICONS[index]}
@@ -181,7 +203,7 @@ function StandardNoticeContent({
                       {value}
                     </AppText>
                   </View>
-                </View>
+                </Pressable>
               ))}
             </View>
           )}
@@ -205,6 +227,7 @@ function StandardNoticeContent({
                   onPress={() => {
                     setTerm(null);
                     setEasy(mode);
+                    setSelection(null);
                   }}
                   style={[
                     styles.segmentItem,
@@ -252,6 +275,11 @@ function StandardNoticeContent({
               }
               terms={notice.terms}
               easy={easy}
+              highlights={
+                !easy && selectedCard
+                  ? notice.summaryEvidence?.[selectedCard]
+                  : undefined
+              }
               onTermPress={setTerm}
             />
           </View>
