@@ -134,3 +134,27 @@ test("날짜·소수·시간·URL·연락처·애매한 구간을 줄바꿈하�
   ])
     assert.equal(formatSummaryText(text), text);
 });
+
+test("연도 없는 날짜 범위를 목록으로 나누지 않고 실제 번호 목록은 유지한다", () => {
+  for (const text of [
+    "접수 기간: 1. 1.부터 2. 2.까지",
+    "접수 기간: 1. 1. ~ 2. 2.",
+    "1. 10.(월)부터 2. 20.(금)까지",
+    "기간: 1.\t1.부터 2.\t2.까지",
+    "2026. 1. 1.부터 2026. 2. 2.까지",
+  ]) {
+    assert.equal(formatSummaryText(text), text);
+  }
+  assert.equal(
+    formatSummaryText("기간: 1. 1.부터 2. 2.까지. 준비: 1. 신청서 2. 신분증"),
+    "기간: 1. 1.부터 2. 2.까지.\n준비:\n1. 신청서\n2. 신분증",
+  );
+  assert.equal(
+    formatSummaryText("1. 10명 모집 2. 20명 대기"),
+    "1. 10명 모집\n2. 20명 대기",
+  );
+  assert.equal(
+    formatSummaryText("1) 1. 1. 방문 2) 2. 2. 제출"),
+    "1) 1. 1. 방문\n2) 2. 2. 제출",
+  );
+});

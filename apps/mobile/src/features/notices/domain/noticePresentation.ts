@@ -20,9 +20,17 @@ export function formatSummaryText(text: string): string {
   // 번호는 같은 줄에 1부터 순서대로 나온 목록만 인정한다. 날짜/숫자는 추측하지 않는다.
   let lineOffset = 0;
   for (const line of text.split(/(\r\n|\n|\r)/)) {
+    // 월·일 및 연·월·일 전체 구간을 제외해야 날짜의 일도 목록 번호가 되지 않는다.
+    const dates = Array.from(
+      line.matchAll(/\b\d{1,4}\.[ \t]*\d{1,2}\.(?:[ \t]*\d{1,2}\.)?/g),
+      (match) => [match.index, match.index + match[0].length],
+    );
     const markers = Array.from(
       line.matchAll(/(?:^|[ \t]+)(\((\d+)\)|(\d+)[.)])[ \t]+(?=\S)/g),
-    );
+    ).filter((match) => {
+      const start = match.index + match[0].indexOf(match[1]);
+      return !dates.some(([from, to]) => start >= from && start < to);
+    });
     if (
       markers.length > 1 &&
       markers.every(
