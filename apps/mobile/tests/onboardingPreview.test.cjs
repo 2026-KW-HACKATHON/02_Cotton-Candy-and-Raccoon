@@ -131,6 +131,7 @@ function fixture() {
     "features/notices/components/NoticeDocumentText.tsx",
     {
       "../domain/noticePresentation": { splitGlossaryText },
+      "../domain/summaryEvidence": require("./support/loadTs.cjs").loadTs(path.join(__dirname, "../src/features/notices/domain/summaryEvidence.ts")),
     },
   );
   const preview = load("features/settings/components/OnboardingPreview.tsx", {
@@ -138,7 +139,7 @@ function fixture() {
     "@/features/notices/components/NoticeDocumentText": { NoticeDocumentText },
     "@/features/notices/fixtures/noticeFixtures": { NOTICE_PREVIEW_FIXTURES },
   });
-  return { ...preview, LetterOrbit, moves, input };
+  return { ...preview, LetterOrbit, NoticeDocumentText, moves, input };
 }
 
 function nodes(tree) {
@@ -258,4 +259,24 @@ test("하단 안내 이동 버튼과 제품 캐러셀의 기본 조작은 유지
     .find((node) => node.props?.accessibilityLabel === "다음 공문")
     .props.onPress();
   assert.deepEqual(moves, [1]);
+});
+
+test("원문 근거 배경과 사전 밑줄·클릭은 함께 동작하며 쉬운말은 강조하지 않는다", () => {
+  const { NoticeDocumentText } = fixture();
+  const term = { original: "공시송달", plain: "게시판 알림", meaning: "뜻" };
+  let pressed;
+  const props = {
+    text: "공시송달 신청", parts: [{ text: "공시송달", term }, { text: " 신청" }],
+    highlights: [{ start: 0, end: 4 }], onTermPress: (value) => { pressed = value; },
+  };
+  for (const comfortable of [false, true]) {
+    const rendered = nodes(NoticeDocumentText({ ...props, comfortable, easy: false }));
+    const button = rendered.find((n) => n.type === "Pressable");
+    button.props.onPress();
+    assert.equal(pressed, term);
+    const hasHighlight = (n) => JSON.stringify(n.props?.style ?? null).includes("#FFF2A8");
+    assert.ok(rendered.some(hasHighlight));
+    const easy = nodes(NoticeDocumentText({ ...props, comfortable, easy: true }));
+    assert.ok(!easy.some(hasHighlight));
+  }
 });

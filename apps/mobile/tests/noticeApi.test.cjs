@@ -219,7 +219,7 @@ test("카테고리와 오래된순은 서버 전체 범위에 적용하고 다�
   assert.equal(urls[2].searchParams.get("category_code"), "is.null");
 });
 
-test("상세는 근거 원본을 조회하지 않고 누락 첨부 안내는 유지한다", async () => {
+test("상세는 텍스트 근거를 조회하며 누락 첨부 안내를 유지한다", async () => {
   let url;
   global.fetch = async (value) => {
     url = new URL(value);
@@ -228,7 +228,7 @@ test("상세는 근거 원본을 조회하지 않고 누락 첨부 안내는 유
   await api.fetchNotice("1");
   const fields = url.searchParams.get("select").split(",");
   assert.ok(fields.includes("preparation_omissions"));
-  assert.ok(!fields.includes("result"));
+  assert.ok(fields.includes("result"));
   assert.ok(!fields.includes("file_references"));
   const notice = parseNotice(
     row(1, {

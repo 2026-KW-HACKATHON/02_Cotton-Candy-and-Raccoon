@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const ts = require("typescript");
+require("./loadTypeScript.cjs");
 const { loadTs } = require("./support/loadTs.cjs");
 const presentation = loadTs(
   path.join(__dirname, "../src/features/notices/domain/noticePresentation.ts"),
@@ -36,6 +37,7 @@ function loadDetail(initialNotice, standard = false) {
   const element = (type, props, key) => ({ type, props, key });
   let previousKey;
   const mocks = {
+    "../domain/summaryEvidence": require("../src/features/notices/domain/summaryEvidence.ts"),
     react,
     "react/jsx-runtime": { jsx: element, jsxs: element, Fragment: "Fragment" },
     "react-native": {
@@ -145,6 +147,13 @@ function loadDetail(initialNotice, standard = false) {
     }
     visit(tree);
     return {
+      cards: nodes
+        .filter(
+          (node) =>
+            node.type === "Pressable" &&
+            node.props.accessibilityLabel?.endsWith("원문 근거 강조"),
+        )
+        .map((node) => node.props),
       texts: nodes
         .filter((node) => node.type === "AppText")
         .map((node) => node.props.children),
@@ -282,6 +291,48 @@ test("일반·편한 상세 모두 누락 첨부 정보를 표시 컴포넌트�
   }
 });
 
+for (const standard of [false, true]) {
+  test(`카드 선택은 같은 화면의 원문만 강조하고 선택 해제 및 재조회 시 정리 (${standard})`, () => {
+    const audience = [{ start: 0, end: 2 }];
+    const action = [{ start: 3, end: 5 }];
+    const notice = {
+      ...NOTICE,
+      audience: "대상",
+      task: "할 일",
+      summaryEvidence: { audience, action },
+    };
+    const screen = loadDetail(notice, standard);
+    screen.render().toggle.onPress();
+    assert.equal(screen.render().document.easy, true);
+    screen.render().cards[0].onPress();
+    assert.equal(screen.render().document.easy, false);
+    assert.equal(screen.render().document.highlights, audience);
+    screen.render().document.onTermPress({ original: "원문", plain: "쉬운말" });
+    assert.ok(screen.render().overlay.term);
+    screen.render().cards[1].onPress();
+    assert.equal(screen.render().document.highlights, action);
+    assert.equal(screen.render().overlay.term, null);
+    screen.render().cards[1].onPress();
+    assert.equal(screen.render().document.highlights, undefined);
+    screen.render().cards[0].onPress();
+    screen.render().toggle.onPress();
+    assert.equal(screen.render().document.highlights, undefined);
+    screen.render().cards[0].onPress();
+    screen.update({ ...notice, original: "변경된 원문" });
+    assert.equal(screen.render().document.highlights, undefined);
+  });
+}
+
+for (const standard of [false, true]) {
+  test(`카드 접근성 이름은 실제 요약과 강조 동작을 함께 제공한다 (${standard})`, () => {
+    const screen = loadDetail({ ...NOTICE, audience: "월계1동 주민이 신청할 수 있어요", task: "신분증을 가지고 주민센터에 방문하세요" }, standard);
+    const cards = screen.render().cards;
+    assert.equal(cards[0].accessibilityLabel, "대상: 월계1동 주민이 신청할 수 있어요. 원문 근거 강조");
+    assert.equal(cards[1].accessibilityLabel, "할 일: 신분증을 가지고 주민센터에 방문하세요. 원문 근거 강조");
+    cards[0].onPress();
+    assert.equal(screen.render().cards[0].accessibilityLabel, cards[0].accessibilityLabel);
+  });
+}
 test("일반·편한 화면의 요약만 줄바꿈하고 원문과 저장된 카드 내용은 유지한다", () => {
   const caution = "신분증을 지참하세요. 대리 신청은 불가능합니다.";
   const notice = { ...NOTICE, caution, deadline: "2026.10.10. 18:00까지" };

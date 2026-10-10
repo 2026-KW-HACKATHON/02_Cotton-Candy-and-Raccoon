@@ -1,3 +1,4 @@
+import { locateSummaryEvidence } from "../domain/summaryEvidence";
 import {
   type DocumentPart,
   type GlossaryTerm,
@@ -11,7 +12,7 @@ export const LIST_COLUMNS =
   "id,source,title,department,registered_on,display_status,category_code,deadline_on,headline,card_summaries,has_easy_text";
 export const DETAIL_COLUMNS =
   LIST_COLUMNS +
-  ",url,body_text,preparation_omissions,files,easy_original_text,easy_text,easy_changes,easy_body_text_present,easy_attachment_content_included,easy_result";
+  ",result,url,body_text,preparation_omissions,files,easy_original_text,easy_text,easy_changes,easy_body_text_present,easy_attachment_content_included,easy_result";
 const CATEGORIES: Record<number, NoticeCategory> = {
   21: "교통",
   22: "안전",
@@ -107,6 +108,10 @@ export function parseNotice(value: unknown): Notice {
         ? text(row.deadline_on)
         : undefined,
     original: text(row.body_text),
+    summaryEvidence: locateSummaryEvidence(
+      text(row.body_text),
+      summaryAvailable ? row.result : null,
+    ),
     easy: "",
     hasEasyText: false,
     easyAttachmentContentIncluded:

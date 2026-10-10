@@ -1,3 +1,4 @@
+import { type SummaryEvidence } from "../domain/summaryEvidence";
 export type NoticeCategory =
   | "주민 참여"
   | "생활"
@@ -16,7 +17,11 @@ export type NoticeFile = {
   kind: "attachment" | "inline_image";
   url: string;
 };
-export type DocumentPart = { text: string; term?: GlossaryTerm };
+export type DocumentPart = {
+  text: string;
+  highlighted?: boolean;
+  term?: GlossaryTerm;
+};
 export type DictionaryEntry = {
   headword: string;
   sourceUrl: string;
@@ -59,6 +64,7 @@ export type Notice = {
   hasEasyText?: boolean;
   easyIsRewrite?: boolean;
   easyAttachmentContentIncluded?: boolean;
+  summaryEvidence?: SummaryEvidence;
   summaryStatus?: "none" | "pending" | "failed" | "summarized" | "needs_review";
   documentParts?: { original: DocumentPart[]; easy: DocumentPart[] };
 };

@@ -1,3 +1,7 @@
+import {
+  highlightDocumentParts,
+  type EvidenceRange,
+} from "../domain/summaryEvidence";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
 import { AppText } from "@/shared/ui/AppText";
@@ -13,6 +17,7 @@ export function NoticeDocumentText({
   comfortable = false,
   parts,
   interactive = true,
+  highlights = [],
 }: {
   text: string;
   terms?: readonly GlossaryTerm[];
@@ -21,11 +26,15 @@ export function NoticeDocumentText({
   comfortable?: boolean;
   parts?: DocumentPart[];
   interactive?: boolean;
+  highlights?: readonly EvidenceRange[];
 }) {
   const paragraphs: DocumentPart[][] = [[]];
   const sourceParts =
     parts ?? splitGlossaryText(text, terms, easy ? "plain" : "original");
-  for (const part of sourceParts) {
+  for (const part of highlightDocumentParts(
+    sourceParts,
+    easy ? [] : highlights,
+  )) {
     part.text.split("\n").forEach((value, index) => {
       if (index > 0) paragraphs.push([]);
       paragraphs[paragraphs.length - 1].push({ ...part, text: value });
@@ -53,7 +62,10 @@ export function NoticeDocumentText({
                     <AppText
                       size={comfortable ? 20 : 16}
                       lineHeight={comfortable ? 30 : 24}
-                      style={styles.linkText}
+                      style={[
+                        styles.linkText,
+                        part.highlighted && styles.highlight,
+                      ]}
                     >
                       {part.text}
                     </AppText>
@@ -72,7 +84,10 @@ export function NoticeDocumentText({
                       key={`${partIndex}-${wordIndex}`}
                       size={comfortable ? 20 : 16}
                       lineHeight={comfortable ? 30 : 24}
-                      style={comfortable && { maxWidth: "100%" }}
+                      style={[
+                        comfortable && { maxWidth: "100%" },
+                        part.highlighted && styles.highlight,
+                      ]}
                     >
                       {word}
                     </AppText>
@@ -84,6 +99,7 @@ export function NoticeDocumentText({
   );
 }
 const styles = StyleSheet.create({
+  highlight: { backgroundColor: "#FFF2A8" },
   paragraphs: { gap: 8 },
   paragraph: { flexDirection: "row", flexWrap: "wrap", alignItems: "center" },
   // 링크의 상하 여백이 본문 줄간격을 늘리지 않도록 터치 여유는 hitSlop으로 제공한다.
