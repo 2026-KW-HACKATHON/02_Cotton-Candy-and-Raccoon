@@ -19,7 +19,8 @@ from e2e.harness.snapshot import normalize, normalize_json, read_anon, read_data
 from support.db import database_uri
 
 STEP_TYPES = (
-    "collect", "collect-one", "process-pending", "process-stored", "notice-glossary", "sql",
+    "backfill-wolgye1", "collect", "collect-one", "process-pending", "process-stored",
+    "notice-glossary", "sql",
 )
 # Retry timestamps depend on real DB time and jitter. Preserve their presence;
 # policy intervals and Retry-After floors are checked in the runner boundary tests.

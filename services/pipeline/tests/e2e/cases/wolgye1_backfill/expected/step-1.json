@@ -1,0 +1,82 @@
+{
+  "exit_code": 0,
+  "report": {
+    "source": "wolgye1",
+    "dry_run": true,
+    "start_page": 1,
+    "end_page": 2,
+    "since": null,
+    "until": null,
+    "limit": null,
+    "board_total_count": 2,
+    "board_total_pages": 2,
+    "pages_read": [
+      1,
+      2
+    ],
+    "failed_pages": [],
+    "snapshot_stable": true,
+    "duplicate_count": 1,
+    "conflicting_post_sns": [],
+    "candidate_count": 3,
+    "selected_count": 3,
+    "selected_post_sns": [
+      "20261002090000102",
+      "20261007090000104",
+      "20261006090000103"
+    ],
+    "saved_count": 0,
+    "limited": false,
+    "scope_complete": true,
+    "before": {
+      "stored": 0,
+      "public": 0
+    },
+    "after": {
+      "stored": 0,
+      "public": 0
+    },
+    "delta": {
+      "stored": 0,
+      "public": 0
+    },
+    "failures": []
+  },
+  "stderr": [],
+  "http_calls": [
+    "wolgye1_list 1",
+    "wolgye1_list 2",
+    "wolgye1_list 1"
+  ],
+  "gemini_calls": {},
+  "db": {
+    "notices": {},
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {},
+    "notice_dictionary_links": {},
+    "standard_dictionary_cache": {},
+    "notice_summary_executions": {},
+    "notice_processing_jobs": {}
+  },
+  "row_counts": {
+    "holidays": 0,
+    "notice_dictionary_links": 0,
+    "notice_easy_texts": 0,
+    "notice_files": 0,
+    "notice_processing_jobs": 0,
+    "notice_summaries": 0,
+    "notice_summary_executions": 0,
+    "notices": 0,
+    "standard_dictionary_cache": 0
+  },
+  "anon": {
+    "notices": {},
+    "notice_files": {},
+    "notice_summaries": {},
+    "notice_easy_texts": {},
+    "app_notice_list": {},
+    "app_notice_detail": {},
+    "get_notice_dictionary": {}
+  }
+}

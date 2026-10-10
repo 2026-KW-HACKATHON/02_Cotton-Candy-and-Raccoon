@@ -5,6 +5,7 @@ from collections.abc import Sequence
 
 import psycopg
 
+from pipeline import backfill_wolgye1
 from pipeline.attachments.nowon_html import (
     AttachmentError,
     extract_files,
@@ -72,6 +73,7 @@ def _add_processing_options(parser: argparse.ArgumentParser) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Nowon notice collection pipeline")
     subparsers = parser.add_subparsers(dest="command", required=True)
+    backfill_wolgye1.add_parser(subparsers)
     check = subparsers.add_parser("check-config", help="validate required environment variables")
     check.add_argument(
         "--source",
@@ -175,6 +177,9 @@ def _exit_code(complete: bool, processor: CollectionPostprocessing | None) -> in
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.command == "backfill-wolgye1":
+        return backfill_wolgye1.run(args)
 
     if args.command == "process-stored":
         try:
