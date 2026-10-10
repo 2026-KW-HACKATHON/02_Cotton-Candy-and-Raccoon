@@ -1,16 +1,21 @@
 """Local PostgreSQL: body-only conversions and title-preserving public reads."""
 
-import json
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 import pytest
 from psycopg.types.json import Jsonb
 from support.collect_easy_text_storage import committed_easy_db as committed_easy_db
+from support.easy_rewrite import rewrite_request
 from support.easy_text_storage import easy_db as easy_db
 from support.easy_text_storage import service_db as service_db
 
-from pipeline.glossary.easy_language import DEFAULT_MODEL, PROMPT_VERSION, NoNoticeBodyError
+from pipeline.glossary.easy_language import (
+    DEFAULT_MODEL,
+    PROMPT_VERSION,
+    NoNoticeBodyError,
+    flatten_easy_rewrite,
+)
 from pipeline.glossary.easy_language_service import simplify_and_store_notice
 from pipeline.glossary.notice_service import load_notice_glossary_input
 from pipeline.glossary.source import source_hash
@@ -65,17 +70,7 @@ def _public_rows(conn, role, notice_id):
 def test_gemini_receives_body_only_and_exact_title_is_retained(service_db):
     title = "익일 안내 😀\n접수 공고"
     source = _notice(service_db, title=title)
-    request = MagicMock(
-        return_value=json.dumps(
-            {
-                "changes": [
-                    {"original": "익일", "replacement": "다음 날", "context": "익일 방문하세요."}
-                ],
-                "dictionary_candidates": [],
-            },
-            ensure_ascii=False,
-        )
-    )
+    request = MagicMock(side_effect=rewrite_request)
 
     service_db.commit()
     result = simplify_and_store_notice(
@@ -85,8 +80,8 @@ def test_gemini_receives_body_only_and_exact_title_is_retained(service_db):
     request.assert_called_once()
     assert request.call_args.kwargs["notice_text"] == "익일 방문하세요."
     assert result.original_text == title + "\n익일 방문하세요."
-    assert result.easy_text == title + "\n다음 날 방문하세요."
-    assert result.changes[0].start == len(title) + 1
+    assert result.easy_text == title + "\n" + flatten_easy_rewrite(result.easy_result)
+    assert result.changes == ()
     assert result.prompt_version == PROMPT_VERSION
     assert get_notice_easy_text(service_db, source.notice_id) == result
     for role in ("anon", "authenticated"):

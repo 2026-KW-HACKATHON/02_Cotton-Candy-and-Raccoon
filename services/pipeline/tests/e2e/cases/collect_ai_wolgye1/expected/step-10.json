@@ -169,7 +169,7 @@
       "dong/1042/20261006090000501|easy_text": {
         "feature": "easy_text",
         "input_version": "ec725944ab1364f1a5c8068c5c763b81297582e8f55ed4dfecfe99aa9becbeee",
-        "contract_key": "{\"model\":\"gemini-3.5-flash-lite\",\"prompt_version\":\"easy-language-v8\"}",
+        "contract_key": "{\"model\":\"gemini-3.5-flash-lite\",\"prompt_version\":\"easy-rewrite-v3\"}",
         "state": "retry_wait",
         "attempts": 1,
         "next_attempt_at": "<changed>",
@@ -499,7 +499,8 @@
         "easy_changes": null,
         "easy_body_text_present": null,
         "easy_attachment_content_included": null,
-        "easy_generated_at": null
+        "easy_generated_at": null,
+        "easy_result": null
       }
     },
     "get_notice_dictionary": {

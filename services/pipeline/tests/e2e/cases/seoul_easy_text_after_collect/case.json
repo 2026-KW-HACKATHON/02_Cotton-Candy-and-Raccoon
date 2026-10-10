@@ -21,7 +21,7 @@
       ],
       "gemini": {
         "easy_text": [
-          "input/easy.json"
+          "input/rewrite_step_1_0.json"
         ]
       },
       "expect_exit": 0
@@ -99,7 +99,7 @@
       ],
       "gemini": {
         "easy_text": [
-          "input/easy.json"
+          "input/rewrite_step_4_0.json"
         ]
       },
       "expect_exit": 0

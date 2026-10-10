@@ -38,7 +38,7 @@
           "input/summary_timeout.json"
         ],
         "easy_text": [
-          "input/easy.json"
+          "input/rewrite_step_3_0.json"
         ]
       },
       "expect_exit": 1
@@ -94,7 +94,7 @@
           "input/summary_timeout.json"
         ],
         "easy_text": [
-          "input/easy.json"
+          "input/rewrite_step_9_0.json"
         ]
       },
       "expect_exit": 1
