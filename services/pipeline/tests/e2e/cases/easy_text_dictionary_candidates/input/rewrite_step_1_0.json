@@ -1,0 +1,55 @@
+{
+  "rewrite": {
+    "headline": "공지 내용을 쉽게 읽어 보세요.",
+    "intro": [],
+    "sections": [
+      {
+        "heading": "어떤 내용인가요?",
+        "style": "paragraph",
+        "sentences": [
+          {
+            "text": "📢 다음 날에는 준비해야 하는 서류를 가져와 방문하세요.",
+            "evidence": [
+              "📢 익일에는 구비서류를 지참하시어 방문하세요."
+            ]
+          },
+          {
+            "text": "담당자가 직권처리를 해요.",
+            "evidence": [
+              "직권처리는 담당자가 진행합니다."
+            ]
+          },
+          {
+            "text": "다시 방문할 때도 준비해야 하는 서류를 가져오세요.",
+            "evidence": [
+              "재방문할 때에도 구비서류를 지참하시어 방문하세요."
+            ]
+          }
+        ]
+      }
+    ],
+    "attachment_hint": null
+  },
+  "dictionary_candidates": [
+    {
+      "original": "구비서류를",
+      "query_word": "구비서류",
+      "context": "익일에는 구비서류를 지참하시어 방문하세요."
+    },
+    {
+      "original": "지참하시어",
+      "query_word": "지참하다",
+      "context": "익일에는 구비서류를 지참하시어 방문하세요."
+    },
+    {
+      "original": "직권처리는",
+      "query_word": "직권처리",
+      "context": "직권처리는 담당자가 진행합니다."
+    },
+    {
+      "original": "구비서류를",
+      "query_word": "구비서류",
+      "context": "재방문할 때에도 구비서류를 지참하시어 방문하세요."
+    }
+  ]
+}

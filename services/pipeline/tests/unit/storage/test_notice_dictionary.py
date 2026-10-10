@@ -96,7 +96,7 @@ def test_sql_and_python_tokens_match_across_timezones(linked_notice):
 
 @pytest.mark.parametrize("field,value", [
     ("cache_key", "b" * 64), ("easy_start", 0), ("easy_expression", "다른 말"),
-    ("mapping_status", "original_only"), ("query_word", "신청"),
+    ("mapping_status", "replaced"), ("query_word", "신청"),
     ("definition", "복사해서는 안 되는 뜻풀이"), ("error_code", "secret-api-key"),
 ])
 def test_save_rejects_forged_mapping_or_unapproved_errors(linked_notice, field, value):
@@ -157,7 +157,9 @@ def test_link_save_commits_and_preserves_all_occurrence_positions(linked_notice)
     assert public["easy_text"] == result.easy_text
     assert public["dictionary_status"] == "partial"
     item = public["dictionary_candidates"][0]
-    assert item["easy_expression"] == "준비할 서류를"
+    # A rewrite has no word alignment; the candidate stays on the original text.
+    assert item["mapping_status"] == "original_only"
+    assert item["easy_expression"] is None
     assert item["original"] == "구비서류를"
     assert item["dictionary"] is None
     assert item["error_code"] == "dictionary_missing_api_key"

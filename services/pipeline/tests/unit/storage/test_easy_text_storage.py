@@ -1,12 +1,12 @@
 """Real local PostgreSQL: preservation, cache reuse, stale source and read policies."""
 
-import json
 from datetime import timedelta
 from unittest.mock import MagicMock
 
 import pytest
 from psycopg.pq import TransactionStatus
 from support.collect_easy_text_storage import committed_easy_db as committed_easy_db
+from support.easy_rewrite import legacy_result, rewrite_response
 from support.easy_text_storage import _NOW, _candidate_result, _notice, _request, _result
 from support.easy_text_storage import easy_db as easy_db
 from support.easy_text_storage import service_db as service_db
@@ -16,6 +16,7 @@ from pipeline.glossary.easy_language import (
     PROMPT_VERSION,
     EasyLanguageAPIError,
     EasyLanguageResult,
+    flatten_easy_rewrite,
     simplify_notice,
 )
 from pipeline.glossary.easy_language_service import simplify_and_store_notice
@@ -36,7 +37,7 @@ def test_repeated_notice_read_and_conversion_have_zero_additional_api_calls(
     request = MagicMock(side_effect=_request)
     service_db.commit()
     result = simplify_and_store_notice(service_db, source, api_key="fake", request=request)
-    assert result.easy_text == source.text.replace("구비서류를", "준비할 서류를")
+    assert result.easy_text == source.title + "\n" + flatten_easy_rewrite(result.easy_result)
     assert get_notice_easy_text(service_db, source.notice_id) == result
     monkeypatch.setattr(
         "pipeline.glossary.easy_language_service.load_gemini_api_key",
@@ -65,18 +66,17 @@ def test_repeated_notice_read_and_conversion_have_zero_additional_api_calls(
 )
 def test_new_prompt_replaces_old_cache_once_then_reuses_it(service_db, old_changes):
     source = _notice(service_db)
-    previous = simplify_notice(
-        source,
-        api_key="fake",
-        request=lambda **kwargs: json.dumps(
-            {"changes": old_changes, "dictionary_candidates": []}, ensure_ascii=False
-        ),
-        clock=lambda: _NOW,
-    )
-    previous = EasyLanguageResult.model_validate(
-        {**previous.model_dump(), "prompt_version": "easy-language-v3"}
+    previous = legacy_result(
+        source.text,
+        *old_changes,
+        title=source.title,
+        notice_id=source.notice_id,
+        notice_revision=source.notice_revision,
+        prompt_version="easy-language-v3",
+        generated_at=_NOW,
     )
     save_notice_easy_text(service_db, previous)
+    assert get_notice_easy_text(service_db, source.notice_id).easy_result is None
     request = MagicMock(side_effect=_request)
     service_db.commit()
     result = simplify_and_store_notice(
@@ -88,6 +88,7 @@ def test_new_prompt_replaces_old_cache_once_then_reuses_it(service_db, old_chang
     )
     assert result.prompt_version == PROMPT_VERSION != previous.prompt_version
     assert result.easy_text != source.text
+    assert result.easy_result is not None and result.changes == ()
     assert service_db.info.transaction_status == TransactionStatus.IDLE
     assert simplify_and_store_notice(service_db, source, request=request) == result
     request.assert_called_once()
@@ -287,14 +288,9 @@ def test_save_rejects_standalone_candidate_that_resolves_inside_database_title(e
     result = simplify_notice(
         standalone,
         api_key="fake",
-        request=lambda **kwargs: json.dumps(
-            {
-                "changes": [],
-                "dictionary_candidates": [
-                    {"original": "모집", "query_word": "모집", "context": "참가자 모집"}
-                ],
-            },
-            ensure_ascii=False,
+        request=lambda **kwargs: rewrite_response(
+            kwargs["notice_text"],
+            candidates=[{"original": "모집", "query_word": "모집", "context": "참가자 모집"}],
         ),
         clock=lambda: _NOW,
     )
@@ -303,3 +299,36 @@ def test_save_rejects_standalone_candidate_that_resolves_inside_database_title(e
         save_notice_easy_text(easy_db, result)
 
     assert get_notice_easy_text(easy_db, source.notice_id) is None
+
+
+@pytest.mark.parametrize("keep_valid", [True, False])
+def test_bad_dictionary_candidates_do_not_prevent_saving_or_cache_reuse(service_db, keep_valid):
+    source = _notice(service_db)
+    body = source.text.split("\n", 1)[1]
+    candidates = [{}, {"original": "없는말", "query_word": "없는말", "context": body}]
+    if keep_valid:
+        candidates.append({"original": "구비서류를", "query_word": "구비서류", "context": body})
+    request = MagicMock(return_value=rewrite_response(body, candidates=candidates))
+    service_db.commit()
+    result = simplify_and_store_notice(service_db, source, api_key="fake", request=request)
+    assert result.easy_result is not None and result.attempt_count == 1
+    assert len(result.dictionary_candidates) == int(keep_valid)
+    if keep_valid:
+        assert result.dictionary_candidates[0].original == "구비서류를"
+    assert get_notice_easy_text(service_db, source.notice_id) == result
+    service_db.commit()
+    assert simplify_and_store_notice(service_db, source, request=request) == result
+    request.assert_called_once()
+
+
+@pytest.mark.parametrize("status", ["passed", "corrected", "incomplete"])
+def test_review_status_is_persisted_in_easy_result(easy_db, status):
+    source = _notice(easy_db)
+    result = _result(source)
+    payload = result.model_dump(mode="json")
+    payload["easy_result"]["review"] = {"status": status}
+    result = EasyLanguageResult.model_validate(payload)
+    save_notice_easy_text(easy_db, result)
+    loaded = get_notice_easy_text(easy_db, source.notice_id)
+    assert loaded.easy_result.review.status == status
+    assert loaded == result

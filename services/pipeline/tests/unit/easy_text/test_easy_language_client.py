@@ -15,12 +15,12 @@ from pipeline.glossary import easy_language_client
 from pipeline.glossary.easy_language import (
     EasyLanguageAPIError,
     EasyLanguageConfigurationError,
-    EasyLanguageResponse,
+    EasyRewriteResponse,
 )
 
 KEY = "fake-gemini-client-secret"
 REMOTE_TEXT = "private-provider-response"
-JSON_TEXT = '{"changes": [], "dictionary_candidates": []}'
+JSON_TEXT = '{"rewrite": {}, "dictionary_candidates": []}'
 REAL_SDK_CLIENT = easy_language_client.genai.Client
 
 
@@ -141,9 +141,9 @@ def test_public_generate_content_keeps_notice_exact_and_uses_structured_schema(
     assert isinstance(config, types.GenerateContentConfig)
     assert config.system_instruction == prompt
     assert config.response_mime_type == "application/json"
-    assert config.response_json_schema == EasyLanguageResponse.model_json_schema()
-    assert set(config.response_json_schema["required"]) == {"changes", "dictionary_candidates"}
-    assert set(config.response_json_schema["properties"]) == {"changes", "dictionary_candidates"}
+    assert config.response_json_schema == EasyRewriteResponse.model_json_schema()
+    assert set(config.response_json_schema["required"]) == {"rewrite", "dictionary_candidates"}
+    assert set(config.response_json_schema["properties"]) == {"rewrite", "dictionary_candidates"}
     assert config.candidate_count == 1
     assert isinstance(config.automatic_function_calling, types.AutomaticFunctionCallingConfig)
     assert config.automatic_function_calling.disable is True
@@ -390,3 +390,24 @@ def test_public_boundary_preserves_deferred_error_metadata(monkeypatch):
     assert caught.value.failure_kind == "deferred"
     assert caught.value.retryable and caught.value.retry_at == retry_at
     assert caught.value.status_code == 429
+
+
+def test_review_uses_review_schema_in_sdk(sdk_stub):
+    from pipeline.glossary.easy_language import RewriteReviewResponse
+
+    generate(review=True)
+    assert sdk_stub.requests[0]["config"].response_json_schema == (
+        RewriteReviewResponse.model_json_schema()
+    )
+
+
+def test_review_flag_is_forwarded_to_budget_worker(monkeypatch):
+    calls = []
+    def request(operation, payload):
+        calls.append((operation, payload))
+        return '{"issues": [], "corrected_rewrite": null}'
+    monkeypatch.setattr(easy_language_client, "run_gemini_request", request)
+    easy_language_client.generate_easy_language_json(
+        prompt="review", notice_text="source and rewrite", api_key=KEY, review=True,
+    )
+    assert calls[0][0] == "easy_language" and calls[0][1]["review"] is True

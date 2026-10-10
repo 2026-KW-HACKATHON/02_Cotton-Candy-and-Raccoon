@@ -103,7 +103,7 @@ and s.model = %(summary_model)s and s.prompt_version = %(summary_prompt)s
 _EASY_READY = """
 e.notice_revision = public.notice_easy_text_revision(n.title, n.body_html)
 and e.model = %(easy_model)s and e.prompt_version = %(easy_prompt)s
-and e.dictionary_candidates is not null
+and e.dictionary_candidates is not null and e.easy_result is not null
 and e.body_text_present is true and e.attachment_content_included is false
 and public.notice_easy_text_preserves_title(n.title, e.original_text, e.easy_text, e.changes)
 and public.notice_dictionary_candidates_valid(

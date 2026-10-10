@@ -105,45 +105,73 @@
         "notice_revision": "4ca394672194530761352e07c984001cdfddd0f7b47fd7e5290e619617892e2a",
         "source_hash": "08a89b194a7f8907257c42ce8515ea3b433eb80fcabeee1066704eac11f9a511",
         "original_text": "월계1동 그림 교실 참가자 모집\n월계1동 그림 교실 참가자를 모집합니다.",
-        "easy_text": "월계1동 그림 교실 참가자 모집\n월계1동 그림 교실 참여할 사람을 모집합니다.",
-        "changes": [
-          {
-            "context": "참가자를 모집합니다",
-            "end": 33,
-            "original": "참가자를",
-            "replacement": "참여할 사람을",
-            "start": 29
-          }
-        ],
+        "easy_text": "월계1동 그림 교실 참가자 모집\n공지 내용을 쉽게 읽어 보세요.\n\n어떤 내용인가요?\n월계1동 그림 교실 참여할 분을 모집해요.",
+        "changes": [],
         "model": "gemini-3.5-flash-lite",
-        "prompt_version": "easy-language-v8",
+        "prompt_version": "easy-rewrite-v3",
         "attempt_count": 1,
         "generated_at": "<set>",
         "body_text_present": true,
         "attachment_content_included": false,
-        "dictionary_candidates": []
+        "dictionary_candidates": [],
+        "easy_result": {
+          "attachment_hint": null,
+          "headline": "공지 내용을 쉽게 읽어 보세요.",
+          "intro": [],
+          "review": {
+            "status": "passed"
+          },
+          "sections": [
+            {
+              "heading": "어떤 내용인가요?",
+              "sentences": [
+                {
+                  "evidence": [
+                    "월계1동 그림 교실 참가자를 모집합니다."
+                  ],
+                  "text": "월계1동 그림 교실 참여할 분을 모집해요."
+                }
+              ],
+              "style": "paragraph"
+            }
+          ]
+        }
       },
       "dong/1042/20261007090000402": {
         "notice_revision": "42e9bbac18be993a2868ea49f79f545963eca31fa0b02b6ac28005d587b2729b",
         "source_hash": "ea9d66e666493d5af5908d772801758b9cee04191eca9b522bfddf15e0877d17",
         "original_text": "월계1동 탁구 교실 참가자 모집\n월계1동 탁구 교실 참가자를 모집합니다.",
-        "easy_text": "월계1동 탁구 교실 참가자 모집\n월계1동 탁구 교실 참여할 사람을 모집합니다.",
-        "changes": [
-          {
-            "context": "참가자를 모집합니다",
-            "end": 33,
-            "original": "참가자를",
-            "replacement": "참여할 사람을",
-            "start": 29
-          }
-        ],
+        "easy_text": "월계1동 탁구 교실 참가자 모집\n공지 내용을 쉽게 읽어 보세요.\n\n어떤 내용인가요?\n월계1동 탁구 교실 참여할 분을 모집해요.",
+        "changes": [],
         "model": "gemini-3.5-flash-lite",
-        "prompt_version": "easy-language-v8",
+        "prompt_version": "easy-rewrite-v3",
         "attempt_count": 1,
         "generated_at": "<set>",
         "body_text_present": true,
         "attachment_content_included": false,
-        "dictionary_candidates": []
+        "dictionary_candidates": [],
+        "easy_result": {
+          "attachment_hint": null,
+          "headline": "공지 내용을 쉽게 읽어 보세요.",
+          "intro": [],
+          "review": {
+            "status": "passed"
+          },
+          "sections": [
+            {
+              "heading": "어떤 내용인가요?",
+              "sentences": [
+                {
+                  "evidence": [
+                    "월계1동 탁구 교실 참가자를 모집합니다."
+                  ],
+                  "text": "월계1동 탁구 교실 참여할 분을 모집해요."
+                }
+              ],
+              "style": "paragraph"
+            }
+          ]
+        }
       }
     },
     "notice_dictionary_links": {
@@ -215,35 +243,63 @@
     "notice_easy_texts": {
       "dong/1042/20261006090000401": {
         "original_text": "월계1동 그림 교실 참가자 모집\n월계1동 그림 교실 참가자를 모집합니다.",
-        "easy_text": "월계1동 그림 교실 참가자 모집\n월계1동 그림 교실 참여할 사람을 모집합니다.",
-        "changes": [
-          {
-            "context": "참가자를 모집합니다",
-            "end": 33,
-            "original": "참가자를",
-            "replacement": "참여할 사람을",
-            "start": 29
-          }
-        ],
+        "easy_text": "월계1동 그림 교실 참가자 모집\n공지 내용을 쉽게 읽어 보세요.\n\n어떤 내용인가요?\n월계1동 그림 교실 참여할 분을 모집해요.",
+        "changes": [],
         "generated_at": "<set>",
         "body_text_present": true,
-        "attachment_content_included": false
+        "attachment_content_included": false,
+        "easy_result": {
+          "attachment_hint": null,
+          "headline": "공지 내용을 쉽게 읽어 보세요.",
+          "intro": [],
+          "review": {
+            "status": "passed"
+          },
+          "sections": [
+            {
+              "heading": "어떤 내용인가요?",
+              "sentences": [
+                {
+                  "evidence": [
+                    "월계1동 그림 교실 참가자를 모집합니다."
+                  ],
+                  "text": "월계1동 그림 교실 참여할 분을 모집해요."
+                }
+              ],
+              "style": "paragraph"
+            }
+          ]
+        }
       },
       "dong/1042/20261007090000402": {
         "original_text": "월계1동 탁구 교실 참가자 모집\n월계1동 탁구 교실 참가자를 모집합니다.",
-        "easy_text": "월계1동 탁구 교실 참가자 모집\n월계1동 탁구 교실 참여할 사람을 모집합니다.",
-        "changes": [
-          {
-            "context": "참가자를 모집합니다",
-            "end": 33,
-            "original": "참가자를",
-            "replacement": "참여할 사람을",
-            "start": 29
-          }
-        ],
+        "easy_text": "월계1동 탁구 교실 참가자 모집\n공지 내용을 쉽게 읽어 보세요.\n\n어떤 내용인가요?\n월계1동 탁구 교실 참여할 분을 모집해요.",
+        "changes": [],
         "generated_at": "<set>",
         "body_text_present": true,
-        "attachment_content_included": false
+        "attachment_content_included": false,
+        "easy_result": {
+          "attachment_hint": null,
+          "headline": "공지 내용을 쉽게 읽어 보세요.",
+          "intro": [],
+          "review": {
+            "status": "passed"
+          },
+          "sections": [
+            {
+              "heading": "어떤 내용인가요?",
+              "sentences": [
+                {
+                  "evidence": [
+                    "월계1동 탁구 교실 참가자를 모집합니다."
+                  ],
+                  "text": "월계1동 탁구 교실 참여할 분을 모집해요."
+                }
+              ],
+              "style": "paragraph"
+            }
+          ]
+        }
       }
     },
     "app_notice_list": {
@@ -314,19 +370,33 @@
         "preparation_omissions": null,
         "files": [],
         "easy_original_text": "월계1동 그림 교실 참가자 모집\n월계1동 그림 교실 참가자를 모집합니다.",
-        "easy_text": "월계1동 그림 교실 참가자 모집\n월계1동 그림 교실 참여할 사람을 모집합니다.",
-        "easy_changes": [
-          {
-            "context": "참가자를 모집합니다",
-            "end": 33,
-            "original": "참가자를",
-            "replacement": "참여할 사람을",
-            "start": 29
-          }
-        ],
+        "easy_text": "월계1동 그림 교실 참가자 모집\n공지 내용을 쉽게 읽어 보세요.\n\n어떤 내용인가요?\n월계1동 그림 교실 참여할 분을 모집해요.",
+        "easy_changes": [],
         "easy_body_text_present": true,
         "easy_attachment_content_included": false,
-        "easy_generated_at": "<set>"
+        "easy_generated_at": "<set>",
+        "easy_result": {
+          "attachment_hint": null,
+          "headline": "공지 내용을 쉽게 읽어 보세요.",
+          "intro": [],
+          "review": {
+            "status": "passed"
+          },
+          "sections": [
+            {
+              "heading": "어떤 내용인가요?",
+              "sentences": [
+                {
+                  "evidence": [
+                    "월계1동 그림 교실 참가자를 모집합니다."
+                  ],
+                  "text": "월계1동 그림 교실 참여할 분을 모집해요."
+                }
+              ],
+              "style": "paragraph"
+            }
+          ]
+        }
       },
       "dong/1042/20261007090000402": {
         "source": "dong",
@@ -355,19 +425,33 @@
         "preparation_omissions": null,
         "files": [],
         "easy_original_text": "월계1동 탁구 교실 참가자 모집\n월계1동 탁구 교실 참가자를 모집합니다.",
-        "easy_text": "월계1동 탁구 교실 참가자 모집\n월계1동 탁구 교실 참여할 사람을 모집합니다.",
-        "easy_changes": [
-          {
-            "context": "참가자를 모집합니다",
-            "end": 33,
-            "original": "참가자를",
-            "replacement": "참여할 사람을",
-            "start": 29
-          }
-        ],
+        "easy_text": "월계1동 탁구 교실 참가자 모집\n공지 내용을 쉽게 읽어 보세요.\n\n어떤 내용인가요?\n월계1동 탁구 교실 참여할 분을 모집해요.",
+        "easy_changes": [],
         "easy_body_text_present": true,
         "easy_attachment_content_included": false,
-        "easy_generated_at": "<set>"
+        "easy_generated_at": "<set>",
+        "easy_result": {
+          "attachment_hint": null,
+          "headline": "공지 내용을 쉽게 읽어 보세요.",
+          "intro": [],
+          "review": {
+            "status": "passed"
+          },
+          "sections": [
+            {
+              "heading": "어떤 내용인가요?",
+              "sentences": [
+                {
+                  "evidence": [
+                    "월계1동 탁구 교실 참가자를 모집합니다."
+                  ],
+                  "text": "월계1동 탁구 교실 참여할 분을 모집해요."
+                }
+              ],
+              "style": "paragraph"
+            }
+          ]
+        }
       }
     },
     "get_notice_dictionary": {
@@ -375,48 +459,32 @@
         "result": {
           "attachment_content_included": false,
           "body_text_present": true,
-          "changes": [
-            {
-              "context": "참가자를 모집합니다",
-              "end": 33,
-              "original": "참가자를",
-              "replacement": "참여할 사람을",
-              "start": 29
-            }
-          ],
+          "changes": [],
           "dictionary_candidates": [],
           "dictionary_status": "complete",
-          "easy_text": "월계1동 그림 교실 참가자 모집\n월계1동 그림 교실 참여할 사람을 모집합니다.",
+          "easy_text": "월계1동 그림 교실 참가자 모집\n공지 내용을 쉽게 읽어 보세요.\n\n어떤 내용인가요?\n월계1동 그림 교실 참여할 분을 모집해요.",
           "generated_at": "<set>",
           "model": "gemini-3.5-flash-lite",
           "notice_id": 2,
           "notice_revision": "4ca394672194530761352e07c984001cdfddd0f7b47fd7e5290e619617892e2a",
           "original_text": "월계1동 그림 교실 참가자 모집\n월계1동 그림 교실 참가자를 모집합니다.",
-          "prompt_version": "easy-language-v8"
+          "prompt_version": "easy-rewrite-v3"
         }
       },
       "dong/1042/20261007090000402": {
         "result": {
           "attachment_content_included": false,
           "body_text_present": true,
-          "changes": [
-            {
-              "context": "참가자를 모집합니다",
-              "end": 33,
-              "original": "참가자를",
-              "replacement": "참여할 사람을",
-              "start": 29
-            }
-          ],
+          "changes": [],
           "dictionary_candidates": [],
           "dictionary_status": "complete",
-          "easy_text": "월계1동 탁구 교실 참가자 모집\n월계1동 탁구 교실 참여할 사람을 모집합니다.",
+          "easy_text": "월계1동 탁구 교실 참가자 모집\n공지 내용을 쉽게 읽어 보세요.\n\n어떤 내용인가요?\n월계1동 탁구 교실 참여할 분을 모집해요.",
           "generated_at": "<set>",
           "model": "gemini-3.5-flash-lite",
           "notice_id": 1,
           "notice_revision": "42e9bbac18be993a2868ea49f79f545963eca31fa0b02b6ac28005d587b2729b",
           "original_text": "월계1동 탁구 교실 참가자 모집\n월계1동 탁구 교실 참가자를 모집합니다.",
-          "prompt_version": "easy-language-v8"
+          "prompt_version": "easy-rewrite-v3"
         }
       }
     }
