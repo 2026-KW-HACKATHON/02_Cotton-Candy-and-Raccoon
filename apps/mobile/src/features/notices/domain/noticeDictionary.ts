@@ -159,6 +159,11 @@ export function withNoticeDictionary(
       output.dictionaryStatus = "pending";
     if (start > offset)
       parts.push({ text: points.slice(offset, start).join("") });
+    if (status !== "found") {
+      parts.push({ text: candidate.original });
+      offset = end;
+      continue;
+    }
     parts.push({
       text: candidate.original,
       term: {
@@ -194,7 +199,9 @@ export function dictionaryHint(notice: Notice): string {
     case "failed":
       return "단어 뜻을 불러오지 못했어요. 원문은 계속 읽을 수 있어요.";
     case "partial":
-      return "일부 단어 뜻을 확인하지 못했어요. 밑줄 친 단어를 눌러 확인해 주세요.";
+      return hasTerms
+        ? "밑줄 친 단어를 누르면 사전 뜻을 볼 수 있어요."
+        : "공문 원문을 확인해 주세요.";
     case "unprocessed":
       return notice.hasEasyText
         ? "이 공문의 사전 설명은 아직 준비되지 않았어요."

@@ -93,10 +93,8 @@ test("치환하지 않은 후보도 제목·이모지의 코드포인트 위치�
 test("사전 없음·대기·실패를 임의의 쉬운말로 대체하지 않는다", () => {
   for (const status of ["not_found", "pending", "failed"]) {
     const result = withNoticeDictionary(notice, payload(status));
-    const term = result.documentParts.original.find((p) => p.term).term;
-    assert.equal(term.dictionary.status, status);
-    assert.deepEqual(term.dictionary.entries, []);
-    assert.equal(term.plain, "");
+    assert.ok(result.documentParts.original.every((p) => !p.term));
+    assert.equal(result.documentParts.original.map((p) => p.text).join(""), notice.original);
   }
 });
 test("다른 공지·원문과 잘못된 위치·겹친 후보는 모두 연결하지 않는다", () => {
@@ -134,12 +132,8 @@ test("비공식 링크·항목 불일치·잘못된 응답의 뜻풀이를 표�
   ]) {
     const value = payload();
     mutate(value);
-    const term = withNoticeDictionary(
-      notice,
-      value,
-    ).documentParts.original.find((p) => p.term).term;
-    assert.equal(term.dictionary.status, "failed");
-    assert.deepEqual(term.dictionary.entries, []);
+    const result = withNoticeDictionary(notice, value);
+    assert.ok(result.documentParts.original.every((p) => !p.term));
   }
 });
 test("조회 실패와 미처리는 원문·쉬운말을 보존하되 이전 치환을 사전으로 표시하지 않는다", () => {
@@ -157,7 +151,7 @@ test("열려 있는 설명도 재조회 결과를 따르고 원문 변경 시 �
   const previous = withNoticeDictionary(notice, payload());
   const term = previous.documentParts.original.find((p) => p.term).term;
   const next = withNoticeDictionary(notice, payload("pending"));
-  assert.equal(currentDictionaryTerm(next, term).dictionary.status, "pending");
+  assert.equal(currentDictionaryTerm(next, term), null);
   assert.equal(
     currentDictionaryTerm(
       withNoticeDictionary({ ...notice, original: "새 원문" }, payload()),
@@ -267,10 +261,10 @@ test("파이프라인 e2e가 기록한 실제 공개 사전 응답을 연결한�
     );
     assert.equal(result.dictionaryStatus, "complete");
     const terms = result.documentParts.original.filter((part) => part.term);
-    assert.ok(terms.length >= 3);
+    assert.ok(terms.length > 0);
     assert.ok(terms.some((part) => part.term.dictionary.status === "found"));
     assert.ok(
-      terms.some((part) => part.term.dictionary.status === "not_found"),
+      terms.every((part) => part.term.dictionary.status === "found"),
     );
     assert.equal(
       result.documentParts.original.map((part) => part.text).join(""),
