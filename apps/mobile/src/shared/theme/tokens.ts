@@ -7,7 +7,7 @@ export const COLORS = {
   primary: "#25639B",
   border: "#C7D6E3",
   accent: "#D98573",
-};
+} as const;
 export const SPACE = {
   xs: 4,
   sm: 8,

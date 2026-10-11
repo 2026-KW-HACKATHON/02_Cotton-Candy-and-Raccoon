@@ -51,6 +51,18 @@
               "targetCellHeight": 2,
               "resizeMode": "horizontal|vertical",
               "updatePeriodMillis": 1800000
+            },
+            {
+              "name": "NoticeCard",
+              "label": "최근 공문 · 카드",
+              "description": "최근 공문의 제목·제공처·등록일을 확인해요. 카드는 공문 상세 보기, 원형 버튼은 새로고침입니다.",
+              "previewImage": "./assets/widget/card-preview.png",
+              "minWidth": "270dp",
+              "minHeight": "40dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 1,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000
             }
           ]
         }
