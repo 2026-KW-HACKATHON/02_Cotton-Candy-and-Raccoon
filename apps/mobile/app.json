@@ -42,13 +42,13 @@
           "widgets": [
             {
               "name": "TodayNotice",
-              "label": "오늘의 공문",
-              "description": "너구리가 편지지에 오늘 등록된 공문 한 건을 전해요.",
+              "label": "최근 공문",
+              "description": "너구리가 편지지에 가장 최근 등록된 공문 한 건을 전해요.",
               "previewImage": "./assets/widget/preview.png",
-              "minWidth": "180dp",
-              "minHeight": "270dp",
-              "targetCellWidth": 4,
-              "targetCellHeight": 5,
+              "minWidth": "40dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 1,
+              "targetCellHeight": 2,
               "resizeMode": "horizontal|vertical",
               "updatePeriodMillis": 1800000
             }

@@ -8,14 +8,14 @@ import {
   TextWidget,
 } from "react-native-android-widget";
 import { LETTER_ARTWORK } from "./letterArtwork";
-import type { TodayNoticeState } from "./todayNotice";
+import type { LatestNoticeState } from "./latestNotice";
 
 export function TodayNoticeWidget({
   state,
   width,
   height,
 }: {
-  state: TodayNoticeState;
+  state: LatestNoticeState;
   width: number;
   height: number;
 }) {
@@ -25,14 +25,14 @@ export function TodayNoticeWidget({
     notice?.title ??
     {
       loading: "공문을 가져오고 있어요",
-      empty: "오늘 등록된 공문이 없습니다",
+      empty: "등록된 공문이 없습니다",
       error: "공문을 불러오지 못했어요",
-      ready: "오늘 등록된 공문이 없습니다",
+      ready: "등록된 공문이 없습니다",
     }[state.status];
   return (
     <FlexWidget
       style={{ width, height, alignItems: "center", justifyContent: "center" }}
-      accessibilityLabel={`${state.date} 공문. ${message}. ${notice?.provider ?? ""}`}
+      accessibilityLabel={`최근 공문. ${notice ? `${state.date} 등록. ` : ""}${message}. ${notice?.provider ?? ""}`}
     >
       <OverlapWidget style={{ width: 314 * scale, height: 473 * scale }}>
         <SvgWidget
@@ -44,12 +44,12 @@ export function TodayNoticeWidget({
             marginLeft: 54 * scale,
             marginTop: 186 * scale,
             width: 206 * scale,
-            height: 108 * scale,
+            height: 120 * scale,
           }}
         >
-          {/* Show an absolute date: Android may defer refresh while the device sleeps. */}
+          {/* 갱신 시각이 아닌 공문의 실제 등록일을 표시해 이전 공문을 오늘 공문으로 오해하지 않게 한다. */}
           <TextWidget
-            text={`${state.date} 공문`}
+            text={notice ? `${state.date} 공문` : "최근 공문"}
             style={{
               color: "#208AEF",
               fontSize: 12 * scale,
@@ -64,10 +64,20 @@ export function TodayNoticeWidget({
               color: "#263449",
               fontSize: 19 * scale,
               fontWeight: "bold",
-              height: 70 * scale,
+              height: 92 * scale,
               width: 206 * scale,
             }}
           />
+        </FlexWidget>
+        {/* 제목이 세 줄이어도 제공처와 겹치지 않도록 편지 하단의 별도 영역에 배치한다. */}
+        <FlexWidget
+          style={{
+            marginLeft: 54 * scale,
+            marginTop: 310 * scale,
+            width: 206 * scale,
+            height: 20 * scale,
+          }}
+        >
           <TextWidget
             text={
               notice?.provider ??
@@ -82,7 +92,7 @@ export function TodayNoticeWidget({
         </FlexWidget>
         <FlexWidget
           clickAction="REFRESH"
-          accessibilityLabel="오늘의 공문 새로고침"
+          accessibilityLabel="최근 공문 새로고침"
           style={{
             marginLeft: 86 * scale,
             marginTop: 369 * scale,

@@ -80,9 +80,13 @@ test("React Compiler 이후 실제 위젯 트리 생성과 루트 접근성 라�
         },
       }),
     );
-    assert.match(tree.props.accessibilityLabel, /2026-10-09/);
-    if (status === "ready")
+    if (status === "ready") {
+      assert.match(tree.props.accessibilityLabel, /2026-10-09 등록/);
       assert.match(tree.props.accessibilityLabel, /오늘 공문.*월계1동/);
+    } else {
+      assert.match(tree.props.accessibilityLabel, /최근 공문/);
+      assert.doesNotMatch(tree.props.accessibilityLabel, /2026-10-09 등록/);
+    }
     assert.equal(tree.type, "LinearLayoutWidget");
   }
 });
@@ -91,9 +95,9 @@ function harness() {
   const pending = [];
   const load = loader({
     "./TodayNoticeWidget": { TodayNoticeWidget: () => null },
-    "./todayNotice": {
+    "./latestNotice": {
       koreaDate: () => "2026-10-09",
-      loadTodayNotice: () => new Promise((resolve) => pending.push(resolve)),
+      loadLatestNotice: () => new Promise((resolve) => pending.push(resolve)),
     },
   });
   const { widgetTaskHandler } = load(

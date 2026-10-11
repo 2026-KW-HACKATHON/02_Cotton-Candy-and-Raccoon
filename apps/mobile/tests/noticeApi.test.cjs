@@ -70,29 +70,26 @@ test("목록은 같은 날짜의 ID 커서로 다음 페이지를 조회한다",
     "(registered_on.lt.2026-10-09,and(registered_on.eq.2026-10-09,id.lt.21))",
   );
 });
-test("위젯은 요청 날짜의 최신 공문 한 건만 조회한다", async () => {
+test("위젯은 날짜 제한 없이 등록일과 ID 순으로 최신 공문 한 건만 조회한다", async () => {
   global.fetch = async (url) => {
     const parsed = new URL(url);
     assert.equal(parsed.pathname, "/rest/v1/app_notice_list");
-    assert.equal(parsed.searchParams.get("registered_on"), "eq.2026-10-09");
-    assert.equal(parsed.searchParams.get("order"), "id.desc");
+    assert.equal(parsed.searchParams.has("registered_on"), false);
+    assert.equal(parsed.searchParams.get("order"), "registered_on.desc,id.desc");
     assert.equal(parsed.searchParams.get("limit"), "1");
     return new Response(JSON.stringify([row(12)]));
   };
-  const notice = await api.fetchTodayNotice("2026-10-09");
+  const notice = await api.fetchLatestNotice();
   assert.equal(notice.id, "12");
   assert.equal(notice.publishedAt.replaceAll(".", "-"), "2026-10-09");
 });
-test("위젯은 잘못된 날짜로 요청하지 않고 당일 공문이 없으면 null을 반환한다", async () => {
+test("위젯은 공개 공문이 하나도 없으면 null을 반환한다", async () => {
   let count = 0;
   global.fetch = async () => {
     count++;
     return new Response("[]");
   };
-  for (const date of ["invalid", "2026-02-30", "2026-10-09,registered_on.gt.0"])
-    await assert.rejects(api.fetchTodayNotice(date));
-  assert.equal(count, 0);
-  assert.equal(await api.fetchTodayNotice("2026-10-09"), null);
+  assert.equal(await api.fetchLatestNotice(), null);
   assert.equal(count, 1);
 });
 test("없는 상세는 빈 결과이며 예시 데이터로 대체하지 않는다", async () => {
