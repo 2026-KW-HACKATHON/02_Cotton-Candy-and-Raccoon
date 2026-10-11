@@ -114,6 +114,26 @@ export async function fetchNoticePage(
 export async function fetchNotices(): Promise<Notice[]> {
   return (await fetchNoticePage()).notices;
 }
+// 위젯은 한국 날짜에 등록된 최신 공문만 표시하고, 이전 날짜의 공문으로 대체하지 않는다.
+export async function fetchTodayNotice(date: string): Promise<Notice | null> {
+  const timestamp = Date.parse(date + "T00:00:00Z");
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+    Number.isNaN(timestamp) ||
+    new Date(timestamp).toISOString().slice(0, 10) !== date
+  )
+    throw new NoticeRequestError("contract");
+  const rows = await request(
+    "app_notice_list",
+    new URLSearchParams({
+      select: LIST_COLUMNS,
+      registered_on: "eq." + date,
+      order: "id.desc",
+      limit: "1",
+    }),
+  );
+  return rows.length ? parseNotice(rows[0]) : null;
+}
 export async function fetchNotice(id: string): Promise<Notice | null> {
   if (!/^\d+$/.test(id) || Number(id) <= 0 || !Number.isSafeInteger(Number(id)))
     return null;
