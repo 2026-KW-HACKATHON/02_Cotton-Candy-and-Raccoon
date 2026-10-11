@@ -25,6 +25,7 @@ import { NoticeTermOverlay } from "../components/NoticeTermOverlay";
 import { NoticeOmissions } from "../components/NoticeOmissions";
 import { NoticeFiles } from "../components/NoticeFiles";
 import { NoticeSummaryStatus } from "../components/NoticeSummaryStatus";
+import { NoticeDetailTitle } from "../components/NoticeDetailTitle";
 import { type GlossaryTerm } from "../types/notice";
 import { formatSummaryText } from "../domain/noticePresentation";
 
@@ -167,14 +168,7 @@ function StandardNoticeContent({
             </AppText>
           </View>
           <View style={styles.titleRow}>
-            <AppText
-              variant="display"
-              size={28}
-              lineHeight={38}
-              style={{ flex: 1 }}
-            >
-              {notice.title}
-            </AppText>
+            <NoticeDetailTitle title={notice.title} />
             <DetailCharacter active={animationActive} />
           </View>
           <NoticeSummaryStatus status={notice.summaryStatus} />
