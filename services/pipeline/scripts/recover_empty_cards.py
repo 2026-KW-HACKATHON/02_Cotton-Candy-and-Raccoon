@@ -1,6 +1,7 @@
 """One bounded regeneration pass for publicly empty four-card summaries."""
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -58,7 +59,11 @@ def main():
     with psycopg.connect(database.database_url, autocommit=True, connect_timeout=10,
                           row_factory=dict_row) as conn:
         before = snapshot(conn)
-        report = {'before': before, 'attempts': []}
+        unlimited = os.environ.get('RECOVERY_UNLIMITED_CARD_TEXT') == 'true'
+        if unlimited:
+            allowed = set(json.loads(Path('scripts/empty_card_targets.json').read_text()))
+            before = [row for row in before if row['id'] in allowed]
+        report = {'before': before, 'attempts': [], 'unlimited_card_text': unlimited}
         target = Path('empty-card-recovery.json')
 
         def save():
@@ -72,11 +77,14 @@ def main():
             current = {row['id']: row for row in snapshot(conn)}.get(item['id'])
             if current is None or current['job_state'] == 'running':
                 continue
-            mode = 'stopped' if current['job_state'] in ('blocked', 'exhausted') else 'cached'
+            mode = ('unlimited_cards' if unlimited else
+                    'stopped' if current['job_state'] in ('blocked', 'exhausted') else 'cached')
             outcome = {'notice_id': item['id'], 'mode': mode}
             try:
+                command = ([sys.executable, 'scripts/recover_cards_without_length.py', str(item['id'])]
+                           if unlimited else [sys.executable, '-c', CHILD, str(item['id']), mode])
                 completed = subprocess.run(
-                    [sys.executable, '-c', CHILD, str(item['id']), mode],
+                    command,
                     capture_output=True, text=True, timeout=300, check=False,
                 )
                 outcome['exit_code'] = completed.returncode

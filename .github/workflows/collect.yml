@@ -21,6 +21,11 @@ on:
         default: collect
         type: choice
         options: [collect, migrate-ai-db, recover-empty-cards]
+      relax_card_length:
+        description: "One-off unlimited card prose for the frozen empty-card targets only"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -260,6 +265,7 @@ jobs:
       run:
         working-directory: services/pipeline
     env:
+      RECOVERY_UNLIMITED_CARD_TEXT: ${{ inputs.relax_card_length }}
       DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       NOWON_NOTICE_API_KEY: ${{ secrets.NOWON_NOTICE_API_KEY }}
