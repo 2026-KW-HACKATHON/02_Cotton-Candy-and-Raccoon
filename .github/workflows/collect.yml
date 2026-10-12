@@ -20,7 +20,7 @@ on:
         required: false
         default: collect
         type: choice
-        options: [collect, migrate-ai-db]
+        options: [collect, migrate-ai-db, recover-empty-cards]
 
 permissions:
   contents: read
@@ -32,7 +32,7 @@ concurrency:
 jobs:
   collect:
     # This opt-in gate prevents writes when the workflow is first merged.
-    if: vars.PIPELINE_PRODUCTION_ENABLED == 'true' && inputs.operation != 'migrate-ai-db'
+    if: vars.PIPELINE_PRODUCTION_ENABLED == 'true' && (inputs.operation == '' || inputs.operation == 'collect')
     runs-on: ubuntu-latest
     timeout-minutes: 360
     defaults:
@@ -251,6 +251,45 @@ jobs:
           print(json.dumps(outcomes))
           sys.exit(0 if all(value == "success" for value in outcomes.values()) else 1)
           PY
+
+  recover_empty_cards:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'recover-empty-cards' && vars.PIPELINE_PRODUCTION_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    defaults:
+      run:
+        working-directory: services/pipeline
+    env:
+      DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      NOWON_NOTICE_API_KEY: ${{ secrets.NOWON_NOTICE_API_KEY }}
+      SEOUL_NEWS_API_KEY: ${{ secrets.SEOUL_NEWS_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
+      - run: uv sync --no-dev --frozen
+      - name: Refresh Nowon source
+        continue-on-error: true
+        timeout-minutes: 10
+        run: uv run --no-dev --frozen pipeline collect --source nowon --mode refresh
+      - name: Refresh Wolgye source
+        continue-on-error: true
+        timeout-minutes: 10
+        run: uv run --no-dev --frozen pipeline collect --source wolgye1 --mode refresh
+      - name: Refresh Seoul source
+        continue-on-error: true
+        timeout-minutes: 10
+        run: uv run --no-dev --frozen pipeline collect --source seoul --mode refresh
+      - name: Regenerate empty cards once, bypassing completed cache
+        run: uv run --no-dev --frozen python scripts/recover_empty_cards.py
+      - name: Keep recovery outcomes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: empty-card-recovery-${{ github.run_id }}
+          path: services/pipeline/empty-card-recovery.json
+          if-no-files-found: warn
+          retention-days: 7
 
   migrate_ai_db:
     if: github.event_name == 'workflow_dispatch' && inputs.operation == 'migrate-ai-db'
