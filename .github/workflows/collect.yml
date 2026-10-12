@@ -20,7 +20,7 @@ on:
         required: false
         default: collect
         type: choice
-        options: [collect, migrate-ai-db, recover-empty-cards]
+        options: [collect, migrate-ai-db, recover-empty-cards, manual-cards-717]
       relax_card_length:
         description: "One-off unlimited card prose for the frozen empty-card targets only"
         required: false
@@ -35,6 +35,21 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  manual_cards_717:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'manual-cards-717'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: services/pipeline
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
+      - run: uv sync --no-dev --frozen
+      - name: Apply source-reviewed cards to notice 717 only
+        env:
+          DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+        run: uv run --no-dev --frozen python scripts/apply_manual_cards_717.py
   collect:
     # This opt-in gate prevents writes when the workflow is first merged.
     if: vars.PIPELINE_PRODUCTION_ENABLED == 'true' && (inputs.operation == '' || inputs.operation == 'collect')
