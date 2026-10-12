@@ -60,6 +60,7 @@ export function NoticeDocumentText({
                     style={[styles.link, comfortable && styles.comfortableLink]}
                   >
                     <AppText
+                      variant="medium"
                       size={comfortable ? 20 : 16}
                       lineHeight={comfortable ? 30 : 24}
                       style={[
@@ -105,7 +106,7 @@ const styles = StyleSheet.create({
   // 링크의 상하 여백이 본문 줄간격을 늘리지 않도록 터치 여유는 hitSlop으로 제공한다.
   link: { minHeight: 24, maxWidth: "100%" },
   comfortableLink: { minHeight: 56, paddingVertical: 12 },
-  linkText: { color: COLORS.primary },
+  linkText: { color: COLORS.primary, backgroundColor: COLORS.soft },
   underline: {
     position: "absolute",
     bottom: 0,

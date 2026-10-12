@@ -86,6 +86,7 @@ function loadDetail(initialNotice, standard = false) {
     "NoticeTermOverlay",
     "NoticeFiles",
     "NoticeSummaryStatus",
+    "NoticeDetailTitle",
     "NoticeOmissions",
   ]) {
     mocks[`../components/${component}`] = { [component]: component };
