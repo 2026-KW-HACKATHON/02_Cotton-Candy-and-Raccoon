@@ -114,6 +114,18 @@ export async function fetchNoticePage(
 export async function fetchNotices(): Promise<Notice[]> {
   return (await fetchNoticePage()).notices;
 }
+// 공개 목록에서 등록일이 가장 최근인 공문을 조회하고, 같은 날짜에는 ID로 순서를 정한다.
+export async function fetchLatestNotice(): Promise<Notice | null> {
+  const rows = await request(
+    "app_notice_list",
+    new URLSearchParams({
+      select: LIST_COLUMNS,
+      order: "registered_on.desc,id.desc",
+      limit: "1",
+    }),
+  );
+  return rows.length ? parseNotice(rows[0]) : null;
+}
 export async function fetchNotice(id: string): Promise<Notice | null> {
   if (!/^\d+$/.test(id) || Number(id) <= 0 || !Number.isSafeInteger(Number(id)))
     return null;
