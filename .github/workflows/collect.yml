@@ -20,7 +20,7 @@ on:
         required: false
         default: collect
         type: choice
-        options: [collect, migrate-ai-db, recover-empty-cards, manual-cards-717, manual-recent-repairs, fill-empty-only]
+        options: [collect, migrate-ai-db, recover-empty-cards, manual-cards-717, manual-recent-repairs, fill-empty-only, fill-all-verified-empty]
       relax_card_length:
         description: "One-off unlimited card prose for the frozen empty-card targets only"
         required: false
@@ -35,6 +35,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  fill_all_verified_empty:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'fill-all-verified-empty'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: services/pipeline
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
+      - run: uv sync --no-dev --frozen
+      - name: Fill source-verified empty slots only
+        env:
+          DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+        run: uv run --no-dev --frozen python scripts/apply_all_verified_empty.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verified-empty-fill-${{ github.run_id }}
+          path: services/pipeline/verified-empty-*.json
+          retention-days: 7
   fill_empty_only:
     if: github.event_name == 'workflow_dispatch' && inputs.operation == 'fill-empty-only'
     runs-on: ubuntu-latest
