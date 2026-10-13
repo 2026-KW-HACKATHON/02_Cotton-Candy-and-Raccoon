@@ -1,0 +1,114 @@
+{
+  "1293": {
+    "body_sha256": "9cb11e09585ea841796e094f36d9bff7b5067c7e974eca1fe804c777cc5db792",
+    "files": [
+      {
+        "id": 813,
+        "url": "https://news.seoul.go.kr/gov/files/2026/10/6acc6414481f91.83055801.pdf",
+        "kind": "attachment"
+      }
+    ],
+    "title": "「2026년 약자동행지수 성과 우수사례집」 공유",
+    "cards": {
+      "notes": null,
+      "action": null,
+      "audience": null,
+      "deadline": null
+    }
+  },
+  "1292": {
+    "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "files": [
+      {
+        "id": 811,
+        "url": "https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=311102&q_fileId=4c1f5ba2-d507-4782-82f9-b4b2a94fcb60",
+        "kind": "inline_image"
+      },
+      {
+        "id": 812,
+        "url": "https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=311101&q_fileId=ea5c163d-45b4-43f4-8607-b7b0ab3330fe",
+        "kind": "attachment"
+      }
+    ],
+    "title": "배터리 내장제품 적정 분리배출 안내",
+    "cards": {
+      "notes": "플라스틱·비닐·고철에 버리지 마세요. 혼합배출시 재활용 과정에서 배터리가 손상되어 화재로 이어질 수 있어요.",
+      "action": "폐전지·폐가전 전용 수거함에 버려주세요.",
+      "audience": "일반 주민이 대상이에요.",
+      "deadline": null
+    }
+  },
+  "1291": {
+    "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "files": [
+      {
+        "id": 809,
+        "url": "https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=311099&q_fileId=59996805-005b-44d5-b767-b97119059cf2",
+        "kind": "attachment"
+      },
+      {
+        "id": 810,
+        "url": "https://www.nowon.kr/component/file/ND_fileDownload.do?q_fileSn=311098&q_fileId=969fc23e-ab07-4dc0-80e9-6db33b6a3868",
+        "kind": "inline_image"
+      }
+    ],
+    "title": "의무관리대상 공동주택 종이팩 별도 분리배출제 시행 안내",
+    "cards": {
+      "notes": null,
+      "action": "종이팩을 비우고, 헹구고, 납작하게 하여 따로 배출해 주세요.",
+      "audience": "전국 의무관리대상 공동주택(300세대 이상 등)에 적용돼요.",
+      "deadline": "자율·선제 시행은 2026-10-01에 시작해요. 전면 시행은 2027-01-01에 시작해요."
+    }
+  },
+  "1197": {
+    "body_sha256": "0b68a646cdcee16b30a0277b01a36444dc6566bb27eb6cc66ef8a804360103ab",
+    "files": [
+      {
+        "id": 774,
+        "url": "https://news.seoul.go.kr/economy/files/2026/10/6acc3cdb825804.34772960-scaled.png",
+        "kind": "inline_image"
+      }
+    ],
+    "title": "2026년 서울도시농업박람회 개최",
+    "cards": {
+      "notes": null,
+      "action": "안내 장소는 서울숲 동부공원여가센터 일대예요.",
+      "audience": "방문에 관심이 있는 누구나 참여하실 수 있어요.",
+      "deadline": "행사 기간은 2026-10-16부터 2026-10-17까지였어요."
+    }
+  },
+  "1196": {
+    "body_sha256": "f246918d8dc315d2b64a32ba4a6213433945e845b5ae7a189db1592e0b5cc0ac",
+    "files": [
+      {
+        "id": 773,
+        "url": "https://news.seoul.go.kr/economy/files/2026/10/6acc68d6aeaf97.56474891.jpg",
+        "kind": "inline_image"
+      }
+    ],
+    "title": "서울형 상가임대차 분쟁해결 체계, 임대인·임차인 간 갈등 해결을 지원합니다!",
+    "cards": {
+      "notes": "전화, 방문, 온라인 상담을 통해 상가임대차 분쟁 해결을 지원해요.",
+      "action": "희망하시면 서울시 상가임대차 상담센터를 통해 전화, 방문, 온라인 상담을 이용해 주세요.",
+      "audience": "상가건물 임대인과 임차인이 대상이에요.",
+      "deadline": null
+    }
+  },
+  "1177": {
+    "body_sha256": "4a2b5b5a851a98cc128e768e967c8e7f860e147f5f41251c5a982392ddda5e73",
+    "files": [
+      {
+        "id": 772,
+        "url": "https://news.seoul.go.kr/citybuild/files/2026/10/6acc6d5b087e44.03227294.hwpx",
+        "kind": "attachment"
+      }
+    ],
+    "title": "2026년 글로벌부동산중개사무소 지정심사 결과 공고",
+    "cards": {
+      "notes": null,
+      "action": null,
+      "audience": null,
+      "deadline": null
+    }
+  }
+}
