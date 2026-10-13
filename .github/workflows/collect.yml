@@ -20,7 +20,7 @@ on:
         required: false
         default: collect
         type: choice
-        options: [collect, migrate-ai-db, recover-empty-cards, manual-cards-717]
+        options: [collect, migrate-ai-db, recover-empty-cards, manual-cards-717, manual-recent-repairs]
       relax_card_length:
         description: "One-off unlimited card prose for the frozen empty-card targets only"
         required: false
@@ -35,6 +35,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  manual_recent_repairs:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'manual-recent-repairs'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: services/pipeline
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
+      - run: uv sync --no-dev --frozen
+      - name: Apply reviewed corrections to frozen recent notices
+        env:
+          DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+        run: uv run --no-dev --frozen python scripts/apply_recent_manual_repairs.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recent-manual-repairs-${{ github.run_id }}
+          path: services/pipeline/recent-manual-repairs-*.json
+          retention-days: 7
   manual_cards_717:
     if: github.event_name == 'workflow_dispatch' && inputs.operation == 'manual-cards-717'
     runs-on: ubuntu-latest
